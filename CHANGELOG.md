@@ -23,6 +23,10 @@ First packaged release.
   recursively so plugin modules loaded via `--load-module` are honoured.
 - CLI built on `duho`: `initiate` and `complete` commands with layered YAML
   config (`yaconfiglib`), command discovery, and `--load-module`/`--cmdspath`.
+- Config objects use `yaconfiglib`'s `TypedNamespace` (`_parse_<field>` coercers)
+  and `OpaqueMerge` (last-object-wins) so fully-built targets/zones with
+  factory-function field hints are merged as opaque values (requires
+  `yaconfiglib>=0.10.0`).
 
 ### Changed
 - Migrated the CLI off the in-house `coquilib` layer to `duho`

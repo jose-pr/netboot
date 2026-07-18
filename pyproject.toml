@@ -32,7 +32,7 @@ dependencies = [
     "netutils",
     "pathlib_next[uri]>=0.8.2",
     "jinja2",
-    "yaconfiglib",
+    "yaconfiglib>=0.10.0",
 ]
 
 [project.optional-dependencies]

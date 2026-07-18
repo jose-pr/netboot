@@ -17,7 +17,8 @@ from typing import Mapping, get_type_hints, Union
 
 import netutils
 from pathlib_next.uri.schemes import *  # noqa: F401,F403
-from yaconfiglib.utils.merge import typed_merge as mergeObjects
+from yaconfiglib import OpaqueMerge
+from yaconfiglib import typed_merge as mergeObjects
 
 from .content import Repository, Resource
 from .dhcp import DhcpZone
@@ -27,7 +28,7 @@ from .utils import IPAddress, MACAddress, T
 from .utils.misc import import_
 
 
-class PixyTarget(Namespace):
+class PixyTarget(Namespace, OpaqueMerge):
     _id: str
     hostname: str
     ip: IPAddress
@@ -36,12 +37,6 @@ class PixyTarget(Namespace):
     dhcpzone: str
     globals: dict
     template_path: list[Union[str, Path]]
-
-    @classmethod
-    def __merge__(cls, *objects, init: bool = True):
-        # Opaque to yaconfiglib typed_merge (factory-function field hints such as
-        # ip: IPAddress are not classes). A built target is last-object-wins.
-        return objects[-1] if objects else None
 
     #: MAC value treated as "unset" (a target keyed by hostname/IP has no MAC).
     _NULL_MAC = "00:00:00:00:00:00"

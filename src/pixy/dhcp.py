@@ -2,6 +2,7 @@ import typing as _ty
 from argparse import Namespace
 
 import netutils
+from yaconfiglib import OpaqueMerge
 
 from .utils.net import IPAddress, IPInterface, IPNetwork
 
@@ -56,7 +57,7 @@ class DhcpServer:
         pass
 
 
-class DhcpZone(Namespace):
+class DhcpZone(Namespace, OpaqueMerge):
     network: IPNetwork
     gateway: "_ty.Optional[IPAddress]"
     domain: "_ty.Optional[str]"
@@ -64,12 +65,6 @@ class DhcpZone(Namespace):
     nameservers: "list[IPAddress]"
     globals: dict
     dhcpservers: "list[DhcpServer]"
-
-    @classmethod
-    def __merge__(cls, *objects, init: bool = True):
-        # Opaque to yaconfiglib typed_merge: a built zone's factory-function
-        # field hints (network: IPNetwork) are not classes. Last object wins.
-        return objects[-1] if objects else None
 
     @property
     def nameserver(self):
