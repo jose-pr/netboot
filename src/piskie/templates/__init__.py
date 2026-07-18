@@ -9,7 +9,7 @@ from .shell import ShellTemplate
 
 if TYPE_CHECKING:
     from . import Template
-    from .. import PixyContext
+    from .. import PiskieContext
 
 from jinja2.loaders import BaseLoader as _JinjaLoader
 
@@ -29,7 +29,7 @@ class Loader(_JinjaLoader):
     def get_source(
         self, environment: Renderer, template: str, **options
     ) -> Tuple[str, str, Callable[[], bool]]:
-        ctx: "PixyContext" = environment.globals.get("ctx")
+        ctx: "PiskieContext" = environment.globals.get("ctx")
         options: dict[str, str]
 
         if ":" in template:

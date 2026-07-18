@@ -1,8 +1,8 @@
-"""The pixy logger, plus best-effort quieting of chatty optional deps."""
+"""The piskie logger, plus best-effort quieting of chatty optional deps."""
 
 import logging
 
-LOGGER = logging.getLogger("PIXY")
+LOGGER = logging.getLogger("PISKIE")
 
 # Quiet third-party loggers if those libraries end up in the process (e.g. a repo
 # backend pulls in urllib3/paramiko). Setting a level does not import anything.

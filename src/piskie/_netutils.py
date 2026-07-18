@@ -1,11 +1,11 @@
-"""Vendored network utilities for pixy (internal).
+"""Vendored network utilities for piskie (internal).
 
 A thin, typed convenience layer over the standard library's :mod:`ipaddress`
 plus a handful of host helpers (DNS lookup, ping, local NIC discovery). Used
-internally as ``pixy._netutils`` and re-exported from :mod:`pixy.utils.net`.
+internally as ``piskie._netutils`` and re-exported from :mod:`piskie.utils.net`.
 
 This is a private, in-tree copy; it may later be extracted back into a standalone
-distribution. Do not depend on the module path from outside pixy.
+distribution. Do not depend on the module path from outside piskie.
 
 All IP/network types are the concrete :mod:`ipaddress` classes (or thin
 factories over them), so ``.exploded``, ``.network_address``, ``.netmask`` and

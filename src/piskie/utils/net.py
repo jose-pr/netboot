@@ -1,8 +1,8 @@
-"""Network helpers for pixy.
+"""Network helpers for piskie.
 
-The IP/MAC address machinery lives in the vendored :mod:`pixy._netutils` module;
-re-export the names pixy uses so the rest of the package can import them from a
-single place (``pixy.utils``).
+The IP/MAC address machinery lives in the vendored :mod:`piskie._netutils` module;
+re-export the names piskie uses so the rest of the package can import them from a
+single place (``piskie.utils``).
 """
 
 from .._netutils import (  # noqa: F401

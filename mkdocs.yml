@@ -1,8 +1,8 @@
-site_name: pixy
+site_name: piskie
 site_description: PXE provisioning management — render netboot artifacts and drive DHCP for targets
 site_author: jose-pr
-repo_url: https://github.com/jose-pr/pixy/
-repo_name: jose-pr/pixy
+repo_url: https://github.com/jose-pr/piskie/
+repo_name: jose-pr/piskie
 
 theme:
   name: material

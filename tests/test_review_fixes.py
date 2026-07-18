@@ -4,12 +4,12 @@ import inspect
 
 import pytest
 
-import pixy
-from pixy.content import Repository
-from pixy.templates.shell import ShellTemplate
+import piskie
+from piskie.content import Repository
+from piskie.templates.shell import ShellTemplate
 
 
-def _pixy_two_targets_one_image(templates_dir):
+def _piskie_two_targets_one_image(templates_dir):
     config = {
         "templates": [templates_dir],
         "images": {"debian": {"template_path": [], "globals": {"kernel": "vmlinuz"}}},
@@ -19,14 +19,14 @@ def _pixy_two_targets_one_image(templates_dir):
             "host2": {"hostname": "host2", "ip": "10.0.0.6", "image": "debian"},
         },
     }
-    return pixy.Pixy(**config)
+    return piskie.Piskie(**config)
 
 
 def test_image_globals_survive_second_target(tmp_path):
     # Finding #1: make_context must not delattr globals off the shared image.
     d = tmp_path / "templates"
     d.mkdir()
-    p = _pixy_two_targets_one_image(d)
+    p = _piskie_two_targets_one_image(d)
     ctx1 = p.make_context(p.lookup_target("host1"))
     ctx2 = p.make_context(p.lookup_target("host2"))
     assert getattr(ctx1, "kernel", None) == "vmlinuz"
@@ -43,7 +43,7 @@ def test_template_names_accepts_options(tmp_path):
         "dhcpzones": {"lan": {"network": "10.0.0.0/24"}},
         "targets": {"h": {"hostname": "h", "ip": "10.0.0.9", "image": "deb"}},
     }
-    p = pixy.Pixy(**config)
+    p = piskie.Piskie(**config)
     ctx = p.make_context(p.lookup_target("h"))
     names = ctx._template_names("boot.j2", foo="bar")
     assert "boot.j2" in names
@@ -54,10 +54,10 @@ def test_template_names_skips_empty_ip():
     # Finding #6: an unset ip must not emit a name; MAC/hostname still do.
     # Drive _template_names directly with a minimal fake context to avoid the
     # zone-by-network lookup (which needs a resolvable IP).
-    from pixy import PixyContext, PixyTarget
+    from piskie import PiskieContext, PiskieTarget
 
-    ctx = PixyContext.__new__(PixyContext)
-    ctx.target = PixyTarget(_id="aa:bb:cc:dd:ee:ff")
+    ctx = PiskieContext.__new__(PiskieContext)
+    ctx.target = PiskieTarget(_id="aa:bb:cc:dd:ee:ff")
     names = ctx._template_names("boot.j2")
     assert not any(n.startswith("0.0.0.0") for n in names)
     assert "aa-bb-cc-dd-ee-ff.boot.j2" in names
@@ -73,19 +73,19 @@ def test_shell_template_renders_none_as_empty():
     assert t.render() == "D= B=true"
 
 
-def test_wants_pixy_signature_detection():
-    # Finding #3: only a 3-arg run(pixy, args, conf) gets the pixy-first call.
-    from pixy.main import _wants_pixy
+def test_wants_piskie_signature_detection():
+    # Finding #3: only a 3-arg run(piskie, args, conf) gets the piskie-first call.
+    from piskie.main import _wants_piskie
 
-    def pixy_run(pixy, args, conf):
+    def piskie_run(piskie, args, conf):
         ...
 
     def duho_run(args):
         ...
 
-    assert _wants_pixy(pixy_run) is True
-    assert _wants_pixy(duho_run) is False
-    assert _wants_pixy(None) is False
+    assert _wants_piskie(piskie_run) is True
+    assert _wants_piskie(duho_run) is False
+    assert _wants_piskie(None) is False
 
 
 def test_repository_joinpath_chains_without_local():
@@ -100,7 +100,7 @@ class _Boom:
         raise ValueError("boom")
 
 
-class _BoomPixy(pixy.Pixy):
+class _BoomPiskie(piskie.Piskie):
     things: "dict[str, _Boom]"
 
 
@@ -108,4 +108,4 @@ def test_valctr_typeerror_only_not_bare_except():
     # Finding #4: a non-TypeError in a config value ctor must propagate, rather
     # than being swallowed by a bare except and retried without _id.
     with pytest.raises(ValueError):
-        _BoomPixy(things={"x": {}})
+        _BoomPiskie(things={"x": {}})

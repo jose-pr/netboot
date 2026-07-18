@@ -1,15 +1,15 @@
 # CLI
 
-pixy's command line is built on [`duho`](https://github.com/jose-pr/duho): it
+piskie's command line is built on [`duho`](https://github.com/jose-pr/duho): it
 discovers commands, layers YAML config, then runs the selected command against a
-single `Pixy` engine built from that config.
+single `Piskie` engine built from that config.
 
 ```sh
 # Initiate the PXE process for a target (render artifacts + arm DHCP):
-pixy initiate my-host
+piskie initiate my-host
 
 # Complete it (post-boot cleanup, disarm DHCP):
-pixy complete my-host
+piskie complete my-host
 ```
 
 A target argument is resolved by exact id, or by hostname prefix / MAC / IP.
@@ -20,7 +20,7 @@ A target argument is resolved by exact id, or by hostname prefix / MAC / IP.
 | ------ | ------- |
 | `-c, --config PATH` | Explicit config file (yaml/cfg); overrides discovery |
 | `--baseconfig DIR`  | Base config directory to search (default `./config`) |
-| `-l, --load-module M` | Import module(s) before building pixy (config/hook deps) |
+| `-l, --load-module M` | Import module(s) before building piskie (config/hook deps) |
 | `--cmdspath PATH` | Extra directories/packages to search for commands |
 | `-v` / `-q` | Increase / decrease log verbosity (from duho's `LoggingArgs`) |
 
@@ -38,14 +38,14 @@ Run post-boot cleanup for the target and disarm its DHCP backends.
 
 ## Adding your own commands
 
-Point `--cmdspath` (or the `PIXY_PATH` environment variable) at a package or
-directory of command modules. A pixy command module exposes:
+Point `--cmdspath` (or the `PISKIE_PATH` environment variable) at a package or
+directory of command modules. A piskie command module exposes:
 
 ```python
 def register(parser, args):      # optional: add argparse arguments
     ...
 
-def run(pixy, args, conf):       # required: the command body
+def run(piskie, args, conf):       # required: the command body
     ...
 ```
 

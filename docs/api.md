@@ -5,24 +5,24 @@ The engine and its context objects. Rendered from source via
 
 ## Engine
 
-::: pixy.Pixy
+::: piskie.Piskie
 
 ## Context
 
-::: pixy.PixyContext
+::: piskie.PiskieContext
 
 ## Targets and images
 
-::: pixy.PixyTarget
+::: piskie.PiskieTarget
 
-::: pixy.PixyImage
+::: piskie.PiskieImage
 
 ## Events
 
-::: pixy.PixyEvent
+::: piskie.PiskieEvent
 
 ## DHCP
 
-::: pixy.dhcp.DhcpZone
+::: piskie.dhcp.DhcpZone
 
-::: pixy.dhcp.DhcpServer
+::: piskie.dhcp.DhcpServer

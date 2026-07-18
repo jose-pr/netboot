@@ -2,30 +2,30 @@
 
 ## Event hooks
 
-Pass `hooks=[...]` to `Pixy(...)` — each entry is a callable or a
+Pass `hooks=[...]` to `Piskie(...)` — each entry is a callable or a
 `"module.function"` import string. A hook
 
 ```python
-def my_hook(event, pixy, value, kwargs):
+def my_hook(event, piskie, value, kwargs):
     ...
     return value
 ```
 
-is invoked for every `PixyEvent` and may transform the value flowing through it.
-Events fire around object creation (`NewPixyObject`, `SetPixyProperty`,
-`PixyInitiated`), lookup (`LookupTarget`, `FoundTarget`, `FoundTargetImage`,
-`FoundTargetDhcpzone`), context construction (`PixyContextForTarget`), and the
-init/complete lifecycle (`StartPixyInitialize` … `EndPixyComplete`). This is the
+is invoked for every `PiskieEvent` and may transform the value flowing through it.
+Events fire around object creation (`NewPiskieObject`, `SetPiskieProperty`,
+`PiskieInitiated`), lookup (`LookupTarget`, `FoundTarget`, `FoundTargetImage`,
+`FoundTargetDhcpzone`), context construction (`PiskieContextForTarget`), and the
+init/complete lifecycle (`StartPiskieInitialize` … `EndPiskieComplete`). This is the
 seam for customising how targets/images/zones are resolved and how the render
 context is assembled.
 
 ## Custom DHCP backends
 
-`pixy.dhcp.DhcpServer` dispatches on the URI scheme of a zone's `dhcpservers`
+`piskie.dhcp.DhcpServer` dispatches on the URI scheme of a zone's `dhcpservers`
 entry: a subclass whose lowercased class name equals the scheme handles it.
 
 ```python
-from pixy.dhcp import DhcpServer
+from piskie.dhcp import DhcpServer
 
 class dnsmasq(DhcpServer):        # handles dnsmasq://...
     def add_target(self, ctx):

@@ -8,7 +8,7 @@ try:
     from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
     try:
-        __version__ = _pkg_version("pixy")
+        __version__ = _pkg_version("piskie")
     except PackageNotFoundError:  # running from a source tree without install
         __version__ = "0.0.0"
 except ImportError:  # pragma: no cover - importlib.metadata is stdlib on 3.9+
@@ -38,7 +38,7 @@ from .utils import IPAddress, MACAddress, T
 from .utils.misc import import_
 
 
-class PixyTarget(Namespace, OpaqueMerge):
+class PiskieTarget(Namespace, OpaqueMerge):
     _id: str
     hostname: str
     ip: IPAddress
@@ -92,7 +92,7 @@ class PixyTarget(Namespace, OpaqueMerge):
         self.hostname = self.hostname.lower()
 
 
-class PixyImage(Resource):
+class PiskieImage(Resource):
     template_path: list["Path"]
     globals: dict
 
@@ -100,9 +100,9 @@ class PixyImage(Resource):
         return name == check
 
 
-class PixyContext(Namespace):
-    target: PixyTarget
-    image: PixyImage
+class PiskieContext(Namespace):
+    target: PiskieTarget
+    image: PiskieImage
     dhcpzone: DhcpZone
     repos: dict[str, Repository]
     generated: datetime.datetime
@@ -116,7 +116,7 @@ class PixyContext(Namespace):
         self.generated = datetime.datetime.now()
         super().__init__(**kwargs)
 
-    def init(self, pixy: "Pixy"): ...
+    def init(self, piskie: "Piskie"): ...
 
     def resource(self, name: Union[str, Resource], service: str = None):
         if isinstance(name, Resource):
@@ -137,12 +137,12 @@ class PixyContext(Namespace):
             return
         return self.repos.get(resource.src)
 
-    def pxe_init(self, config: "Pixy"):
+    def pxe_init(self, config: "Piskie"):
         for dhcpserver in self.dhcpzone.dhcpservers:
             dhcpserver.add_target(self)
         return self
 
-    def pxe_complete(self, config: "Pixy"):
+    def pxe_complete(self, config: "Piskie"):
         for dhcpserver in self.dhcpzone.dhcpservers:
             dhcpserver.remove_target(self)
         return self
@@ -173,7 +173,7 @@ class PixyContext(Namespace):
         return [*self.target.template_path, *self.image.template_path]
 
     def render(self, filename: str, strict=True):
-        # Each PixyContext owns its own Renderer (built in make_context), so
+        # Each PiskieContext owns its own Renderer (built in make_context), so
         # setting globals["ctx"] here is per-context; do not share one Renderer
         # across contexts or nested renders would clobber this.
         self._renderer.globals["ctx"] = self
@@ -190,77 +190,77 @@ class PixyContext(Namespace):
                 return None
 
 
-class PixyEvent(StrEnum):
-    NewPixyObject = "PixyEvent.NewPixyObject"
-    StartPixyInit = "PixyEvent.StartPixyInit"
-    SetPixyProperty = "PixyEvent.SetPixyProperty"
-    PixyInitiated = "PixyEvent.PixyInitiated"
-    LookupTarget = "PixyEvent.LookupTarget"
-    FoundTarget = "PixyEvent.FoundTarget"
-    FoundTargetImage = "PixyEvent.FoundTargetImage"
-    FoundTargetDhcpzone = "PixyEvent.FoundTargetDhcpzone"
-    PixyContextForTarget = "PixyEvent.PixyContextForTarget"
-    StartPixyInitialize = "PixyEvent.StartPixyInitialize"
-    EndPixyInitialize = "PixyEvent.EndPixyInitialize"
-    StartPixyComplete = "PixyEvent.StartPixyComplete"
-    EndPixyComplete = "PixyEvent.EndPixyComplete"
+class PiskieEvent(StrEnum):
+    NewPiskieObject = "PiskieEvent.NewPiskieObject"
+    StartPiskieInit = "PiskieEvent.StartPiskieInit"
+    SetPiskieProperty = "PiskieEvent.SetPiskieProperty"
+    PiskieInitiated = "PiskieEvent.PiskieInitiated"
+    LookupTarget = "PiskieEvent.LookupTarget"
+    FoundTarget = "PiskieEvent.FoundTarget"
+    FoundTargetImage = "PiskieEvent.FoundTargetImage"
+    FoundTargetDhcpzone = "PiskieEvent.FoundTargetDhcpzone"
+    PiskieContextForTarget = "PiskieEvent.PiskieContextForTarget"
+    StartPiskieInitialize = "PiskieEvent.StartPiskieInitialize"
+    EndPiskieInitialize = "PiskieEvent.EndPiskieInitialize"
+    StartPiskieComplete = "PiskieEvent.StartPiskieComplete"
+    EndPiskieComplete = "PiskieEvent.EndPiskieComplete"
 
 
-_PixyHook = _ty.Callable[["PixyEvent", "Pixy", T, dict], T]
+_PiskieHook = _ty.Callable[["PiskieEvent", "Piskie", T, dict], T]
 
 
-class Pixy:
-    targets: "dict[str,PixyTarget]"
+class Piskie:
+    targets: "dict[str,PiskieTarget]"
     dhcpzones: "dict[str,DhcpZone]"
-    images: "dict[str, PixyImage]"
+    images: "dict[str, PiskieImage]"
     repos: "dict[str,Repository]"
     globals: dict[str, object]
-    _ctxcls: PixyContext = PixyContext
+    _ctxcls: PiskieContext = PiskieContext
     VERSION = __version__
     _config: dict
-    _hooks: list[_PixyHook] = []
+    _hooks: list[_PiskieHook] = []
 
     def hook(
-        self: "Pixy|_ty.Sequence[_PixyHook]",
-        event: PixyEvent,
+        self: "Piskie|_ty.Sequence[_PiskieHook]",
+        event: PiskieEvent,
         __value: T = None,
         /,
         **kwargs,
     ):
         LOGGER.debug(f"Running Hooks for: {event}")
-        if isinstance(self, Pixy):
-            pixy = self
+        if isinstance(self, Piskie):
+            piskie = self
             hooks = self._hooks
         else:
-            pixy = None
+            piskie = None
             hooks = self
         for hook in hooks:
-            __value = hook(event, pixy, __value, kwargs)
+            __value = hook(event, piskie, __value, kwargs)
         return __value
 
     def __new__(
         cls,
         /,
-        hooks: _ty.Sequence[_PixyHook] = [],
+        hooks: _ty.Sequence[_PiskieHook] = [],
         **config,
     ):
 
         hooks = [(hook if callable(hook) else import_(hook)) for hook in hooks]
-        cls = Pixy.hook(hooks, PixyEvent.NewPixyObject, cls, config=config)
+        cls = Piskie.hook(hooks, PiskieEvent.NewPiskieObject, cls, config=config)
         inst = object.__new__(cls)
         inst._hooks = hooks
         return inst
 
     def __init__(
-        pixy,
+        piskie,
         /,
         **config,
     ):
-        pixy._config = pixy.hook(PixyEvent.StartPixyInit, config)
-        pixy.globals = deepcopy(config.get("globals") or {})
+        piskie._config = piskie.hook(PiskieEvent.StartPiskieInit, config)
+        piskie.globals = deepcopy(config.get("globals") or {})
         defaults = config.get("defaults") or {}
 
-        for prop, hint in get_type_hints(pixy.__class__).items():
+        for prop, hint in get_type_hints(piskie.__class__).items():
             if prop.startswith("_"):
                 continue
             origin = _ty.get_origin(hint) or hint
@@ -291,15 +291,15 @@ class Pixy:
                         _value[_keycls(uid)] = _valctr(uid, val)
             else:
                 _value = hint(value) if value is not None else None
-            prop, value = pixy.hook(
-                PixyEvent.SetPixyProperty, (prop, _value), origin=origin, rawvalue=value
+            prop, value = piskie.hook(
+                PiskieEvent.SetPiskieProperty, (prop, _value), origin=origin, rawvalue=value
             )
-            setattr(pixy, prop, value)
+            setattr(piskie, prop, value)
 
-        pixy.hook(PixyEvent.PixyInitiated)
+        piskie.hook(PiskieEvent.PiskieInitiated)
 
-    def lookup_target(self, target: str) -> PixyTarget:
-        target: Union[str, PixyTarget] = self.hook(PixyEvent.LookupTarget, target)
+    def lookup_target(self, target: str) -> PiskieTarget:
+        target: Union[str, PiskieTarget] = self.hook(PiskieEvent.LookupTarget, target)
         if isinstance(target, str):
             lower: str = target.lower()
             _target = self.targets.get(target, None)
@@ -316,21 +316,21 @@ class Pixy:
             else:
                 target = _target
 
-        target = self.hook(PixyEvent.FoundTarget, target)
-        if not isinstance(target, PixyTarget):
+        target = self.hook(PiskieEvent.FoundTarget, target)
+        if not isinstance(target, PiskieTarget):
             target = None
         return target
 
-    def lookup_image(self, name: str, target: PixyTarget = None) -> PixyImage:
-        imgs: list[tuple[int, PixyImage]] = [(-1, {})]
+    def lookup_image(self, name: str, target: PiskieTarget = None) -> PiskieImage:
+        imgs: list[tuple[int, PiskieImage]] = [(-1, {})]
         for img_name, image in self.images.items():
             check = image.match(img_name, name)
             if check != False:
                 imgs.append((check, image))
         imgs.sort(key=lambda x: x[0])
-        return self.hook(PixyEvent.FoundTargetImage, imgs.pop()[1], target=target)
+        return self.hook(PiskieEvent.FoundTargetImage, imgs.pop()[1], target=target)
 
-    def lookup_dhcpzone(self, name: str, target: PixyTarget = None) -> DhcpZone:
+    def lookup_dhcpzone(self, name: str, target: PiskieTarget = None) -> DhcpZone:
         if not name and target:
             if target.dhcpzone:
                 name = target.dhcpzone
@@ -341,11 +341,11 @@ class Pixy:
                         target.dhcpzone = zone_id
                         break
         zone = self.dhcpzones.get(name, None)
-        return self.hook(PixyEvent.FoundTargetDhcpzone, zone, target=target)
+        return self.hook(PiskieEvent.FoundTargetDhcpzone, zone, target=target)
 
     def make_context(
-        self, target: "PixyTarget", globals: list[dict] = None
-    ) -> PixyContext:
+        self, target: "PiskieTarget", globals: list[dict] = None
+    ) -> PiskieContext:
         image = self.lookup_image(target.image, target)
         if not image:
             raise Exception(f"Image not found for target: {target.image}")
@@ -376,19 +376,19 @@ class Pixy:
 
         ctx = mergeObjects(self._ctxcls, ctx, *_globals)
 
-        ctx: PixyContext
+        ctx: PiskieContext
         ctx._renderer = Renderer(loader=Loader(self._config.get("templates", [])))
-        ctx.version = f"pixy-v{self.VERSION}"
-        return self.hook(PixyEvent.PixyContextForTarget, ctx, target=target)
+        ctx.version = f"piskie-v{self.VERSION}"
+        return self.hook(PiskieEvent.PiskieContextForTarget, ctx, target=target)
 
-    def initialize(self, target: "PixyTarget"):
-        target = self.hook(PixyEvent.StartPixyInitialize, target)
+    def initialize(self, target: "PiskieTarget"):
+        target = self.hook(PiskieEvent.StartPiskieInitialize, target)
         ctx = self.make_context(target)
         ctx = ctx.pxe_init(self)
-        return self.hook(PixyEvent.EndPixyInitialize, ctx)
+        return self.hook(PiskieEvent.EndPiskieInitialize, ctx)
 
-    def complete(self, target: "PixyTarget"):
-        target = self.hook(PixyEvent.StartPixyComplete, target)
+    def complete(self, target: "PiskieTarget"):
+        target = self.hook(PiskieEvent.StartPiskieComplete, target)
         ctx = self.make_context(target)
         ctx = ctx.pxe_complete(self)
-        return self.hook(PixyEvent.EndPixyComplete, ctx)
+        return self.hook(PiskieEvent.EndPiskieComplete, ctx)

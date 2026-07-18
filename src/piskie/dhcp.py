@@ -7,7 +7,7 @@ from yaconfiglib import OpaqueMerge
 from .utils.net import IPAddress, IPInterface, IPNetwork
 
 if _ty.TYPE_CHECKING:
-    from . import PixyContext
+    from . import PiskieContext
 
 from urllib.parse import urlparse
 
@@ -50,10 +50,10 @@ class DhcpServer:
     def __init__(self, uri: str):
         self.uri = uri
 
-    def remove_target(self, pixy: "PixyContext"):
+    def remove_target(self, piskie: "PiskieContext"):
         pass
 
-    def add_target(self, pixy: "PixyContext"):
+    def add_target(self, piskie: "PiskieContext"):
         pass
 
 
