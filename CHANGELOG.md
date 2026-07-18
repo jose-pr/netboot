@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Two-workflow CI (`test`, `Release`) and a MkDocs documentation site
+  (`docs/` + `mkdocs.yml`, API reference via mkdocstrings), plus a
+  `benchmarks/bench_pixy.py` micro-benchmark for the lookup/template hot paths.
+
+### Fixed
+- `Pixy.VERSION` and the CLI `--version` now derive from the installed package
+  metadata (was a stale hard-coded `"0.9"` that surfaced as `pixy-v0.9` in the
+  render context while the package was `0.1.0`).
+
 ## [0.1.0] - 2026-07-18
 
 First packaged release.
