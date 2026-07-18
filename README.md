@@ -25,12 +25,13 @@ Optional extras:
 | Extra | Enables |
 | ----- | ------- |
 | `pixy[config]` | YAML config loading for the CLI (`pyyaml`) |
+| `pixy[dns]` | DNS resolution of hostname targets (`dnspython`) |
 | `pixy[docs]`   | Build the documentation site (`mkdocs`) |
 
 Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),
 [`pathlib_next`](https://github.com/jose-pr/pathlib_next) (URI-aware paths),
-[`netutils`](https://github.com/jose-pr/netutils) (IP/MAC helpers),
-`yaconfiglib` (layered YAML), and Jinja2.
+[`yaconfiglib`](https://github.com/jose-pr/yaconfiglib) (layered YAML), and
+Jinja2. IP/MAC/DNS helpers are vendored in-tree (`pixy._netutils`).
 
 ## CLI
 

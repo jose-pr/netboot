@@ -11,6 +11,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`docs/` + `mkdocs.yml`, API reference via mkdocstrings), plus a
   `benchmarks/bench_pixy.py` micro-benchmark for the lookup/template hot paths.
 
+### Changed
+- Vendored the IP/MAC/DNS helpers in-tree as `pixy._netutils` and dropped the
+  external `netutils` dependency: the distribution name `netutils` is taken on
+  PyPI by an unrelated library, so the dependency could not resolve. DNS lookup
+  of hostname targets needs the new optional `pixy[dns]` extra (`dnspython`).
+
 ### Fixed
 - `Pixy.VERSION` and the CLI `--version` now derive from the installed package
   metadata (was a stale hard-coded `"0.9"` that surfaced as `pixy-v0.9` in the

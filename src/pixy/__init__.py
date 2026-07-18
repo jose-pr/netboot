@@ -25,7 +25,7 @@ except ImportError:
 from argparse import Namespace
 from typing import Mapping, get_type_hints, Union
 
-import netutils
+from . import _netutils as netutils
 from pathlib_next.uri.schemes import *  # noqa: F401,F403
 from yaconfiglib import OpaqueMerge
 from yaconfiglib import typed_merge as mergeObjects

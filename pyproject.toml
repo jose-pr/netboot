@@ -29,7 +29,6 @@ classifiers = [
 ]
 dependencies = [
     "duho>=0.3.0",
-    "netutils",
     "pathlib_next[uri]>=0.8.2",
     "jinja2",
     "yaconfiglib>=0.10.0",
@@ -38,7 +37,9 @@ dependencies = [
 [project.optional-dependencies]
 # Config-file loading for the CLI (YAML with !include).
 config = ["pyyaml"]
-dev = ["build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml"]
+# DNS resolution of hostname targets (pixy._netutils.nslookup).
+dns = ["dnspython"]
+dev = ["build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml", "dnspython"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]

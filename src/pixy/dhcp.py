@@ -1,7 +1,7 @@
 import typing as _ty
 from argparse import Namespace
 
-import netutils
+from . import _netutils as netutils
 from yaconfiglib import OpaqueMerge
 
 from .utils.net import IPAddress, IPInterface, IPNetwork
