@@ -1,0 +1,44 @@
+site_name: pixy
+site_description: PXE provisioning management — render netboot artifacts and drive DHCP for targets
+site_author: jose-pr
+repo_url: https://github.com/jose-pr/pixy/
+repo_name: jose-pr/pixy
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+
+nav:
+  - Home: index.md
+  - CLI: cli.md
+  - Configuration: configuration.md
+  - Extending: extending.md
+  - API Reference: api.md
