@@ -37,6 +37,15 @@ First packaged release.
 - `DhcpServer(uri)` raises a clear error for an unknown scheme instead of
   silently returning an inert base, and zone `dhcpservers` URIs are constructed
   into backends.
+- `make_context` no longer deletes `globals` off shared image/dhcpzone/target
+  objects, so a second target reusing an image keeps that image's globals.
+- `_template_names` accepts the loader's template `**options`; template names
+  stringify the target IP and skip an unspecified address.
+- Command dispatch introspects each module's `run` signature, so a user command
+  using duho's plain `run(args)` is dispatched via `duho.run_command`.
+- Shell templates render `None` as empty instead of the literal `"None"`;
+  config value construction no longer swallows non-`TypeError` errors; repo
+  `joinpath` keeps `.local` a path so chained joins work.
 
 [Unreleased]: https://github.com/jose-pr/pixy/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/jose-pr/pixy/releases/tag/v0.1.0
