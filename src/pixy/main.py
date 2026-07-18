@@ -23,7 +23,7 @@ from duho import Arg, Cli, Extend, LoggingArgs, app, parse_globals
 from duho.discovery import ModuleCommand, discover_commands
 from pathlib_next import LocalPath, Path, UriPath
 
-from . import Pixy
+from . import Pixy, __version__
 
 #: Package import path to the built-in command modules.
 _BUILTIN_COMMANDS = "pixy.cmds"
@@ -65,7 +65,7 @@ class PixyArgs(LoggingArgs):
 class Pixy_(PixyArgs, Cli):
     """Pixy: PXE provisioning management."""
 
-    _version_ = "0.1.0"
+    _version_ = __version__
 
 
 def _discover(argv: "_ty.Sequence[str] | None") -> "list":

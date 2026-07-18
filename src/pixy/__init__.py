@@ -4,6 +4,16 @@ import typing as _ty
 from copy import deepcopy
 from pathlib import Path
 
+try:
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+    try:
+        __version__ = _pkg_version("pixy")
+    except PackageNotFoundError:  # running from a source tree without install
+        __version__ = "0.0.0"
+except ImportError:  # pragma: no cover - importlib.metadata is stdlib on 3.9+
+    __version__ = "0.0.0"
+
 # Compat: StrEnum introduced in Python 3.11; emulate for older Pythons
 try:
     from enum import StrEnum
@@ -206,7 +216,7 @@ class Pixy:
     repos: "dict[str,Repository]"
     globals: dict[str, object]
     _ctxcls: PixyContext = PixyContext
-    VERSION = "0.9"
+    VERSION = __version__
     _config: dict
     _hooks: list[_PixyHook] = []
 
