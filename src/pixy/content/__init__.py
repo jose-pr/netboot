@@ -54,7 +54,8 @@ class Repository(_NS):
         if self.local:
             repo.local = self.local / subpath if subpath else self.local
         else:
-            repo.local = subpath or None
+            # Keep .local a Pathname (not a raw str) so chained joinpath works.
+            repo.local = RepoPath(subpath) if subpath else None
         return repo
 
     def get(self, *path: Union[RepoPath, str], service: str = None) -> UriPath:

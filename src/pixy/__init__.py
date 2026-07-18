@@ -142,13 +142,18 @@ class PixyContext(Namespace):
             dhcpserver.remove_target(self)
         return self
 
-    def _template_names(self, suffix: Union[list[str], str], *kwargs) -> list[str]:
+    def _template_names(self, suffix: Union[list[str], str], **options) -> list[str]:
+        # ``options`` (a ``k=v:name`` template spec) is accepted for forward
+        # compatibility; name selection does not use it today.
         suffixes = suffix if isinstance(suffix, list) else [suffix]
+        ip = self.target.ip
+        # Skip an unset/unspecified IP so it never yields a spurious name.
+        ip_name = str(ip) if ip and str(ip) not in ("0.0.0.0", "::") else ""
         names = []
         for version in [
             self.target.mac.as_str("-"),
             self.target.hostname,
-            self.target.ip,
+            ip_name,
         ]:
             if version:
                 for suffix in suffixes:
@@ -163,6 +168,9 @@ class PixyContext(Namespace):
         return [*self.target.template_path, *self.image.template_path]
 
     def render(self, filename: str, strict=True):
+        # Each PixyContext owns its own Renderer (built in make_context), so
+        # setting globals["ctx"] here is per-context; do not share one Renderer
+        # across contexts or nested renders would clobber this.
         self._renderer.globals["ctx"] = self
         try:
             template = self._renderer.get_template(filename)
@@ -269,7 +277,8 @@ class Pixy:
                             val = _val
                         try:
                             return _valcls(_id=_id, **val)
-                        except:
+                        except TypeError:
+                            # _valcls doesn't accept an _id kwarg; build without.
                             return _valcls(**val)
 
                 for uid, val in value.items():
@@ -351,14 +360,14 @@ class Pixy:
             "repos": self.repos,
             "resources": {},
         }
+        # Collect object-level globals to layer into the context WITHOUT mutating
+        # the shared image/dhcpzone/target objects (they are reused across
+        # targets, so deleting their `globals` would drop them for later calls).
         _globals = [self.globals, *(globals or [])]
         for k in ["image", "dhcpzone", "target"]:
-            o = ctx[k]
-            g = getattr(o, "globals", {})
+            g = getattr(ctx[k], "globals", None)
             if g:
                 _globals.append(g)
-            if hasattr(o, "globals"):
-                delattr(o, "globals")
 
         ctx = mergeObjects(self._ctxcls, ctx, *_globals)
 

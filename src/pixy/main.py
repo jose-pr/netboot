@@ -113,8 +113,10 @@ def _load_config(args: "Pixy_") -> dict:
 
     if args.config:
         path = parse_path(args.config)
+        # Load the file by name with its own directory as the include base_dir.
+        # (Using .name avoids relative_to raising for absolute/URI paths.)
         baseconfig: Path = path.parent
-        configs = [path.relative_to(baseconfig)]
+        configs = [path.name]
     else:
         baseconfig = parse_path(args.baseconfig) if args.baseconfig else (cwd / "config")
         configs = ["pixy.yaml"]
@@ -136,6 +138,33 @@ def _load_config(args: "Pixy_") -> dict:
     return conf
 
 
+def _wants_pixy(run: "_ty.Callable | None") -> bool:
+    """Does this command's ``run`` follow pixy's ``run(pixy, args, conf)`` shape?
+
+    True when ``run`` accepts at least three positional parameters (or has
+    ``*args``); a plain duho ``run(args)`` returns False and is dispatched
+    through duho's own ``run_command`` instead.
+    """
+    if run is None:
+        return False
+    import inspect as _inspect
+
+    try:
+        params = _inspect.signature(run).parameters.values()
+    except (TypeError, ValueError):  # builtins / C funcs without a signature
+        return True
+    positional = 0
+    for p in params:
+        if p.kind is _inspect.Parameter.VAR_POSITIONAL:
+            return True
+        if p.kind in (
+            _inspect.Parameter.POSITIONAL_ONLY,
+            _inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            positional += 1
+    return positional >= 3
+
+
 def _dispatch(command: object, instance: "Pixy_") -> int:
     """duho ``app`` dispatch seam: build ``Pixy`` from config and run the command.
 
@@ -144,10 +173,17 @@ def _dispatch(command: object, instance: "Pixy_") -> int:
     the selected module's ``run``. A non-module command (none today) falls back
     to duho's own single dispatch.
     """
-    if not isinstance(command, ModuleCommand):
-        from duho import run_command
+    from duho import run_command
 
+    if not isinstance(command, ModuleCommand):
         return run_command(_ty.cast(_ty.Any, command), instance)
+
+    # A user command discovered via --cmdspath/PIXY_PATH may follow duho's plain
+    # 1-arg run(args) contract rather than pixy's run(pixy, args, conf); only the
+    # pixy-first contract needs a built Pixy, so introspect before building one.
+    run = getattr(command.module, "run", None)
+    if not _wants_pixy(run):
+        return run_command(command, instance)
 
     for name in instance.load_module or []:
         if name:
@@ -157,7 +193,7 @@ def _dispatch(command: object, instance: "Pixy_") -> int:
     orig = _deepcopy(conf)
     pixy = Pixy(**conf)
 
-    result = command.module.run(pixy, instance, orig)
+    result = run(pixy, instance, orig)
     return 0 if result is None else int(result)
 
 

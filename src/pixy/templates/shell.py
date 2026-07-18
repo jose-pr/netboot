@@ -18,7 +18,9 @@ class ShellTemplate(Template):
         _args = flatten(context)
         _upper = {}
         for k, v in _args.items():
-            if isinstance(v, bool):
+            if v is None:
+                v = ""
+            elif isinstance(v, bool):
                 v = str(v).lower()
             else:
                 v = str(v)
