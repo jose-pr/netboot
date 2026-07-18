@@ -9,7 +9,7 @@ Measures the two operations pixy runs most often per PXE request:
 Run:
 
     python benchmarks/bench_pixy.py --iterations 20000
-    python benchmarks/bench_pixy.py --save        # writes .agents/bench/pixy.json
+    python benchmarks/bench_pixy.py --json-output results/pixy.json
 
 Each metric reports min/median/max ms-per-call over the sample; compare on the
 median (a single average hides run-to-run noise). Local timings are a sanity
@@ -91,11 +91,10 @@ def main() -> None:
     parser.add_argument("--iterations", type=int, default=20000)
     parser.add_argument("--targets", type=int, default=500)
     parser.add_argument(
-        "--save",
-        action="store_true",
-        help="Write the report to .agents/bench/pixy.json",
+        "--json-output",
+        type=pathlib.Path,
+        help="Optional path to write the structured JSON report",
     )
-    parser.add_argument("--json-output", type=pathlib.Path)
     args = parser.parse_args()
 
     results = run_benchmarks(args.iterations, args.targets)
@@ -107,13 +106,10 @@ def main() -> None:
             f"(min={m['min_ms']:.6f} max={m['max_ms']:.6f})"
         )
 
-    out = args.json_output
-    if args.save and out is None:
-        out = REPO_ROOT / ".agents" / "bench" / "pixy.json"
-    if out is not None:
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        print(f"\nwrote {out}")
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print(f"\nwrote {args.json_output}")
 
 
 if __name__ == "__main__":
