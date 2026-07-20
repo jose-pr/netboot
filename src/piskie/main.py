@@ -127,7 +127,9 @@ def _load_config(args: "Piskie_") -> dict:
         recursive=True,
         merge=ConfigLoaderMergeMethod.Deep,
     )
-    yaml.add_constructor("!include", loader, yaml.SafeLoader)
+    # yaconfiglib auto-registers !include/!load on the active loader class during
+    # load(); a manual yaml.add_constructor is redundant (and yaconfiglib >=0.11
+    # warns that it overrides the built-in handler).
     conf: dict = loader.load(*configs)
 
     templates: "list" = conf.setdefault("templates", [])
