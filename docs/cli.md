@@ -1,24 +1,19 @@
 # CLI
 
-netboot's command line is built on [`duho`](https://github.com/jose-pr/duho): it
+The `pixie` command line (the CLI of the `netboot` library; PXE is
+pronounced "pixie") is built on [`duho`](https://github.com/jose-pr/duho): it
 discovers commands, layers YAML config, then runs the selected command against a
 single `Pixie` engine built from that config.
 
 ```sh
 # Initiate the PXE process for a target (render artifacts + arm DHCP):
-netboot initiate my-host
+pixie initiate my-host
 
 # Complete it (post-boot cleanup, disarm DHCP):
-netboot complete my-host
+pixie complete my-host
 ```
 
 A target argument is resolved by exact id, or by hostname prefix / MAC / IP.
-
-The CLI installs under two names: `netboot` and `pixie` (PXE is pronounced
-"pixie") — identical commands, use whichever you prefer.
-
-The CLI installs under two names: `netboot` and `pixie` (PXE is pronounced
-"pixie") — identical commands, use whichever you prefer.
 
 ## Global options
 
@@ -44,7 +39,7 @@ Run post-boot cleanup for the target and disarm its DHCP backends.
 
 ## Adding your own commands
 
-Point `--cmdspath` (or the `NETBOOT_PATH` environment variable) at a package or
+Point `--cmdspath` (or the `PIXIE_PATH` environment variable) at a package or
 directory of command modules. A netboot command module exposes:
 
 ```python

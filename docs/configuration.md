@@ -1,7 +1,7 @@
 # Configuration
 
 netboot loads a YAML config (via [`yaconfiglib`](https://github.com/jose-pr/yaconfiglib),
-so `!include` and deep-merge are available). By default it reads `netboot.yaml` from
+so `!include` and deep-merge are available). By default it reads `pixie.yaml` from
 `./config`; override with `--config FILE` or `--baseconfig DIR`.
 
 The top-level keys map to the `Pixie` engine's collections:

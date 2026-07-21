@@ -43,7 +43,6 @@ dev = ["build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml", "dnspyth
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]
-netboot = "netboot.main:main"
 pixie = "netboot.main:main"
 
 [project.urls]

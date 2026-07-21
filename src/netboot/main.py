@@ -1,4 +1,4 @@
-"""The ``netboot`` command-line application.
+"""The ``pixie`` command-line application.
 
 A thin driver over :func:`duho.app`. ``app`` owns command discovery, parser
 build, per-command ``register``, config/env layering, parsing and logging setup.
@@ -39,7 +39,7 @@ def parse_path(path: "str | Path") -> Path:
 
 
 class PixieArgs(LoggingArgs):
-    """Global options shared by every ``netboot`` command.
+    """Global options shared by every ``pixie`` command.
 
     A data mixin (:class:`duho.LoggingArgs`): it carries the global fields;
     :class:`Pixie_` combines it with :class:`duho.Cli` to make the runnable app
@@ -63,7 +63,7 @@ class PixieArgs(LoggingArgs):
 
 
 class Pixie_(PixieArgs, Cli):
-    """Netboot: PXE provisioning management."""
+    """Pixie: PXE provisioning management."""
 
     _version_ = __version__
 
@@ -76,8 +76,8 @@ def _discover(argv: "_ty.Sequence[str] | None") -> "list":
     """
     globals_ = parse_globals(Pixie_, argv)
     sources: "list[str]" = [_BUILTIN_COMMANDS]
-    if _os.environ.get("NETBOOT_PATH"):
-        sources += _os.environ["NETBOOT_PATH"].split(_os.pathsep)
+    if _os.environ.get("PIXIE_PATH"):
+        sources += _os.environ["PIXIE_PATH"].split(_os.pathsep)
     sources += list(globals_.cmdspath or [])
 
     by_name: "dict[str, object]" = {}
@@ -96,7 +96,7 @@ def _discover(argv: "_ty.Sequence[str] | None") -> "list":
 def _load_config(args: "Pixie_") -> dict:
     """Load and merge the netboot YAML config into a dict.
 
-    Mirrors the original loader: an explicit ``--config`` file, else ``netboot.yaml``
+    Mirrors the original loader: an explicit ``--config`` file, else ``pixie.yaml``
     under ``--baseconfig`` (default ``./config``). ``conf['templates']`` gets the
     CWD ``templates`` dir prepended and every entry coerced to a :class:`Path`.
     """
@@ -119,7 +119,7 @@ def _load_config(args: "Pixie_") -> dict:
         configs = [path.name]
     else:
         baseconfig = parse_path(args.baseconfig) if args.baseconfig else (cwd / "config")
-        configs = ["netboot.yaml"]
+        configs = ["pixie.yaml"]
 
     loader = ConfigLoader(
         base_dir=baseconfig,
@@ -180,7 +180,7 @@ def _dispatch(command: object, instance: "Pixie_") -> int:
     if not isinstance(command, ModuleCommand):
         return run_command(_ty.cast(_ty.Any, command), instance)
 
-    # A user command discovered via --cmdspath/NETBOOT_PATH may follow duho's plain
+    # A user command discovered via --cmdspath/PIXIE_PATH may follow duho's plain
     # 1-arg run(args) contract rather than netboot's run(netboot, args, conf); only the
     # netboot-first contract needs a built Pixie, so introspect before building one.
     run = getattr(command.module, "run", None)
@@ -204,7 +204,7 @@ def main(
     argv: "_ty.Sequence[str] | None" = None,
 ) -> int:
     """Build the app, parse ``argv``, and run the selected command."""
-    name = name or "netboot"
+    name = name or "pixie"
     return app(
         Pixie_,
         commands=_discover(argv),

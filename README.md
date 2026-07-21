@@ -35,19 +35,16 @@ Jinja2. IP/MAC/DNS helpers are vendored in-tree (`netboot._netutils`).
 
 ## CLI
 
+The command is `pixie` (PXE is pronounced "pixie"); `netboot` is the library
+package it drives.
+
 ```sh
 # Initiate the PXE process for a target (render artifacts + arm DHCP):
-netboot initiate my-host
+pixie initiate my-host
 
 # Complete it (post-boot cleanup, disarm DHCP):
-netboot complete my-host
+pixie complete my-host
 ```
-
-The CLI also installs as `pixie` (PXE is pronounced "pixie") — same command,
-either name works.
-
-The CLI also installs as `pixie` (PXE is pronounced "pixie") — same command,
-either name works.
 
 Global options:
 

@@ -206,9 +206,10 @@ the layered YAML config into one `Pixie` object, then runs the selected
 command against it.
 
 - **`main(name=None, argv=None) -> int`** — build the app, parse `argv`,
-  dispatch. `name` defaults to `"netboot"`. This is the console-script
-  (`netboot = netboot.main:main`, aliased as `pixie`) and `python -m netboot`
-  entry point.
+  dispatch. `name` defaults to `"pixie"` — the CLI's identity (prog name); the
+  `netboot` name is only the library/import package. This is the
+  console-script (`pixie = netboot.main:main`) and `python -m netboot` entry
+  point.
 - **`PixieArgs`** (`duho.LoggingArgs` mixin) — the global CLI fields:
   `config` (`-c/--config`), `baseconfig` (default `./config`), `load_module`
   (`-l/--load-module`, repeatable, colon-extendable), `cmdspath`
@@ -218,14 +219,14 @@ command against it.
 - **`parse_path(path: str | Path) -> Path`** — a bare path → `LocalPath`; a
   path containing `:` (a URI scheme) → `UriPath`.
 - Command-module contract (built-ins in `netboot.cmds`; discovered the same
-  way via `--cmdspath` / `NETBOOT_PATH`, `os.pathsep`-separated): a module
+  way via `--cmdspath` / `PIXIE_PATH`, `os.pathsep`-separated): a module
   exposing `register(parser, args)` (add its argparse arguments) and
   `run(netboot: Pixie, args, conf: dict) -> int | None` (`conf` is the raw
   merged config dict, deep-copied before `Pixie` construction). A later
   command source wins on a name clash. A module whose `run` does **not**
   accept at least 3 positional params (no netboot-first signature) is instead
   dispatched through plain `duho.run_command(command, instance)`.
-- Loading the config (`-c/--config`, else `<baseconfig>/netboot.yaml`) requires
+- Loading the config (`-c/--config`, else `<baseconfig>/pixie.yaml`) requires
   the `config` extra (`pyyaml`); raises `ImportError` with an install hint
   otherwise. `conf["templates"]` always gets the CWD's `templates` dir
   prepended.
