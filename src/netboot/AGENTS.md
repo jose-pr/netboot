@@ -206,10 +206,13 @@ the layered YAML config into one `Pixie` object, then runs the selected
 command against it.
 
 - **`main(name=None, argv=None) -> int`** — build the app, parse `argv`,
-  dispatch. `name` defaults to `"pixie"` — the CLI's identity (prog name); the
-  `netboot` name is only the library/import package. This is the
-  console-script (`pixie = netboot.main:main`) and `python -m netboot` entry
-  point.
+  dispatch. `name` defaults to `"pixie"` — the CLI's identity: it is the prog
+  name **and** the `duho.env.Env` prefix, so `PIXIE_<KEY>` env vars (and an
+  optional `pixie_env` companion module of defaults, autoloaded from
+  `sys.path`/CWD) supply app settings; the resolved `Env` is attached to the
+  dispatched instance as `_env_`. The `netboot` name is only the
+  library/import package. This is the console-script
+  (`pixie = netboot.main:main`) and `python -m netboot` entry point.
 - **`PixieArgs`** (`duho.LoggingArgs` mixin) — the global CLI fields:
   `config` (`-c/--config`), `baseconfig` (default `./config`), `load_module`
   (`-l/--load-module`, repeatable, colon-extendable), `cmdspath`
@@ -219,7 +222,7 @@ command against it.
 - **`parse_path(path: str | Path) -> Path`** — a bare path → `LocalPath`; a
   path containing `:` (a URI scheme) → `UriPath`.
 - Command-module contract (built-ins in `netboot.cmds`; discovered the same
-  way via `--cmdspath` / `PIXIE_PATH`, `os.pathsep`-separated): a module
+  way via `--cmdspath` / `PIXIE_CMDS_PATH`, `os.pathsep`-separated): a module
   exposing `register(parser, args)` (add its argparse arguments) and
   `run(netboot: Pixie, args, conf: dict) -> int | None` (`conf` is the raw
   merged config dict, deep-copied before `Pixie` construction). A later

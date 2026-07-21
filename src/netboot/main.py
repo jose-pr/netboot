@@ -21,6 +21,7 @@ from importlib import import_module as _import_module
 
 from duho import Arg, Cli, Extend, LoggingArgs, app, parse_globals
 from duho.discovery import ModuleCommand, discover_commands
+from duho.env import Env
 from pathlib_next import LocalPath, Path, UriPath
 
 from . import Pixie, __version__
@@ -68,16 +69,20 @@ class Pixie_(PixieArgs, Cli):
     _version_ = __version__
 
 
-def _discover(argv: "_ty.Sequence[str] | None") -> "list":
+def _discover(argv: "_ty.Sequence[str] | None", env: Env) -> "list":
     """Resolve the command set: built-ins, then env/CLI-provided paths.
 
-    Later sources win on a name clash (a user command shadows a built-in), then
-    the list is de-duplicated by subcommand name preserving that precedence.
+    ``env`` supplies the app-prefixed ``CMDS_PATH`` (``PIXIE_CMDS_PATH``,
+    ``os.pathsep``-separated; duho's canonical key). We resolve it here rather
+    than letting :func:`duho.app` do it because netboot's built-ins come from a
+    package path and ``--cmdspath`` must be honoured pre-parse, so an explicit
+    ``commands=`` list is always passed. Later sources win on a name clash (a
+    user command shadows a built-in), then the list is de-duplicated by
+    subcommand name preserving that precedence.
     """
     globals_ = parse_globals(Pixie_, argv)
     sources: "list[str]" = [_BUILTIN_COMMANDS]
-    if _os.environ.get("PIXIE_PATH"):
-        sources += _os.environ["PIXIE_PATH"].split(_os.pathsep)
+    sources += env.paths("CMDS_PATH")
     sources += list(globals_.cmdspath or [])
 
     by_name: "dict[str, object]" = {}
@@ -180,7 +185,7 @@ def _dispatch(command: object, instance: "Pixie_") -> int:
     if not isinstance(command, ModuleCommand):
         return run_command(_ty.cast(_ty.Any, command), instance)
 
-    # A user command discovered via --cmdspath/PIXIE_PATH may follow duho's plain
+    # A user command discovered via --cmdspath/PIXIE_CMDS_PATH may follow duho's plain
     # 1-arg run(args) contract rather than netboot's run(netboot, args, conf); only the
     # netboot-first contract needs a built Pixie, so introspect before building one.
     run = getattr(command.module, "run", None)
@@ -203,14 +208,22 @@ def main(
     name: "str | None" = None,
     argv: "_ty.Sequence[str] | None" = None,
 ) -> int:
-    """Build the app, parse ``argv``, and run the selected command."""
+    """Build the app, parse ``argv``, and run the selected command.
+
+    ``name`` (default ``"pixie"``) is both the prog name and the environment
+    prefix: settings are read through :class:`duho.env.Env`, so ``PIXIE_<KEY>``
+    variables (and an optional ``pixie_env`` companion module of defaults) apply.
+    The resolved ``Env`` is attached to the dispatched instance as ``_env_``.
+    """
     name = name or "pixie"
+    env = Env(name)
     return app(
         Pixie_,
-        commands=_discover(argv),
+        commands=_discover(argv, env),
         argv=argv,
         name=name,
         description=Pixie_.__doc__,
+        env=env,
         dispatch=_dispatch,
     )
 

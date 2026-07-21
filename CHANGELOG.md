@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The import package and config layout stay `netboot`.
 - **Breaking:** the CLI is now `pixie` (the pronunciation of PXE); `netboot`
   remains only as the library/import package. Console script `netboot` →
-  `pixie`, command-discovery env var `NETBOOT_PATH` → `PIXIE_PATH`, default
+  `pixie`, command-discovery env var `NETBOOT_PATH` → `PIXIE_CMDS_PATH`, default
   config file `netboot.yaml` → `pixie.yaml`. `python -m netboot` still works.
 
 ## [0.1.0] - 2026-07-18

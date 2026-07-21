@@ -39,7 +39,7 @@ Run post-boot cleanup for the target and disarm its DHCP backends.
 
 ## Adding your own commands
 
-Point `--cmdspath` (or the `PIXIE_PATH` environment variable) at a package or
+Point `--cmdspath` (or the `PIXIE_CMDS_PATH` environment variable) at a package or
 directory of command modules. A netboot command module exposes:
 
 ```python
@@ -52,3 +52,17 @@ def run(netboot, args, conf):       # required: the command body
 
 A module that instead follows duho's plain `run(args)` contract is dispatched by
 duho directly, so ordinary duho commands work too.
+
+## Environment
+
+App settings are read through `duho.env.Env("pixie")`, so they live under the
+`PIXIE_` prefix:
+
+- `PIXIE_CMDS_PATH` — extra command sources, `os.pathsep`-separated (see above).
+- A `pixie_env` Python module importable at startup (e.g. a `pixie_env.py` in
+  the working directory) may ship settings as `UPPER_CASE` module variables.
+  Note: as of current duho, these seeded values take precedence over real
+  `PIXIE_*` environment variables.
+
+Commands receive the resolved accessor as `args._env_`, so a custom command can
+read its own `PIXIE_<KEY>` settings without touching `os.environ`.
