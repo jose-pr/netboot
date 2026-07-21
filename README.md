@@ -62,12 +62,12 @@ A target is looked up by exact id, or by hostname prefix / MAC / IP.
 ```python
 from netboot import Pixie
 
-netboot = Pixie(**config)                 # config: the merged YAML mapping
-target = netboot.lookup_target("my-host")
-ctx = netboot.make_context(target)       # render context (image + dhcpzone + target)
-print(ctx.render("boot.ipxe.j2"))     # render a template against the context
-netboot.initialize(target)               # arm DHCP for the target
-netboot.complete(target)                 # cleanup once installed
+pixie = Pixie(**config)                  # config: the merged YAML mapping
+target = pixie.lookup_target("my-host")
+ctx = pixie.make_context(target)         # render context (image + dhcpzone + target)
+print(ctx.render("boot.ipxe.j2"))        # render a template against the context
+pixie.initialize(target)                 # arm DHCP for the target
+pixie.complete(target)                   # cleanup once installed
 ```
 
 ## Extending
