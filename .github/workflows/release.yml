@@ -149,6 +149,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+          # Pin the release to the tagged commit. Left unset, the action falls
+          # back to the repository's default branch, and a release object
+          # carrying a stale branch name (e.g. "master" after a rename to
+          # "main") makes generate_release_notes fail with
+          # "Invalid target_commitish".
+          target_commitish: ${{ github.sha }}
           files: dist/*
           generate_release_notes: true
           prerelease: ${{ contains(github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name, '-') }}
