@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from netboot import Netboot
+from netboot import Pixie
 from netboot.logging import LOGGER
 
 
@@ -14,7 +14,7 @@ def register(parser: argparse.ArgumentParser, args) -> None:
     )
 
 
-def run(netboot: Netboot, args, conf: dict) -> int:
+def run(netboot: Pixie, args, conf: dict) -> int:
     target = netboot.lookup_target(args.target)
     if target is None:
         LOGGER.error("Target not found: %s", args.target)

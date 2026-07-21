@@ -33,7 +33,7 @@ sys.path.insert(0, (REPO_ROOT / "src").as_posix())
 import netboot  # noqa: E402
 
 
-def _build_netboot(n_targets: int) -> "netboot.Netboot":
+def _build_netboot(n_targets: int) -> "netboot.Pixie":
     targets = {}
     for i in range(n_targets):
         targets[f"host{i}"] = {
@@ -41,7 +41,7 @@ def _build_netboot(n_targets: int) -> "netboot.Netboot":
             "ip": f"10.0.{i // 256}.{i % 256}",
             "image": "debian",
         }
-    return netboot.Netboot(
+    return netboot.Pixie(
         images={"debian": {"template_path": []}},
         dhcpzones={"lan": {"network": "10.0.0.0/16"}},
         targets=targets,
@@ -81,7 +81,7 @@ def _report(iterations: int, results: "dict[str, dict]") -> dict:
         "iterations": iterations,
         "python": platform.python_version(),
         "platform": platform.platform(),
-        "netboot_version": netboot.Netboot.VERSION,
+        "netboot_version": netboot.Pixie.VERSION,
         "metrics": results,
     }
 

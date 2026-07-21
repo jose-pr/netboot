@@ -43,6 +43,12 @@ netboot initiate my-host
 netboot complete my-host
 ```
 
+The CLI also installs as `pixie` (PXE is pronounced "pixie") — same command,
+either name works.
+
+The CLI also installs as `pixie` (PXE is pronounced "pixie") — same command,
+either name works.
+
 Global options:
 
 | Option | Purpose |
@@ -57,9 +63,9 @@ A target is looked up by exact id, or by hostname prefix / MAC / IP.
 ## Library
 
 ```python
-from netboot import Netboot
+from netboot import Pixie
 
-netboot = Netboot(**config)                 # config: the merged YAML mapping
+netboot = Pixie(**config)                 # config: the merged YAML mapping
 target = netboot.lookup_target("my-host")
 ctx = netboot.make_context(target)       # render context (image + dhcpzone + target)
 print(ctx.render("boot.ipxe.j2"))     # render a template against the context
@@ -70,8 +76,8 @@ netboot.complete(target)                 # cleanup once installed
 ## Extending
 
 - **Hooks.** Pass `hooks=[...]` (callables or `"module.func"` import strings) to
-  `Netboot(...)`. Each hook `f(event, netboot, value, kwargs) -> value` is called for
-  every `NetbootEvent` and may transform the value flowing through it — used to
+  `Pixie(...)`. Each hook `f(event, netboot, value, kwargs) -> value` is called for
+  every `PixieEvent` and may transform the value flowing through it — used to
   customise lookup, context construction and the init/complete lifecycle.
 - **DHCP backends.** Subclass `netboot.dhcp.DhcpServer`; the lowercased class name
   is the URI scheme it handles (`class dnsmasq(DhcpServer)` → `dnsmasq://...`).

@@ -19,7 +19,7 @@ def _netboot_two_targets_one_image(templates_dir):
             "host2": {"hostname": "host2", "ip": "10.0.0.6", "image": "debian"},
         },
     }
-    return netboot.Netboot(**config)
+    return netboot.Pixie(**config)
 
 
 def test_image_globals_survive_second_target(tmp_path):
@@ -43,7 +43,7 @@ def test_template_names_accepts_options(tmp_path):
         "dhcpzones": {"lan": {"network": "10.0.0.0/24"}},
         "targets": {"h": {"hostname": "h", "ip": "10.0.0.9", "image": "deb"}},
     }
-    p = netboot.Netboot(**config)
+    p = netboot.Pixie(**config)
     ctx = p.make_context(p.lookup_target("h"))
     names = ctx._template_names("boot.j2", foo="bar")
     assert "boot.j2" in names
@@ -54,10 +54,10 @@ def test_template_names_skips_empty_ip():
     # Finding #6: an unset ip must not emit a name; MAC/hostname still do.
     # Drive _template_names directly with a minimal fake context to avoid the
     # zone-by-network lookup (which needs a resolvable IP).
-    from netboot import NetbootContext, NetbootTarget
+    from netboot import PixieContext, PixieTarget
 
-    ctx = NetbootContext.__new__(NetbootContext)
-    ctx.target = NetbootTarget(_id="aa:bb:cc:dd:ee:ff")
+    ctx = PixieContext.__new__(PixieContext)
+    ctx.target = PixieTarget(_id="aa:bb:cc:dd:ee:ff")
     names = ctx._template_names("boot.j2")
     assert not any(n.startswith("0.0.0.0") for n in names)
     assert "aa-bb-cc-dd-ee-ff.boot.j2" in names
@@ -100,7 +100,7 @@ class _Boom:
         raise ValueError("boom")
 
 
-class _BoomNetboot(netboot.Netboot):
+class _BoomPixie(netboot.Pixie):
     things: "dict[str, _Boom]"
 
 
@@ -108,4 +108,4 @@ def test_valctr_typeerror_only_not_bare_except():
     # Finding #4: a non-TypeError in a config value ctor must propagate, rather
     # than being swallowed by a bare except and retried without _id.
     with pytest.raises(ValueError):
-        _BoomNetboot(things={"x": {}})
+        _BoomPixie(things={"x": {}})

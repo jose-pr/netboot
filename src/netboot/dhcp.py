@@ -7,7 +7,7 @@ from yaconfiglib import OpaqueMerge
 from .utils.net import IPAddress, IPInterface, IPNetwork
 
 if _ty.TYPE_CHECKING:
-    from . import NetbootContext
+    from . import PixieContext
 
 from urllib.parse import urlparse
 
@@ -50,10 +50,10 @@ class DhcpServer:
     def __init__(self, uri: str):
         self.uri = uri
 
-    def remove_target(self, netboot: "NetbootContext"):
+    def remove_target(self, netboot: "PixieContext"):
         pass
 
-    def add_target(self, netboot: "NetbootContext"):
+    def add_target(self, netboot: "PixieContext"):
         pass
 
 

@@ -1,4 +1,4 @@
-"""End-to-end-ish test: build a Netboot from config and render a template.
+"""End-to-end-ish test: build a Pixie from config and render a template.
 
 Exercises target/image/dhcpzone lookup, context construction, and both the
 Jinja2 and shell template engines against a temporary search path.
@@ -27,7 +27,7 @@ def _make_netboot(templates_dir):
             "host1": {"hostname": "host1", "ip": "10.0.0.5", "image": "debian"},
         },
     }
-    return netboot.Netboot(**config)
+    return netboot.Pixie(**config)
 
 
 def test_lookup_and_make_context(templates_dir):

@@ -40,4 +40,4 @@ Jinja2. IP/MAC/DNS helpers are vendored in-tree (`netboot._netutils`).
 - [CLI](cli.md) — the `initiate` / `complete` commands and global options.
 - [Configuration](configuration.md) — the shape of the YAML config.
 - [Extending](extending.md) — hooks and custom `DhcpServer` backends.
-- [API Reference](api.md) — the `Netboot` engine and context objects.
+- [API Reference](api.md) — the `Pixie` engine and context objects.

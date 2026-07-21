@@ -8,60 +8,60 @@ overview doc.
 
 ## Engine (`netboot` / `netboot.__init__`)
 
-- **`Netboot(hooks=(), **config)`** — the engine. `config` is the merged config
+- **`Pixie(hooks=(), **config)`** — the engine. `config` is the merged config
   mapping: `targets`, `images`, `dhcpzones`, `repos` (each a `dict[id, ...]`
   built into the corresponding class via its type hints — `TypeError` from the
   value class falls back to a no-`_id` constructor call), `globals` (dict,
   deep-copied), `defaults` (per-collection default mappings), plus any other
-  annotated `Netboot` attribute. `hooks` is a sequence of callables or
+  annotated `Pixie` attribute. `hooks` is a sequence of callables or
   `"module.func"` import-path strings; resolved once in `__new__`. Every
-  config-driven step fires a `NetbootEvent` through the hook chain (see below)
+  config-driven step fires a `PixieEvent` through the hook chain (see below)
   so hooks can intercept object construction and property values before
   they're set.
   - **`.targets`** / **`.dhcpzones`** / **`.images`** / **`.repos`** —
-    `dict[str, ...]` of `NetbootTarget` / `DhcpZone` / `NetbootImage` /
+    `dict[str, ...]` of `PixieTarget` / `DhcpZone` / `PixieImage` /
     `Repository`, keyed by config id.
   - **`.globals`** — `dict`, layered into every render context.
   - **`.hook(event, value=None, **kwargs) -> value`** — run the hook chain for
     `event`, threading `value` through each `f(event, netboot, value, kwargs)`
     and returning the (possibly transformed) result.
-  - **`.lookup_target(target: str) -> NetbootTarget | None`** — exact id match
+  - **`.lookup_target(target: str) -> PixieTarget | None`** — exact id match
     first, else the first target whose hostname starts with `target`
     (case-insensitive), or whose MAC or IP equals it. Fires
-    `NetbootEvent.LookupTarget` (may substitute a `NetbootTarget` directly) then
-    `NetbootEvent.FoundTarget`; `None` if nothing resolves to a `NetbootTarget`.
-  - **`.lookup_image(name: str, target=None) -> NetbootImage`** — the image
+    `PixieEvent.LookupTarget` (may substitute a `PixieTarget` directly) then
+    `PixieEvent.FoundTarget`; `None` if nothing resolves to a `PixieTarget`.
+  - **`.lookup_image(name: str, target=None) -> PixieImage`** — the image
     whose `.match(img_name, name)` returns the highest truthy value (default
-    `NetbootImage.match` is exact-name equality); falls back to an empty dict
+    `PixieImage.match` is exact-name equality); falls back to an empty dict
     if nothing matches (**not** `None` — check truthiness carefully). Fires
-    `NetbootEvent.FoundTargetImage`.
+    `PixieEvent.FoundTargetImage`.
   - **`.lookup_dhcpzone(name: str, target=None) -> DhcpZone | None`** — by id;
     if `name` is empty and `target` is given, uses `target.dhcpzone` or finds
     the zone whose `.network` contains `target.ip` (and caches the id back
-    onto `target.dhcpzone`). Fires `NetbootEvent.FoundTargetDhcpzone`.
-  - **`.make_context(target, globals: list[dict] = None) -> NetbootContext`** —
+    onto `target.dhcpzone`). Fires `PixieEvent.FoundTargetDhcpzone`.
+  - **`.make_context(target, globals: list[dict] = None) -> PixieContext`** —
     resolves image + dhcp zone for `target`, merges
     `[self.globals, *globals, image.globals, dhcpzone.globals, target.globals]`
     (image/dhcpzone/target objects are shared across targets and never
-    mutated) into a fresh `NetbootContext`, attaches a new `Renderer`/`Loader`
+    mutated) into a fresh `PixieContext`, attaches a new `Renderer`/`Loader`
     over `config["templates"]`, and sets `.version`. Raises a plain
     `Exception` if the target's image or dhcp zone can't be resolved. Fires
-    `NetbootEvent.NetbootContextForTarget`.
-  - **`.initialize(target) -> NetbootContext`** — `make_context` then
+    `PixieEvent.PixieContextForTarget`.
+  - **`.initialize(target) -> PixieContext`** — `make_context` then
     `ctx.pxe_init(self)` (arms every `dhcpzone.dhcpservers` for the target).
-    Fires `StartNetbootInitialize` / `EndNetbootInitialize`.
-  - **`.complete(target) -> NetbootContext`** — `make_context` then
+    Fires `StartPixieInitialize` / `EndPixieInitialize`.
+  - **`.complete(target) -> PixieContext`** — `make_context` then
     `ctx.pxe_complete(self)` (disarms every `dhcpzone.dhcpservers`). Fires
-    `StartNetbootComplete` / `EndNetbootComplete`.
+    `StartPixieComplete` / `EndPixieComplete`.
   - **`.VERSION`** — class attr, `netboot.__version__` at class-definition time.
 
-- **`NetbootEvent`** (`StrEnum`) — hook event names: `NewNetbootObject`,
-  `StartNetbootInit`, `SetNetbootProperty`, `NetbootInitiated`, `LookupTarget`,
+- **`PixieEvent`** (`StrEnum`) — hook event names: `NewPixieObject`,
+  `StartPixieInit`, `SetPixieProperty`, `PixieInitiated`, `LookupTarget`,
   `FoundTarget`, `FoundTargetImage`, `FoundTargetDhcpzone`,
-  `NetbootContextForTarget`, `StartNetbootInitialize`, `EndNetbootInitialize`,
-  `StartNetbootComplete`, `EndNetbootComplete`.
+  `PixieContextForTarget`, `StartPixieInitialize`, `EndPixieInitialize`,
+  `StartPixieComplete`, `EndPixieComplete`.
 
-- **`NetbootTarget(**kwargs)`** (`argparse.Namespace` + `yaconfiglib.OpaqueMerge`)
+- **`PixieTarget(**kwargs)`** (`argparse.Namespace` + `yaconfiglib.OpaqueMerge`)
   — `_id`, `hostname`, `ip` (`IPAddress`), `mac` (`MACAddress`), `image`,
   `dhcpzone`, `globals` (`dict`), `template_path` (`list[str | Path]`).
   Construction fills gaps: a MAC-shaped `_id` with no explicit `mac` is
@@ -72,14 +72,14 @@ overview doc.
   lower-cased. Requires the `dns` extra for hostname resolution to actually
   find an IP (silently yields empty otherwise).
 
-- **`NetbootImage(**kwargs)`** (`content.Resource`) — `template_path`,
+- **`PixieImage(**kwargs)`** (`content.Resource`) — `template_path`,
   `globals`. **`.match(name: str, check: str)`** — override point for custom
   image-selection logic; default is `name == check`. Returning a comparable
-  (e.g. `int`) instead of a bare bool lets `Netboot.lookup_image` prefer the
+  (e.g. `int`) instead of a bare bool lets `Pixie.lookup_image` prefer the
   best of several matches.
 
-- **`NetbootContext(**kwargs)`** (`argparse.Namespace`) — built by
-  `Netboot.make_context`, not constructed directly. Fields: `target`, `image`,
+- **`PixieContext(**kwargs)`** (`argparse.Namespace`) — built by
+  `Pixie.make_context`, not constructed directly. Fields: `target`, `image`,
   `dhcpzone`, `repos` (`dict[str, Repository]`), `resources`
   (`dict[str, Resource]`), `generated` (`datetime`, set at construction),
   `version` (`str`), `templates`, `_renderer` (a `templates.Renderer`).
@@ -98,7 +98,7 @@ overview doc.
     template name.
   - **`.pxe_init(netboot) -> Self`** / **`.pxe_complete(netboot) -> Self`** —
     arm/disarm every `dhcpzone.dhcpservers` for this context; called by
-    `Netboot.initialize`/`.complete`, not usually invoked directly.
+    `Pixie.initialize`/`.complete`, not usually invoked directly.
 
 ## DHCP (`netboot.dhcp`)
 
@@ -108,7 +108,7 @@ overview doc.
   depth, so a plugin may subclass an intermediate base). Raises `ValueError`
   if no subclass matches the scheme — import the plugin module first (e.g.
   via CLI `--load-module`). `.uri` holds the original URI.
-  - **`.add_target(ctx: NetbootContext)`** / **`.remove_target(ctx)`** — no-ops
+  - **`.add_target(ctx: PixieContext)`** / **`.remove_target(ctx)`** — no-ops
     on the base class; a backend overrides these to actually arm/disarm.
 - **`DhcpZone(**kwargs)`** (`Namespace` + `OpaqueMerge`) — `network`
   (`IPNetwork`), `gateway` (`IPAddress | None`), `domain` (`str | None`),
@@ -146,7 +146,7 @@ overview doc.
   `jinja2.TemplateNotFound` if nothing matches, or a plain `Exception` if a
   matching type has no usable engine.
 - **`Renderer`** — alias for `jinja2.Environment`; one is created per
-  `NetbootContext` (never share one across contexts — `globals["ctx"]` is
+  `PixieContext` (never share one across contexts — `globals["ctx"]` is
   mutated per render).
 - **`Template`** — minimal base (`.render(**globals)`, classmethod
   `.can_process(file, template) -> bool`, both no-ops/`False` on the base).
@@ -202,25 +202,26 @@ overview doc.
 
 Thin driver over `duho.app`; `duho` owns command discovery, parser build,
 config/env layering and parsing. Netboot overrides only *dispatch*: it loads
-the layered YAML config into one `Netboot` object, then runs the selected
+the layered YAML config into one `Pixie` object, then runs the selected
 command against it.
 
 - **`main(name=None, argv=None) -> int`** — build the app, parse `argv`,
   dispatch. `name` defaults to `"netboot"`. This is the console-script
-  (`netboot = netboot.main:main`) and `python -m netboot` entry point.
-- **`NetbootArgs`** (`duho.LoggingArgs` mixin) — the global CLI fields:
+  (`netboot = netboot.main:main`, aliased as `pixie`) and `python -m netboot`
+  entry point.
+- **`PixieArgs`** (`duho.LoggingArgs` mixin) — the global CLI fields:
   `config` (`-c/--config`), `baseconfig` (default `./config`), `load_module`
   (`-l/--load-module`, repeatable, colon-extendable), `cmdspath`
   (`--cmdspath`, repeatable, `os.pathsep`-extendable).
-- **`Netboot_`** (`NetbootArgs` + `duho.Cli`) — the runnable app root;
+- **`Pixie_`** (`PixieArgs` + `duho.Cli`) — the runnable app root;
   `_version_` is `netboot.__version__`.
 - **`parse_path(path: str | Path) -> Path`** — a bare path → `LocalPath`; a
   path containing `:` (a URI scheme) → `UriPath`.
 - Command-module contract (built-ins in `netboot.cmds`; discovered the same
   way via `--cmdspath` / `NETBOOT_PATH`, `os.pathsep`-separated): a module
   exposing `register(parser, args)` (add its argparse arguments) and
-  `run(netboot: Netboot, args, conf: dict) -> int | None` (`conf` is the raw
-  merged config dict, deep-copied before `Netboot` construction). A later
+  `run(netboot: Pixie, args, conf: dict) -> int | None` (`conf` is the raw
+  merged config dict, deep-copied before `Pixie` construction). A later
   command source wins on a name clash. A module whose `run` does **not**
   accept at least 3 positional params (no netboot-first signature) is instead
   dispatched through plain `duho.run_command(command, instance)`.

@@ -3,11 +3,11 @@
 A thin driver over :func:`duho.app`. ``app`` owns command discovery, parser
 build, per-command ``register``, config/env layering, parsing and logging setup.
 The one piece netboot overrides is *dispatch*: netboot loads the layered YAML config
-into a single :class:`~netboot.Netboot` object, then runs the selected command against
+into a single :class:`~netboot.Pixie` object, then runs the selected command against
 it.
 
 A netboot command module exposes ``run(netboot, args, conf)`` -- ``netboot`` is the built
-:class:`~netboot.Netboot`, ``args`` the parsed globals, ``conf`` the raw merged config
+:class:`~netboot.Pixie`, ``args`` the parsed globals, ``conf`` the raw merged config
 dict. That is why dispatch invokes the module's ``run`` itself (with a netboot-first
 signature) rather than duho's :func:`~duho.run_command` (which passes only args).
 """
@@ -23,7 +23,7 @@ from duho import Arg, Cli, Extend, LoggingArgs, app, parse_globals
 from duho.discovery import ModuleCommand, discover_commands
 from pathlib_next import LocalPath, Path, UriPath
 
-from . import Netboot, __version__
+from . import Pixie, __version__
 
 #: Package import path to the built-in command modules.
 _BUILTIN_COMMANDS = "netboot.cmds"
@@ -38,11 +38,11 @@ def parse_path(path: "str | Path") -> Path:
     return UriPath(path)
 
 
-class NetbootArgs(LoggingArgs):
+class PixieArgs(LoggingArgs):
     """Global options shared by every ``netboot`` command.
 
     A data mixin (:class:`duho.LoggingArgs`): it carries the global fields;
-    :class:`Netboot_` combines it with :class:`duho.Cli` to make the runnable app
+    :class:`Pixie_` combines it with :class:`duho.Cli` to make the runnable app
     root.
     """
 
@@ -62,7 +62,7 @@ class NetbootArgs(LoggingArgs):
     ("--cmdspath",)  # type: ignore
 
 
-class Netboot_(NetbootArgs, Cli):
+class Pixie_(PixieArgs, Cli):
     """Netboot: PXE provisioning management."""
 
     _version_ = __version__
@@ -74,7 +74,7 @@ def _discover(argv: "_ty.Sequence[str] | None") -> "list":
     Later sources win on a name clash (a user command shadows a built-in), then
     the list is de-duplicated by subcommand name preserving that precedence.
     """
-    globals_ = parse_globals(Netboot_, argv)
+    globals_ = parse_globals(Pixie_, argv)
     sources: "list[str]" = [_BUILTIN_COMMANDS]
     if _os.environ.get("NETBOOT_PATH"):
         sources += _os.environ["NETBOOT_PATH"].split(_os.pathsep)
@@ -93,7 +93,7 @@ def _discover(argv: "_ty.Sequence[str] | None") -> "list":
     return list(by_name.values())
 
 
-def _load_config(args: "Netboot_") -> dict:
+def _load_config(args: "Pixie_") -> dict:
     """Load and merge the netboot YAML config into a dict.
 
     Mirrors the original loader: an explicit ``--config`` file, else ``netboot.yaml``
@@ -167,11 +167,11 @@ def _wants_netboot(run: "_ty.Callable | None") -> bool:
     return positional >= 3
 
 
-def _dispatch(command: object, instance: "Netboot_") -> int:
-    """duho ``app`` dispatch seam: build ``Netboot`` from config and run the command.
+def _dispatch(command: object, instance: "Pixie_") -> int:
+    """duho ``app`` dispatch seam: build ``Pixie`` from config and run the command.
 
     A netboot command is always a module command exposing ``run(netboot, args, conf)``.
-    We build a single :class:`~netboot.Netboot` from the layered config, then invoke
+    We build a single :class:`~netboot.Pixie` from the layered config, then invoke
     the selected module's ``run``. A non-module command (none today) falls back
     to duho's own single dispatch.
     """
@@ -182,7 +182,7 @@ def _dispatch(command: object, instance: "Netboot_") -> int:
 
     # A user command discovered via --cmdspath/NETBOOT_PATH may follow duho's plain
     # 1-arg run(args) contract rather than netboot's run(netboot, args, conf); only the
-    # netboot-first contract needs a built Netboot, so introspect before building one.
+    # netboot-first contract needs a built Pixie, so introspect before building one.
     run = getattr(command.module, "run", None)
     if not _wants_netboot(run):
         return run_command(command, instance)
@@ -193,7 +193,7 @@ def _dispatch(command: object, instance: "Netboot_") -> int:
 
     conf = _load_config(instance)
     orig = _deepcopy(conf)
-    netboot = Netboot(**conf)
+    netboot = Pixie(**conf)
 
     result = run(netboot, instance, orig)
     return 0 if result is None else int(result)
@@ -206,11 +206,11 @@ def main(
     """Build the app, parse ``argv``, and run the selected command."""
     name = name or "netboot"
     return app(
-        Netboot_,
+        Pixie_,
         commands=_discover(argv),
         argv=argv,
         name=name,
-        description=Netboot_.__doc__,
+        description=Pixie_.__doc__,
         dispatch=_dispatch,
     )
 

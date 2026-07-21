@@ -38,7 +38,7 @@ from .utils import IPAddress, MACAddress, T
 from .utils.misc import import_
 
 
-class NetbootTarget(Namespace, OpaqueMerge):
+class PixieTarget(Namespace, OpaqueMerge):
     _id: str
     hostname: str
     ip: IPAddress
@@ -92,7 +92,7 @@ class NetbootTarget(Namespace, OpaqueMerge):
         self.hostname = self.hostname.lower()
 
 
-class NetbootImage(Resource):
+class PixieImage(Resource):
     template_path: list["Path"]
     globals: dict
 
@@ -100,9 +100,9 @@ class NetbootImage(Resource):
         return name == check
 
 
-class NetbootContext(Namespace):
-    target: NetbootTarget
-    image: NetbootImage
+class PixieContext(Namespace):
+    target: PixieTarget
+    image: PixieImage
     dhcpzone: DhcpZone
     repos: dict[str, Repository]
     generated: datetime.datetime
@@ -116,7 +116,7 @@ class NetbootContext(Namespace):
         self.generated = datetime.datetime.now()
         super().__init__(**kwargs)
 
-    def init(self, netboot: "Netboot"): ...
+    def init(self, netboot: "Pixie"): ...
 
     def resource(self, name: Union[str, Resource], service: str = None):
         if isinstance(name, Resource):
@@ -137,12 +137,12 @@ class NetbootContext(Namespace):
             return
         return self.repos.get(resource.src)
 
-    def pxe_init(self, config: "Netboot"):
+    def pxe_init(self, config: "Pixie"):
         for dhcpserver in self.dhcpzone.dhcpservers:
             dhcpserver.add_target(self)
         return self
 
-    def pxe_complete(self, config: "Netboot"):
+    def pxe_complete(self, config: "Pixie"):
         for dhcpserver in self.dhcpzone.dhcpservers:
             dhcpserver.remove_target(self)
         return self
@@ -173,7 +173,7 @@ class NetbootContext(Namespace):
         return [*self.target.template_path, *self.image.template_path]
 
     def render(self, filename: str, strict=True):
-        # Each NetbootContext owns its own Renderer (built in make_context), so
+        # Each PixieContext owns its own Renderer (built in make_context), so
         # setting globals["ctx"] here is per-context; do not share one Renderer
         # across contexts or nested renders would clobber this.
         self._renderer.globals["ctx"] = self
@@ -190,45 +190,45 @@ class NetbootContext(Namespace):
                 return None
 
 
-class NetbootEvent(StrEnum):
-    NewNetbootObject = "NetbootEvent.NewNetbootObject"
-    StartNetbootInit = "NetbootEvent.StartNetbootInit"
-    SetNetbootProperty = "NetbootEvent.SetNetbootProperty"
-    NetbootInitiated = "NetbootEvent.NetbootInitiated"
-    LookupTarget = "NetbootEvent.LookupTarget"
-    FoundTarget = "NetbootEvent.FoundTarget"
-    FoundTargetImage = "NetbootEvent.FoundTargetImage"
-    FoundTargetDhcpzone = "NetbootEvent.FoundTargetDhcpzone"
-    NetbootContextForTarget = "NetbootEvent.NetbootContextForTarget"
-    StartNetbootInitialize = "NetbootEvent.StartNetbootInitialize"
-    EndNetbootInitialize = "NetbootEvent.EndNetbootInitialize"
-    StartNetbootComplete = "NetbootEvent.StartNetbootComplete"
-    EndNetbootComplete = "NetbootEvent.EndNetbootComplete"
+class PixieEvent(StrEnum):
+    NewPixieObject = "PixieEvent.NewPixieObject"
+    StartPixieInit = "PixieEvent.StartPixieInit"
+    SetPixieProperty = "PixieEvent.SetPixieProperty"
+    PixieInitiated = "PixieEvent.PixieInitiated"
+    LookupTarget = "PixieEvent.LookupTarget"
+    FoundTarget = "PixieEvent.FoundTarget"
+    FoundTargetImage = "PixieEvent.FoundTargetImage"
+    FoundTargetDhcpzone = "PixieEvent.FoundTargetDhcpzone"
+    PixieContextForTarget = "PixieEvent.PixieContextForTarget"
+    StartPixieInitialize = "PixieEvent.StartPixieInitialize"
+    EndPixieInitialize = "PixieEvent.EndPixieInitialize"
+    StartPixieComplete = "PixieEvent.StartPixieComplete"
+    EndPixieComplete = "PixieEvent.EndPixieComplete"
 
 
-_NetbootHook = _ty.Callable[["NetbootEvent", "Netboot", T, dict], T]
+_PixieHook = _ty.Callable[["PixieEvent", "Pixie", T, dict], T]
 
 
-class Netboot:
-    targets: "dict[str,NetbootTarget]"
+class Pixie:
+    targets: "dict[str,PixieTarget]"
     dhcpzones: "dict[str,DhcpZone]"
-    images: "dict[str, NetbootImage]"
+    images: "dict[str, PixieImage]"
     repos: "dict[str,Repository]"
     globals: dict[str, object]
-    _ctxcls: NetbootContext = NetbootContext
+    _ctxcls: PixieContext = PixieContext
     VERSION = __version__
     _config: dict
-    _hooks: list[_NetbootHook] = []
+    _hooks: list[_PixieHook] = []
 
     def hook(
-        self: "Netboot|_ty.Sequence[_NetbootHook]",
-        event: NetbootEvent,
+        self: "Pixie|_ty.Sequence[_PixieHook]",
+        event: PixieEvent,
         __value: T = None,
         /,
         **kwargs,
     ):
         LOGGER.debug(f"Running Hooks for: {event}")
-        if isinstance(self, Netboot):
+        if isinstance(self, Pixie):
             netboot = self
             hooks = self._hooks
         else:
@@ -241,12 +241,12 @@ class Netboot:
     def __new__(
         cls,
         /,
-        hooks: _ty.Sequence[_NetbootHook] = [],
+        hooks: _ty.Sequence[_PixieHook] = [],
         **config,
     ):
 
         hooks = [(hook if callable(hook) else import_(hook)) for hook in hooks]
-        cls = Netboot.hook(hooks, NetbootEvent.NewNetbootObject, cls, config=config)
+        cls = Pixie.hook(hooks, PixieEvent.NewPixieObject, cls, config=config)
         inst = object.__new__(cls)
         inst._hooks = hooks
         return inst
@@ -256,7 +256,7 @@ class Netboot:
         /,
         **config,
     ):
-        netboot._config = netboot.hook(NetbootEvent.StartNetbootInit, config)
+        netboot._config = netboot.hook(PixieEvent.StartPixieInit, config)
         netboot.globals = deepcopy(config.get("globals") or {})
         defaults = config.get("defaults") or {}
 
@@ -292,14 +292,14 @@ class Netboot:
             else:
                 _value = hint(value) if value is not None else None
             prop, value = netboot.hook(
-                NetbootEvent.SetNetbootProperty, (prop, _value), origin=origin, rawvalue=value
+                PixieEvent.SetPixieProperty, (prop, _value), origin=origin, rawvalue=value
             )
             setattr(netboot, prop, value)
 
-        netboot.hook(NetbootEvent.NetbootInitiated)
+        netboot.hook(PixieEvent.PixieInitiated)
 
-    def lookup_target(self, target: str) -> NetbootTarget:
-        target: Union[str, NetbootTarget] = self.hook(NetbootEvent.LookupTarget, target)
+    def lookup_target(self, target: str) -> PixieTarget:
+        target: Union[str, PixieTarget] = self.hook(PixieEvent.LookupTarget, target)
         if isinstance(target, str):
             lower: str = target.lower()
             _target = self.targets.get(target, None)
@@ -316,21 +316,21 @@ class Netboot:
             else:
                 target = _target
 
-        target = self.hook(NetbootEvent.FoundTarget, target)
-        if not isinstance(target, NetbootTarget):
+        target = self.hook(PixieEvent.FoundTarget, target)
+        if not isinstance(target, PixieTarget):
             target = None
         return target
 
-    def lookup_image(self, name: str, target: NetbootTarget = None) -> NetbootImage:
-        imgs: list[tuple[int, NetbootImage]] = [(-1, {})]
+    def lookup_image(self, name: str, target: PixieTarget = None) -> PixieImage:
+        imgs: list[tuple[int, PixieImage]] = [(-1, {})]
         for img_name, image in self.images.items():
             check = image.match(img_name, name)
             if check != False:
                 imgs.append((check, image))
         imgs.sort(key=lambda x: x[0])
-        return self.hook(NetbootEvent.FoundTargetImage, imgs.pop()[1], target=target)
+        return self.hook(PixieEvent.FoundTargetImage, imgs.pop()[1], target=target)
 
-    def lookup_dhcpzone(self, name: str, target: NetbootTarget = None) -> DhcpZone:
+    def lookup_dhcpzone(self, name: str, target: PixieTarget = None) -> DhcpZone:
         if not name and target:
             if target.dhcpzone:
                 name = target.dhcpzone
@@ -341,11 +341,11 @@ class Netboot:
                         target.dhcpzone = zone_id
                         break
         zone = self.dhcpzones.get(name, None)
-        return self.hook(NetbootEvent.FoundTargetDhcpzone, zone, target=target)
+        return self.hook(PixieEvent.FoundTargetDhcpzone, zone, target=target)
 
     def make_context(
-        self, target: "NetbootTarget", globals: list[dict] = None
-    ) -> NetbootContext:
+        self, target: "PixieTarget", globals: list[dict] = None
+    ) -> PixieContext:
         image = self.lookup_image(target.image, target)
         if not image:
             raise Exception(f"Image not found for target: {target.image}")
@@ -376,19 +376,19 @@ class Netboot:
 
         ctx = mergeObjects(self._ctxcls, ctx, *_globals)
 
-        ctx: NetbootContext
+        ctx: PixieContext
         ctx._renderer = Renderer(loader=Loader(self._config.get("templates", [])))
         ctx.version = f"netboot-v{self.VERSION}"
-        return self.hook(NetbootEvent.NetbootContextForTarget, ctx, target=target)
+        return self.hook(PixieEvent.PixieContextForTarget, ctx, target=target)
 
-    def initialize(self, target: "NetbootTarget"):
-        target = self.hook(NetbootEvent.StartNetbootInitialize, target)
+    def initialize(self, target: "PixieTarget"):
+        target = self.hook(PixieEvent.StartPixieInitialize, target)
         ctx = self.make_context(target)
         ctx = ctx.pxe_init(self)
-        return self.hook(NetbootEvent.EndNetbootInitialize, ctx)
+        return self.hook(PixieEvent.EndPixieInitialize, ctx)
 
-    def complete(self, target: "NetbootTarget"):
-        target = self.hook(NetbootEvent.StartNetbootComplete, target)
+    def complete(self, target: "PixieTarget"):
+        target = self.hook(PixieEvent.StartPixieComplete, target)
         ctx = self.make_context(target)
         ctx = ctx.pxe_complete(self)
-        return self.hook(NetbootEvent.EndNetbootComplete, ctx)
+        return self.hook(PixieEvent.EndPixieComplete, ctx)

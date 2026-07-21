@@ -2,7 +2,7 @@
 
 netboot's command line is built on [`duho`](https://github.com/jose-pr/duho): it
 discovers commands, layers YAML config, then runs the selected command against a
-single `Netboot` engine built from that config.
+single `Pixie` engine built from that config.
 
 ```sh
 # Initiate the PXE process for a target (render artifacts + arm DHCP):
@@ -13,6 +13,12 @@ netboot complete my-host
 ```
 
 A target argument is resolved by exact id, or by hostname prefix / MAC / IP.
+
+The CLI installs under two names: `netboot` and `pixie` (PXE is pronounced
+"pixie") — identical commands, use whichever you prefer.
+
+The CLI installs under two names: `netboot` and `pixie` (PXE is pronounced
+"pixie") — identical commands, use whichever you prefer.
 
 ## Global options
 

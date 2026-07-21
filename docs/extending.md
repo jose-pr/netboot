@@ -2,7 +2,7 @@
 
 ## Event hooks
 
-Pass `hooks=[...]` to `Netboot(...)` — each entry is a callable or a
+Pass `hooks=[...]` to `Pixie(...)` — each entry is a callable or a
 `"module.function"` import string. A hook
 
 ```python
@@ -11,11 +11,11 @@ def my_hook(event, netboot, value, kwargs):
     return value
 ```
 
-is invoked for every `NetbootEvent` and may transform the value flowing through it.
-Events fire around object creation (`NewNetbootObject`, `SetNetbootProperty`,
-`NetbootInitiated`), lookup (`LookupTarget`, `FoundTarget`, `FoundTargetImage`,
-`FoundTargetDhcpzone`), context construction (`NetbootContextForTarget`), and the
-init/complete lifecycle (`StartNetbootInitialize` … `EndNetbootComplete`). This is the
+is invoked for every `PixieEvent` and may transform the value flowing through it.
+Events fire around object creation (`NewPixieObject`, `SetPixieProperty`,
+`PixieInitiated`), lookup (`LookupTarget`, `FoundTarget`, `FoundTargetImage`,
+`FoundTargetDhcpzone`), context construction (`PixieContextForTarget`), and the
+init/complete lifecycle (`StartPixieInitialize` … `EndPixieComplete`). This is the
 seam for customising how targets/images/zones are resolved and how the render
 context is assembled.
 

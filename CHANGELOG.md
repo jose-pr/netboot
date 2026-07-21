@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** public classes renamed with a `Pixie` prefix (PXE is pronounced
+  "pixie"): `Netboot` → `Pixie`, `NetbootTarget` → `PixieTarget`,
+  `NetbootImage` → `PixieImage`, `NetbootContext` → `PixieContext`,
+  `NetbootEvent` → `PixieEvent` (hook event string values change accordingly).
+  The import package and config layout stay `netboot`.
+
+### Added
+- `pixie` console script as an alias of `netboot`.
+
 ## [0.1.0] - 2026-07-18
 
 First packaged release, published as `netboot`.

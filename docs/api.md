@@ -5,21 +5,21 @@ The engine and its context objects. Rendered from source via
 
 ## Engine
 
-::: netboot.Netboot
+::: netboot.Pixie
 
 ## Context
 
-::: netboot.NetbootContext
+::: netboot.PixieContext
 
 ## Targets and images
 
-::: netboot.NetbootTarget
+::: netboot.PixieTarget
 
-::: netboot.NetbootImage
+::: netboot.PixieImage
 
 ## Events
 
-::: netboot.NetbootEvent
+::: netboot.PixieEvent
 
 ## DHCP
 
