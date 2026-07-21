@@ -1,9 +1,9 @@
-"""Unit tests for piskie.utils helpers (flatten / shell_quote / arr_get)."""
+"""Unit tests for netboot.utils helpers (flatten / shell_quote / arr_get)."""
 
 from argparse import Namespace
 
-from piskie.utils import flatten, shell_quote
-from piskie.utils.dicts import arr_get
+from netboot.utils import flatten, shell_quote
+from netboot.utils.dicts import arr_get
 
 
 def test_flatten_nested_mapping():

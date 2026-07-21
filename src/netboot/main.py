@@ -1,14 +1,14 @@
-"""The ``piskie`` command-line application.
+"""The ``netboot`` command-line application.
 
 A thin driver over :func:`duho.app`. ``app`` owns command discovery, parser
 build, per-command ``register``, config/env layering, parsing and logging setup.
-The one piece piskie overrides is *dispatch*: piskie loads the layered YAML config
-into a single :class:`~piskie.Piskie` object, then runs the selected command against
+The one piece netboot overrides is *dispatch*: netboot loads the layered YAML config
+into a single :class:`~netboot.Netboot` object, then runs the selected command against
 it.
 
-A piskie command module exposes ``run(piskie, args, conf)`` -- ``piskie`` is the built
-:class:`~piskie.Piskie`, ``args`` the parsed globals, ``conf`` the raw merged config
-dict. That is why dispatch invokes the module's ``run`` itself (with a piskie-first
+A netboot command module exposes ``run(netboot, args, conf)`` -- ``netboot`` is the built
+:class:`~netboot.Netboot`, ``args`` the parsed globals, ``conf`` the raw merged config
+dict. That is why dispatch invokes the module's ``run`` itself (with a netboot-first
 signature) rather than duho's :func:`~duho.run_command` (which passes only args).
 """
 
@@ -23,10 +23,10 @@ from duho import Arg, Cli, Extend, LoggingArgs, app, parse_globals
 from duho.discovery import ModuleCommand, discover_commands
 from pathlib_next import LocalPath, Path, UriPath
 
-from . import Piskie, __version__
+from . import Netboot, __version__
 
 #: Package import path to the built-in command modules.
-_BUILTIN_COMMANDS = "piskie.cmds"
+_BUILTIN_COMMANDS = "netboot.cmds"
 
 
 def parse_path(path: "str | Path") -> Path:
@@ -38,11 +38,11 @@ def parse_path(path: "str | Path") -> Path:
     return UriPath(path)
 
 
-class PiskieArgs(LoggingArgs):
-    """Global options shared by every ``piskie`` command.
+class NetbootArgs(LoggingArgs):
+    """Global options shared by every ``netboot`` command.
 
     A data mixin (:class:`duho.LoggingArgs`): it carries the global fields;
-    :class:`Piskie_` combines it with :class:`duho.Cli` to make the runnable app
+    :class:`Netboot_` combines it with :class:`duho.Cli` to make the runnable app
     root.
     """
 
@@ -54,7 +54,7 @@ class PiskieArgs(LoggingArgs):
     "Base config directory to search (default: ./config)"
 
     load_module: "Arg[list[str], Extend(':')]" = []
-    "Python module(s) to import before building piskie (config/hook deps)"
+    "Python module(s) to import before building netboot (config/hook deps)"
     ("--load-module", "-l")  # type: ignore
 
     cmdspath: "Arg[list[str], Extend(_os.pathsep)]" = []
@@ -62,8 +62,8 @@ class PiskieArgs(LoggingArgs):
     ("--cmdspath",)  # type: ignore
 
 
-class Piskie_(PiskieArgs, Cli):
-    """Piskie: PXE provisioning management."""
+class Netboot_(NetbootArgs, Cli):
+    """Netboot: PXE provisioning management."""
 
     _version_ = __version__
 
@@ -74,10 +74,10 @@ def _discover(argv: "_ty.Sequence[str] | None") -> "list":
     Later sources win on a name clash (a user command shadows a built-in), then
     the list is de-duplicated by subcommand name preserving that precedence.
     """
-    globals_ = parse_globals(Piskie_, argv)
+    globals_ = parse_globals(Netboot_, argv)
     sources: "list[str]" = [_BUILTIN_COMMANDS]
-    if _os.environ.get("PISKIE_PATH"):
-        sources += _os.environ["PISKIE_PATH"].split(_os.pathsep)
+    if _os.environ.get("NETBOOT_PATH"):
+        sources += _os.environ["NETBOOT_PATH"].split(_os.pathsep)
     sources += list(globals_.cmdspath or [])
 
     by_name: "dict[str, object]" = {}
@@ -93,10 +93,10 @@ def _discover(argv: "_ty.Sequence[str] | None") -> "list":
     return list(by_name.values())
 
 
-def _load_config(args: "Piskie_") -> dict:
-    """Load and merge the piskie YAML config into a dict.
+def _load_config(args: "Netboot_") -> dict:
+    """Load and merge the netboot YAML config into a dict.
 
-    Mirrors the original loader: an explicit ``--config`` file, else ``piskie.yaml``
+    Mirrors the original loader: an explicit ``--config`` file, else ``netboot.yaml``
     under ``--baseconfig`` (default ``./config``). ``conf['templates']`` gets the
     CWD ``templates`` dir prepended and every entry coerced to a :class:`Path`.
     """
@@ -104,8 +104,8 @@ def _load_config(args: "Piskie_") -> dict:
         import yaml
     except ImportError as exc:  # pragma: no cover - only without the extra
         raise ImportError(
-            "reading a piskie config file requires the 'config' extra: "
-            "pip install piskie[config]"
+            "reading a netboot config file requires the 'config' extra: "
+            "pip install netboot[config]"
         ) from exc
     from yaconfiglib import ConfigLoader, ConfigLoaderMergeMethod
 
@@ -119,7 +119,7 @@ def _load_config(args: "Piskie_") -> dict:
         configs = [path.name]
     else:
         baseconfig = parse_path(args.baseconfig) if args.baseconfig else (cwd / "config")
-        configs = ["piskie.yaml"]
+        configs = ["netboot.yaml"]
 
     loader = ConfigLoader(
         base_dir=baseconfig,
@@ -140,8 +140,8 @@ def _load_config(args: "Piskie_") -> dict:
     return conf
 
 
-def _wants_piskie(run: "_ty.Callable | None") -> bool:
-    """Does this command's ``run`` follow piskie's ``run(piskie, args, conf)`` shape?
+def _wants_netboot(run: "_ty.Callable | None") -> bool:
+    """Does this command's ``run`` follow netboot's ``run(netboot, args, conf)`` shape?
 
     True when ``run`` accepts at least three positional parameters (or has
     ``*args``); a plain duho ``run(args)`` returns False and is dispatched
@@ -167,11 +167,11 @@ def _wants_piskie(run: "_ty.Callable | None") -> bool:
     return positional >= 3
 
 
-def _dispatch(command: object, instance: "Piskie_") -> int:
-    """duho ``app`` dispatch seam: build ``Piskie`` from config and run the command.
+def _dispatch(command: object, instance: "Netboot_") -> int:
+    """duho ``app`` dispatch seam: build ``Netboot`` from config and run the command.
 
-    A piskie command is always a module command exposing ``run(piskie, args, conf)``.
-    We build a single :class:`~piskie.Piskie` from the layered config, then invoke
+    A netboot command is always a module command exposing ``run(netboot, args, conf)``.
+    We build a single :class:`~netboot.Netboot` from the layered config, then invoke
     the selected module's ``run``. A non-module command (none today) falls back
     to duho's own single dispatch.
     """
@@ -180,11 +180,11 @@ def _dispatch(command: object, instance: "Piskie_") -> int:
     if not isinstance(command, ModuleCommand):
         return run_command(_ty.cast(_ty.Any, command), instance)
 
-    # A user command discovered via --cmdspath/PISKIE_PATH may follow duho's plain
-    # 1-arg run(args) contract rather than piskie's run(piskie, args, conf); only the
-    # piskie-first contract needs a built Piskie, so introspect before building one.
+    # A user command discovered via --cmdspath/NETBOOT_PATH may follow duho's plain
+    # 1-arg run(args) contract rather than netboot's run(netboot, args, conf); only the
+    # netboot-first contract needs a built Netboot, so introspect before building one.
     run = getattr(command.module, "run", None)
-    if not _wants_piskie(run):
+    if not _wants_netboot(run):
         return run_command(command, instance)
 
     for name in instance.load_module or []:
@@ -193,9 +193,9 @@ def _dispatch(command: object, instance: "Piskie_") -> int:
 
     conf = _load_config(instance)
     orig = _deepcopy(conf)
-    piskie = Piskie(**conf)
+    netboot = Netboot(**conf)
 
-    result = run(piskie, instance, orig)
+    result = run(netboot, instance, orig)
     return 0 if result is None else int(result)
 
 
@@ -204,13 +204,13 @@ def main(
     argv: "_ty.Sequence[str] | None" = None,
 ) -> int:
     """Build the app, parse ``argv``, and run the selected command."""
-    name = name or "piskie"
+    name = name or "netboot"
     return app(
-        Piskie_,
+        Netboot_,
         commands=_discover(argv),
         argv=argv,
         name=name,
-        description=Piskie_.__doc__,
+        description=Netboot_.__doc__,
         dispatch=_dispatch,
     )
 

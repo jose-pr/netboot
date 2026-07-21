@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "piskie"
+name = "netboot"
 version = "0.1.0"
 authors = [{ name = "Jose A." }]
 description = "PXE provisioning management: render netboot artifacts and drive DHCP for targets"
@@ -37,24 +37,24 @@ dependencies = [
 [project.optional-dependencies]
 # Config-file loading for the CLI (YAML with !include).
 config = ["pyyaml"]
-# DNS resolution of hostname targets (piskie._netutils.nslookup).
+# DNS resolution of hostname targets (netboot._netutils.nslookup).
 dns = ["dnspython"]
 dev = ["build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml", "dnspython"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]
-piskie = "piskie.main:main"
+netboot = "netboot.main:main"
 
 [project.urls]
-Homepage = "https://github.com/jose-pr/piskie/"
-Issues = "https://github.com/jose-pr/piskie/issues"
-Repository = "https://github.com/jose-pr/piskie"
+Homepage = "https://github.com/jose-pr/netboot/"
+Issues = "https://github.com/jose-pr/netboot/issues"
+Repository = "https://github.com/jose-pr/netboot"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["/.*", "/.agents"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/piskie"]
+packages = ["src/netboot"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

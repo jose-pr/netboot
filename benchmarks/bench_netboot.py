@@ -1,6 +1,6 @@
-"""piskie micro-benchmarks: the per-request hot paths.
+"""netboot micro-benchmarks: the per-request hot paths.
 
-Measures the two operations piskie runs most often per PXE request:
+Measures the two operations netboot runs most often per PXE request:
 
 * ``lookup_target`` — a linear scan over the configured targets matching by
   hostname prefix / MAC / IP;
@@ -8,8 +8,8 @@ Measures the two operations piskie runs most often per PXE request:
 
 Run:
 
-    python benchmarks/bench_piskie.py --iterations 20000
-    python benchmarks/bench_piskie.py --json-output results/piskie.json
+    python benchmarks/bench_netboot.py --iterations 20000
+    python benchmarks/bench_netboot.py --json-output results/netboot.json
 
 Each metric reports min/median/max ms-per-call over the sample; compare on the
 median (a single average hides run-to-run noise). Local timings are a sanity
@@ -30,10 +30,10 @@ from datetime import datetime, timezone
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, (REPO_ROOT / "src").as_posix())
 
-import piskie  # noqa: E402
+import netboot  # noqa: E402
 
 
-def _build_piskie(n_targets: int) -> "piskie.Piskie":
+def _build_netboot(n_targets: int) -> "netboot.Netboot":
     targets = {}
     for i in range(n_targets):
         targets[f"host{i}"] = {
@@ -41,7 +41,7 @@ def _build_piskie(n_targets: int) -> "piskie.Piskie":
             "ip": f"10.0.{i // 256}.{i % 256}",
             "image": "debian",
         }
-    return piskie.Piskie(
+    return netboot.Netboot(
         images={"debian": {"template_path": []}},
         dhcpzones={"lan": {"network": "10.0.0.0/16"}},
         targets=targets,
@@ -62,7 +62,7 @@ def _sample(fn, iterations: int, repeats: int = 7) -> "dict[str, float]":
 
 
 def run_benchmarks(iterations: int, n_targets: int = 500) -> "dict[str, dict]":
-    p = _build_piskie(n_targets)
+    p = _build_netboot(n_targets)
     # Worst-case lookup: the last target, forcing a full scan.
     last = f"host{n_targets - 1}"
     ctx = p.make_context(p.lookup_target("host0"))
@@ -81,13 +81,13 @@ def _report(iterations: int, results: "dict[str, dict]") -> dict:
         "iterations": iterations,
         "python": platform.python_version(),
         "platform": platform.platform(),
-        "piskie_version": piskie.Piskie.VERSION,
+        "netboot_version": netboot.Netboot.VERSION,
         "metrics": results,
     }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run piskie micro-benchmarks")
+    parser = argparse.ArgumentParser(description="Run netboot micro-benchmarks")
     parser.add_argument("--iterations", type=int, default=20000)
     parser.add_argument("--targets", type=int, default=500)
     parser.add_argument(

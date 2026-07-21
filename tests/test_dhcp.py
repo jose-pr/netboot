@@ -2,7 +2,7 @@
 
 import pytest
 
-from piskie.dhcp import DhcpServer, DhcpZone
+from netboot.dhcp import DhcpServer, DhcpZone
 
 
 def test_zone_parses_network_and_nameservers():

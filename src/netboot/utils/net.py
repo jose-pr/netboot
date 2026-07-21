@@ -1,8 +1,8 @@
-"""Network helpers for piskie.
+"""Network helpers for netboot.
 
-The IP/MAC address machinery lives in the vendored :mod:`piskie._netutils` module;
-re-export the names piskie uses so the rest of the package can import them from a
-single place (``piskie.utils``).
+The IP/MAC address machinery lives in the vendored :mod:`netboot._netutils` module;
+re-export the names netboot uses so the rest of the package can import them from a
+single place (``netboot.utils``).
 """
 
 from .._netutils import (  # noqa: F401

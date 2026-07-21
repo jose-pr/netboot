@@ -1,85 +1,85 @@
-# `piskie` — public API header
+# `netboot` — public API header
 
-Header-file-style reference for the `piskie` package: every public export with
+Header-file-style reference for the `netboot` package: every public export with
 its signature, arguments, contract, and gotchas, so this module can be
 consumed without reading its source. Kept current with the public API. For the
 project overview, install instructions and CLI usage, see the repo-root
 overview doc.
 
-## Engine (`piskie` / `piskie.__init__`)
+## Engine (`netboot` / `netboot.__init__`)
 
-- **`Piskie(hooks=(), **config)`** — the engine. `config` is the merged config
+- **`Netboot(hooks=(), **config)`** — the engine. `config` is the merged config
   mapping: `targets`, `images`, `dhcpzones`, `repos` (each a `dict[id, ...]`
   built into the corresponding class via its type hints — `TypeError` from the
   value class falls back to a no-`_id` constructor call), `globals` (dict,
   deep-copied), `defaults` (per-collection default mappings), plus any other
-  annotated `Piskie` attribute. `hooks` is a sequence of callables or
+  annotated `Netboot` attribute. `hooks` is a sequence of callables or
   `"module.func"` import-path strings; resolved once in `__new__`. Every
-  config-driven step fires a `PiskieEvent` through the hook chain (see below)
+  config-driven step fires a `NetbootEvent` through the hook chain (see below)
   so hooks can intercept object construction and property values before
   they're set.
   - **`.targets`** / **`.dhcpzones`** / **`.images`** / **`.repos`** —
-    `dict[str, ...]` of `PiskieTarget` / `DhcpZone` / `PiskieImage` /
+    `dict[str, ...]` of `NetbootTarget` / `DhcpZone` / `NetbootImage` /
     `Repository`, keyed by config id.
   - **`.globals`** — `dict`, layered into every render context.
   - **`.hook(event, value=None, **kwargs) -> value`** — run the hook chain for
-    `event`, threading `value` through each `f(event, piskie, value, kwargs)`
+    `event`, threading `value` through each `f(event, netboot, value, kwargs)`
     and returning the (possibly transformed) result.
-  - **`.lookup_target(target: str) -> PiskieTarget | None`** — exact id match
+  - **`.lookup_target(target: str) -> NetbootTarget | None`** — exact id match
     first, else the first target whose hostname starts with `target`
     (case-insensitive), or whose MAC or IP equals it. Fires
-    `PiskieEvent.LookupTarget` (may substitute a `PiskieTarget` directly) then
-    `PiskieEvent.FoundTarget`; `None` if nothing resolves to a `PiskieTarget`.
-  - **`.lookup_image(name: str, target=None) -> PiskieImage`** — the image
+    `NetbootEvent.LookupTarget` (may substitute a `NetbootTarget` directly) then
+    `NetbootEvent.FoundTarget`; `None` if nothing resolves to a `NetbootTarget`.
+  - **`.lookup_image(name: str, target=None) -> NetbootImage`** — the image
     whose `.match(img_name, name)` returns the highest truthy value (default
-    `PiskieImage.match` is exact-name equality); falls back to an empty dict
+    `NetbootImage.match` is exact-name equality); falls back to an empty dict
     if nothing matches (**not** `None` — check truthiness carefully). Fires
-    `PiskieEvent.FoundTargetImage`.
+    `NetbootEvent.FoundTargetImage`.
   - **`.lookup_dhcpzone(name: str, target=None) -> DhcpZone | None`** — by id;
     if `name` is empty and `target` is given, uses `target.dhcpzone` or finds
     the zone whose `.network` contains `target.ip` (and caches the id back
-    onto `target.dhcpzone`). Fires `PiskieEvent.FoundTargetDhcpzone`.
-  - **`.make_context(target, globals: list[dict] = None) -> PiskieContext`** —
+    onto `target.dhcpzone`). Fires `NetbootEvent.FoundTargetDhcpzone`.
+  - **`.make_context(target, globals: list[dict] = None) -> NetbootContext`** —
     resolves image + dhcp zone for `target`, merges
     `[self.globals, *globals, image.globals, dhcpzone.globals, target.globals]`
     (image/dhcpzone/target objects are shared across targets and never
-    mutated) into a fresh `PiskieContext`, attaches a new `Renderer`/`Loader`
+    mutated) into a fresh `NetbootContext`, attaches a new `Renderer`/`Loader`
     over `config["templates"]`, and sets `.version`. Raises a plain
     `Exception` if the target's image or dhcp zone can't be resolved. Fires
-    `PiskieEvent.PiskieContextForTarget`.
-  - **`.initialize(target) -> PiskieContext`** — `make_context` then
+    `NetbootEvent.NetbootContextForTarget`.
+  - **`.initialize(target) -> NetbootContext`** — `make_context` then
     `ctx.pxe_init(self)` (arms every `dhcpzone.dhcpservers` for the target).
-    Fires `StartPiskieInitialize` / `EndPiskieInitialize`.
-  - **`.complete(target) -> PiskieContext`** — `make_context` then
+    Fires `StartNetbootInitialize` / `EndNetbootInitialize`.
+  - **`.complete(target) -> NetbootContext`** — `make_context` then
     `ctx.pxe_complete(self)` (disarms every `dhcpzone.dhcpservers`). Fires
-    `StartPiskieComplete` / `EndPiskieComplete`.
-  - **`.VERSION`** — class attr, `piskie.__version__` at class-definition time.
+    `StartNetbootComplete` / `EndNetbootComplete`.
+  - **`.VERSION`** — class attr, `netboot.__version__` at class-definition time.
 
-- **`PiskieEvent`** (`StrEnum`) — hook event names: `NewPiskieObject`,
-  `StartPiskieInit`, `SetPiskieProperty`, `PiskieInitiated`, `LookupTarget`,
+- **`NetbootEvent`** (`StrEnum`) — hook event names: `NewNetbootObject`,
+  `StartNetbootInit`, `SetNetbootProperty`, `NetbootInitiated`, `LookupTarget`,
   `FoundTarget`, `FoundTargetImage`, `FoundTargetDhcpzone`,
-  `PiskieContextForTarget`, `StartPiskieInitialize`, `EndPiskieInitialize`,
-  `StartPiskieComplete`, `EndPiskieComplete`.
+  `NetbootContextForTarget`, `StartNetbootInitialize`, `EndNetbootInitialize`,
+  `StartNetbootComplete`, `EndNetbootComplete`.
 
-- **`PiskieTarget(**kwargs)`** (`argparse.Namespace` + `yaconfiglib.OpaqueMerge`)
+- **`NetbootTarget(**kwargs)`** (`argparse.Namespace` + `yaconfiglib.OpaqueMerge`)
   — `_id`, `hostname`, `ip` (`IPAddress`), `mac` (`MACAddress`), `image`,
   `dhcpzone`, `globals` (`dict`), `template_path` (`list[str | Path]`).
   Construction fills gaps: a MAC-shaped `_id` with no explicit `mac` is
   adopted as the MAC (else `mac` defaults to the null MAC
   `00:00:00:00:00:00`); if `ip`/`hostname` are missing, resolves `hostname`
-  via reverse/forward DNS lookup (`piskie._netutils.nslookup`) or infers
+  via reverse/forward DNS lookup (`netboot._netutils.nslookup`) or infers
   `hostname`/`ip` from `_id` when it looks like one; `hostname` is
   lower-cased. Requires the `dns` extra for hostname resolution to actually
   find an IP (silently yields empty otherwise).
 
-- **`PiskieImage(**kwargs)`** (`content.Resource`) — `template_path`,
+- **`NetbootImage(**kwargs)`** (`content.Resource`) — `template_path`,
   `globals`. **`.match(name: str, check: str)`** — override point for custom
   image-selection logic; default is `name == check`. Returning a comparable
-  (e.g. `int`) instead of a bare bool lets `Piskie.lookup_image` prefer the
+  (e.g. `int`) instead of a bare bool lets `Netboot.lookup_image` prefer the
   best of several matches.
 
-- **`PiskieContext(**kwargs)`** (`argparse.Namespace`) — built by
-  `Piskie.make_context`, not constructed directly. Fields: `target`, `image`,
+- **`NetbootContext(**kwargs)`** (`argparse.Namespace`) — built by
+  `Netboot.make_context`, not constructed directly. Fields: `target`, `image`,
   `dhcpzone`, `repos` (`dict[str, Repository]`), `resources`
   (`dict[str, Resource]`), `generated` (`datetime`, set at construction),
   `version` (`str`), `templates`, `_renderer` (a `templates.Renderer`).
@@ -96,11 +96,11 @@ overview doc.
   - **`.searchpaths -> list[Path]`** — `target.template_path + image.template_path`,
     consulted (before the engine-wide `config["templates"]`) when resolving a
     template name.
-  - **`.pxe_init(piskie) -> Self`** / **`.pxe_complete(piskie) -> Self`** —
+  - **`.pxe_init(netboot) -> Self`** / **`.pxe_complete(netboot) -> Self`** —
     arm/disarm every `dhcpzone.dhcpservers` for this context; called by
-    `Piskie.initialize`/`.complete`, not usually invoked directly.
+    `Netboot.initialize`/`.complete`, not usually invoked directly.
 
-## DHCP (`piskie.dhcp`)
+## DHCP (`netboot.dhcp`)
 
 - **`DhcpServer(uri: str)`** — base class for DHCP backends, dispatched by
   URI scheme: `DhcpServer("dnsmasq://...")` returns an instance of whichever
@@ -108,7 +108,7 @@ overview doc.
   depth, so a plugin may subclass an intermediate base). Raises `ValueError`
   if no subclass matches the scheme — import the plugin module first (e.g.
   via CLI `--load-module`). `.uri` holds the original URI.
-  - **`.add_target(ctx: PiskieContext)`** / **`.remove_target(ctx)`** — no-ops
+  - **`.add_target(ctx: NetbootContext)`** / **`.remove_target(ctx)`** — no-ops
     on the base class; a backend overrides these to actually arm/disarm.
 - **`DhcpZone(**kwargs)`** (`Namespace` + `OpaqueMerge`) — `network`
   (`IPNetwork`), `gateway` (`IPAddress | None`), `domain` (`str | None`),
@@ -119,7 +119,7 @@ overview doc.
   **`.get_local_server(servers, default)`** — first `server` contained in
   `.network`, else `default`.
 
-## Content (`piskie.content`)
+## Content (`netboot.content`)
 
 - **`Resource(**kwargs)`** — `path` (`Pathname`, coerced via `_parse_path`),
   `src` (repo id string). `resource / "sub"` joins the path, same `src`.
@@ -133,7 +133,7 @@ overview doc.
   — the base URI for `name` (host filled in from `.address.try_ip()` for
   non-local services). `repo[path, service]` is sugar for `.get(path, service=service)`.
 
-## Templates (`piskie.templates`)
+## Templates (`netboot.templates`)
 
 - **`Loader(searchpaths, template_types=(JinjaTemplate, ShellTemplate))`** — a
   Jinja2 `BaseLoader`. Resolves a template name against
@@ -146,7 +146,7 @@ overview doc.
   `jinja2.TemplateNotFound` if nothing matches, or a plain `Exception` if a
   matching type has no usable engine.
 - **`Renderer`** — alias for `jinja2.Environment`; one is created per
-  `PiskieContext` (never share one across contexts — `globals["ctx"]` is
+  `NetbootContext` (never share one across contexts — `globals["ctx"]` is
   mutated per render).
 - **`Template`** — minimal base (`.render(**globals)`, classmethod
   `.can_process(file, template) -> bool`, both no-ops/`False` on the base).
@@ -160,10 +160,10 @@ overview doc.
   list items by index) into `UPPERCASE` substitution variables (`None` → `""`,
   `bool` → `"true"`/`"false"`).
 
-## Utils (`piskie.utils`)
+## Utils (`netboot.utils`)
 
-- **`Namespace`** (`piskie.utils.config`) — `yaconfiglib.TypedNamespace` +
-  `OpaqueMerge`; the shared base for piskie's config objects (applies
+- **`Namespace`** (`netboot.utils.config`) — `yaconfiglib.TypedNamespace` +
+  `OpaqueMerge`; the shared base for netboot's config objects (applies
   `_parse_<prop>` coercers at construction, and marks the built object as
   merge-opaque — a later config layer replaces it wholesale rather than
   merging field-by-field).
@@ -180,60 +180,60 @@ overview doc.
   range.
 - **`import_(name: str) -> object`** — import `"pkg.mod.attr"` and return
   `attr` (splits on the last dot).
-- **IP/MAC re-exports** (from the vendored `piskie._netutils`, also available
-  as `piskie.utils.net.*`): `IPAddress`, `IPInterface`, `IPNetwork` (factories
+- **IP/MAC re-exports** (from the vendored `netboot._netutils`, also available
+  as `netboot.utils.net.*`): `IPAddress`, `IPInterface`, `IPNetwork` (factories
   over stdlib `ipaddress`; `IPNetwork` defaults `strict=False`), `parse_ip`/
   `parse_network` (tolerate `None`/empty → `None`), `is_valid_ip` (never
   raises), `MACAddress` (accepts colon/hyphen/Cisco-dot/bare textual forms,
   int, or bytes; `.as_str(sep)`, `.packed`, hashable/comparable),
   `active_nic_addresses`, `ping`, `nslookup` (needs the `dns` extra; always
-  returns a `list`, empty on any failure, never `None`). `piskie._netutils` is
-  a private, in-tree module — import these names via `piskie.utils` /
-  `piskie.utils.net`, not the private path directly.
+  returns a `list`, empty on any failure, never `None`). `netboot._netutils` is
+  a private, in-tree module — import these names via `netboot.utils` /
+  `netboot.utils.net`, not the private path directly.
 
-## Logging (`piskie.logging`)
+## Logging (`netboot.logging`)
 
-- **`LOGGER`** — the `"PISKIE"` logger. Importing this module also quiets
+- **`LOGGER`** — the `"NETBOOT"` logger. Importing this module also quiets
   `urllib3.connectionpool` / `paramiko.transport` to `WARNING` and disables
   urllib3's insecure-request warning, best-effort, without importing those
   libraries itself.
 
-## CLI driver (`piskie.main`)
+## CLI driver (`netboot.main`)
 
 Thin driver over `duho.app`; `duho` owns command discovery, parser build,
-config/env layering and parsing. Piskie overrides only *dispatch*: it loads
-the layered YAML config into one `Piskie` object, then runs the selected
+config/env layering and parsing. Netboot overrides only *dispatch*: it loads
+the layered YAML config into one `Netboot` object, then runs the selected
 command against it.
 
 - **`main(name=None, argv=None) -> int`** — build the app, parse `argv`,
-  dispatch. `name` defaults to `"piskie"`. This is the console-script
-  (`piskie = piskie.main:main`) and `python -m piskie` entry point.
-- **`PiskieArgs`** (`duho.LoggingArgs` mixin) — the global CLI fields:
+  dispatch. `name` defaults to `"netboot"`. This is the console-script
+  (`netboot = netboot.main:main`) and `python -m netboot` entry point.
+- **`NetbootArgs`** (`duho.LoggingArgs` mixin) — the global CLI fields:
   `config` (`-c/--config`), `baseconfig` (default `./config`), `load_module`
   (`-l/--load-module`, repeatable, colon-extendable), `cmdspath`
   (`--cmdspath`, repeatable, `os.pathsep`-extendable).
-- **`Piskie_`** (`PiskieArgs` + `duho.Cli`) — the runnable app root;
-  `_version_` is `piskie.__version__`.
+- **`Netboot_`** (`NetbootArgs` + `duho.Cli`) — the runnable app root;
+  `_version_` is `netboot.__version__`.
 - **`parse_path(path: str | Path) -> Path`** — a bare path → `LocalPath`; a
   path containing `:` (a URI scheme) → `UriPath`.
-- Command-module contract (built-ins in `piskie.cmds`; discovered the same
-  way via `--cmdspath` / `PISKIE_PATH`, `os.pathsep`-separated): a module
+- Command-module contract (built-ins in `netboot.cmds`; discovered the same
+  way via `--cmdspath` / `NETBOOT_PATH`, `os.pathsep`-separated): a module
   exposing `register(parser, args)` (add its argparse arguments) and
-  `run(piskie: Piskie, args, conf: dict) -> int | None` (`conf` is the raw
-  merged config dict, deep-copied before `Piskie` construction). A later
+  `run(netboot: Netboot, args, conf: dict) -> int | None` (`conf` is the raw
+  merged config dict, deep-copied before `Netboot` construction). A later
   command source wins on a name clash. A module whose `run` does **not**
-  accept at least 3 positional params (no piskie-first signature) is instead
+  accept at least 3 positional params (no netboot-first signature) is instead
   dispatched through plain `duho.run_command(command, instance)`.
-- Loading the config (`-c/--config`, else `<baseconfig>/piskie.yaml`) requires
+- Loading the config (`-c/--config`, else `<baseconfig>/netboot.yaml`) requires
   the `config` extra (`pyyaml`); raises `ImportError` with an install hint
   otherwise. `conf["templates"]` always gets the CWD's `templates` dir
   prepended.
 
-## Built-in commands (`piskie.cmds`)
+## Built-in commands (`netboot.cmds`)
 
-- **`initiate <target> [--iscsi]`** — `piskie.lookup_target` then
-  `piskie.initialize(target)`. `--iscsi` is accepted but not yet consumed by
+- **`initiate <target> [--iscsi]`** — `netboot.lookup_target` then
+  `netboot.initialize(target)`. `--iscsi` is accepted but not yet consumed by
   the built-in logic (a hook/plugin extension point). Exit 1 if the target
   isn't found.
-- **`complete <target>`** — `piskie.lookup_target` then
-  `piskie.complete(target)`. Exit 1 if the target isn't found.
+- **`complete <target>`** — `netboot.lookup_target` then
+  `netboot.complete(target)`. Exit 1 if the target isn't found.

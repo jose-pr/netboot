@@ -1,4 +1,4 @@
-"""End-to-end-ish test: build a Piskie from config and render a template.
+"""End-to-end-ish test: build a Netboot from config and render a template.
 
 Exercises target/image/dhcpzone lookup, context construction, and both the
 Jinja2 and shell template engines against a temporary search path.
@@ -6,7 +6,7 @@ Jinja2 and shell template engines against a temporary search path.
 
 import pytest
 
-import piskie
+import netboot
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def templates_dir(tmp_path):
     return d
 
 
-def _make_piskie(templates_dir):
+def _make_netboot(templates_dir):
     config = {
         "templates": [templates_dir],
         "images": {"debian": {"template_path": []}},
@@ -27,11 +27,11 @@ def _make_piskie(templates_dir):
             "host1": {"hostname": "host1", "ip": "10.0.0.5", "image": "debian"},
         },
     }
-    return piskie.Piskie(**config)
+    return netboot.Netboot(**config)
 
 
 def test_lookup_and_make_context(templates_dir):
-    p = _make_piskie(templates_dir)
+    p = _make_netboot(templates_dir)
     target = p.lookup_target("host1")
     assert target is not None
     ctx = p.make_context(target)
@@ -40,13 +40,13 @@ def test_lookup_and_make_context(templates_dir):
 
 
 def test_render_jinja(templates_dir):
-    p = _make_piskie(templates_dir)
+    p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
     assert ctx.render("boot.j2") == "host=host1 img=debian"
 
 
 def test_render_shell(templates_dir):
-    p = _make_piskie(templates_dir)
+    p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
     out = ctx.render("boot.sh")
     assert "HOST=host1" in out
@@ -54,5 +54,5 @@ def test_render_shell(templates_dir):
 
 
 def test_lookup_target_by_ip(templates_dir):
-    p = _make_piskie(templates_dir)
+    p = _make_netboot(templates_dir)
     assert p.lookup_target("10.0.0.5") is p.lookup_target("host1")

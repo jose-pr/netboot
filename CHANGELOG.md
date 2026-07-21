@@ -8,14 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0] - 2026-07-18
 
-First packaged release, published as `piskie`.
+First packaged release, published as `netboot`.
 
 ### Added
-- Packaged as `piskie` (src layout, hatchling, `piskie` console script, `py.typed`).
+- Packaged as `netboot` (src layout, hatchling, `netboot` console script, `py.typed`).
   Python 3.9+.
-- PXE provisioning engine: `Piskie` with target/image/dhcpzone/repo lookup, a
-  render `PiskieContext`, and an `initialize`/`complete` lifecycle.
-- Event-hook system (`PiskieEvent`, `Piskie(hooks=...)`) for customising lookup,
+- PXE provisioning engine: `Netboot` with target/image/dhcpzone/repo lookup, a
+  render `NetbootContext`, and an `initialize`/`complete` lifecycle.
+- Event-hook system (`NetbootEvent`, `Netboot(hooks=...)`) for customising lookup,
   context construction and the init/complete lifecycle.
 - Template rendering via a URI-aware Jinja2 loader plus a `%`-delimited shell
   template engine, selecting sources by MAC / hostname / IP.
@@ -29,9 +29,9 @@ First packaged release, published as `piskie`.
   `yaconfiglib>=0.10.0`).
 - Two-workflow CI (`test`, `Release`) and a MkDocs documentation site
   (`docs/` + `mkdocs.yml`, API reference via mkdocstrings), plus a
-  `benchmarks/bench_piskie.py` micro-benchmark for the lookup/template hot paths.
-- IP/MAC/DNS helpers vendored in-tree as `piskie._netutils`; DNS lookup of
-  hostname targets is the optional `piskie[dns]` extra (`dnspython`).
+  `benchmarks/bench_netboot.py` micro-benchmark for the lookup/template hot paths.
+- IP/MAC/DNS helpers vendored in-tree as `netboot._netutils`; DNS lookup of
+  hostname targets is the optional `netboot[dns]` extra (`dnspython`).
 
 ### Changed
 - Built on `duho` (args/command-discovery/app) rather than the in-house
@@ -56,5 +56,5 @@ First packaged release, published as `piskie`.
   config value construction no longer swallows non-`TypeError` errors; repo
   `joinpath` keeps `.local` a path so chained joins work.
 
-[Unreleased]: https://github.com/jose-pr/piskie/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/jose-pr/piskie/releases/tag/v0.1.0
+[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/jose-pr/netboot/releases/tag/v0.1.0

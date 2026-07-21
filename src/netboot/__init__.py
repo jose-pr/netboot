@@ -8,7 +8,7 @@ try:
     from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
     try:
-        __version__ = _pkg_version("piskie")
+        __version__ = _pkg_version("netboot")
     except PackageNotFoundError:  # running from a source tree without install
         __version__ = "0.0.0"
 except ImportError:  # pragma: no cover - importlib.metadata is stdlib on 3.9+
@@ -38,7 +38,7 @@ from .utils import IPAddress, MACAddress, T
 from .utils.misc import import_
 
 
-class PiskieTarget(Namespace, OpaqueMerge):
+class NetbootTarget(Namespace, OpaqueMerge):
     _id: str
     hostname: str
     ip: IPAddress
@@ -92,7 +92,7 @@ class PiskieTarget(Namespace, OpaqueMerge):
         self.hostname = self.hostname.lower()
 
 
-class PiskieImage(Resource):
+class NetbootImage(Resource):
     template_path: list["Path"]
     globals: dict
 
@@ -100,9 +100,9 @@ class PiskieImage(Resource):
         return name == check
 
 
-class PiskieContext(Namespace):
-    target: PiskieTarget
-    image: PiskieImage
+class NetbootContext(Namespace):
+    target: NetbootTarget
+    image: NetbootImage
     dhcpzone: DhcpZone
     repos: dict[str, Repository]
     generated: datetime.datetime
@@ -116,7 +116,7 @@ class PiskieContext(Namespace):
         self.generated = datetime.datetime.now()
         super().__init__(**kwargs)
 
-    def init(self, piskie: "Piskie"): ...
+    def init(self, netboot: "Netboot"): ...
 
     def resource(self, name: Union[str, Resource], service: str = None):
         if isinstance(name, Resource):
@@ -137,12 +137,12 @@ class PiskieContext(Namespace):
             return
         return self.repos.get(resource.src)
 
-    def pxe_init(self, config: "Piskie"):
+    def pxe_init(self, config: "Netboot"):
         for dhcpserver in self.dhcpzone.dhcpservers:
             dhcpserver.add_target(self)
         return self
 
-    def pxe_complete(self, config: "Piskie"):
+    def pxe_complete(self, config: "Netboot"):
         for dhcpserver in self.dhcpzone.dhcpservers:
             dhcpserver.remove_target(self)
         return self
@@ -173,7 +173,7 @@ class PiskieContext(Namespace):
         return [*self.target.template_path, *self.image.template_path]
 
     def render(self, filename: str, strict=True):
-        # Each PiskieContext owns its own Renderer (built in make_context), so
+        # Each NetbootContext owns its own Renderer (built in make_context), so
         # setting globals["ctx"] here is per-context; do not share one Renderer
         # across contexts or nested renders would clobber this.
         self._renderer.globals["ctx"] = self
@@ -190,77 +190,77 @@ class PiskieContext(Namespace):
                 return None
 
 
-class PiskieEvent(StrEnum):
-    NewPiskieObject = "PiskieEvent.NewPiskieObject"
-    StartPiskieInit = "PiskieEvent.StartPiskieInit"
-    SetPiskieProperty = "PiskieEvent.SetPiskieProperty"
-    PiskieInitiated = "PiskieEvent.PiskieInitiated"
-    LookupTarget = "PiskieEvent.LookupTarget"
-    FoundTarget = "PiskieEvent.FoundTarget"
-    FoundTargetImage = "PiskieEvent.FoundTargetImage"
-    FoundTargetDhcpzone = "PiskieEvent.FoundTargetDhcpzone"
-    PiskieContextForTarget = "PiskieEvent.PiskieContextForTarget"
-    StartPiskieInitialize = "PiskieEvent.StartPiskieInitialize"
-    EndPiskieInitialize = "PiskieEvent.EndPiskieInitialize"
-    StartPiskieComplete = "PiskieEvent.StartPiskieComplete"
-    EndPiskieComplete = "PiskieEvent.EndPiskieComplete"
+class NetbootEvent(StrEnum):
+    NewNetbootObject = "NetbootEvent.NewNetbootObject"
+    StartNetbootInit = "NetbootEvent.StartNetbootInit"
+    SetNetbootProperty = "NetbootEvent.SetNetbootProperty"
+    NetbootInitiated = "NetbootEvent.NetbootInitiated"
+    LookupTarget = "NetbootEvent.LookupTarget"
+    FoundTarget = "NetbootEvent.FoundTarget"
+    FoundTargetImage = "NetbootEvent.FoundTargetImage"
+    FoundTargetDhcpzone = "NetbootEvent.FoundTargetDhcpzone"
+    NetbootContextForTarget = "NetbootEvent.NetbootContextForTarget"
+    StartNetbootInitialize = "NetbootEvent.StartNetbootInitialize"
+    EndNetbootInitialize = "NetbootEvent.EndNetbootInitialize"
+    StartNetbootComplete = "NetbootEvent.StartNetbootComplete"
+    EndNetbootComplete = "NetbootEvent.EndNetbootComplete"
 
 
-_PiskieHook = _ty.Callable[["PiskieEvent", "Piskie", T, dict], T]
+_NetbootHook = _ty.Callable[["NetbootEvent", "Netboot", T, dict], T]
 
 
-class Piskie:
-    targets: "dict[str,PiskieTarget]"
+class Netboot:
+    targets: "dict[str,NetbootTarget]"
     dhcpzones: "dict[str,DhcpZone]"
-    images: "dict[str, PiskieImage]"
+    images: "dict[str, NetbootImage]"
     repos: "dict[str,Repository]"
     globals: dict[str, object]
-    _ctxcls: PiskieContext = PiskieContext
+    _ctxcls: NetbootContext = NetbootContext
     VERSION = __version__
     _config: dict
-    _hooks: list[_PiskieHook] = []
+    _hooks: list[_NetbootHook] = []
 
     def hook(
-        self: "Piskie|_ty.Sequence[_PiskieHook]",
-        event: PiskieEvent,
+        self: "Netboot|_ty.Sequence[_NetbootHook]",
+        event: NetbootEvent,
         __value: T = None,
         /,
         **kwargs,
     ):
         LOGGER.debug(f"Running Hooks for: {event}")
-        if isinstance(self, Piskie):
-            piskie = self
+        if isinstance(self, Netboot):
+            netboot = self
             hooks = self._hooks
         else:
-            piskie = None
+            netboot = None
             hooks = self
         for hook in hooks:
-            __value = hook(event, piskie, __value, kwargs)
+            __value = hook(event, netboot, __value, kwargs)
         return __value
 
     def __new__(
         cls,
         /,
-        hooks: _ty.Sequence[_PiskieHook] = [],
+        hooks: _ty.Sequence[_NetbootHook] = [],
         **config,
     ):
 
         hooks = [(hook if callable(hook) else import_(hook)) for hook in hooks]
-        cls = Piskie.hook(hooks, PiskieEvent.NewPiskieObject, cls, config=config)
+        cls = Netboot.hook(hooks, NetbootEvent.NewNetbootObject, cls, config=config)
         inst = object.__new__(cls)
         inst._hooks = hooks
         return inst
 
     def __init__(
-        piskie,
+        netboot,
         /,
         **config,
     ):
-        piskie._config = piskie.hook(PiskieEvent.StartPiskieInit, config)
-        piskie.globals = deepcopy(config.get("globals") or {})
+        netboot._config = netboot.hook(NetbootEvent.StartNetbootInit, config)
+        netboot.globals = deepcopy(config.get("globals") or {})
         defaults = config.get("defaults") or {}
 
-        for prop, hint in get_type_hints(piskie.__class__).items():
+        for prop, hint in get_type_hints(netboot.__class__).items():
             if prop.startswith("_"):
                 continue
             origin = _ty.get_origin(hint) or hint
@@ -291,15 +291,15 @@ class Piskie:
                         _value[_keycls(uid)] = _valctr(uid, val)
             else:
                 _value = hint(value) if value is not None else None
-            prop, value = piskie.hook(
-                PiskieEvent.SetPiskieProperty, (prop, _value), origin=origin, rawvalue=value
+            prop, value = netboot.hook(
+                NetbootEvent.SetNetbootProperty, (prop, _value), origin=origin, rawvalue=value
             )
-            setattr(piskie, prop, value)
+            setattr(netboot, prop, value)
 
-        piskie.hook(PiskieEvent.PiskieInitiated)
+        netboot.hook(NetbootEvent.NetbootInitiated)
 
-    def lookup_target(self, target: str) -> PiskieTarget:
-        target: Union[str, PiskieTarget] = self.hook(PiskieEvent.LookupTarget, target)
+    def lookup_target(self, target: str) -> NetbootTarget:
+        target: Union[str, NetbootTarget] = self.hook(NetbootEvent.LookupTarget, target)
         if isinstance(target, str):
             lower: str = target.lower()
             _target = self.targets.get(target, None)
@@ -316,21 +316,21 @@ class Piskie:
             else:
                 target = _target
 
-        target = self.hook(PiskieEvent.FoundTarget, target)
-        if not isinstance(target, PiskieTarget):
+        target = self.hook(NetbootEvent.FoundTarget, target)
+        if not isinstance(target, NetbootTarget):
             target = None
         return target
 
-    def lookup_image(self, name: str, target: PiskieTarget = None) -> PiskieImage:
-        imgs: list[tuple[int, PiskieImage]] = [(-1, {})]
+    def lookup_image(self, name: str, target: NetbootTarget = None) -> NetbootImage:
+        imgs: list[tuple[int, NetbootImage]] = [(-1, {})]
         for img_name, image in self.images.items():
             check = image.match(img_name, name)
             if check != False:
                 imgs.append((check, image))
         imgs.sort(key=lambda x: x[0])
-        return self.hook(PiskieEvent.FoundTargetImage, imgs.pop()[1], target=target)
+        return self.hook(NetbootEvent.FoundTargetImage, imgs.pop()[1], target=target)
 
-    def lookup_dhcpzone(self, name: str, target: PiskieTarget = None) -> DhcpZone:
+    def lookup_dhcpzone(self, name: str, target: NetbootTarget = None) -> DhcpZone:
         if not name and target:
             if target.dhcpzone:
                 name = target.dhcpzone
@@ -341,11 +341,11 @@ class Piskie:
                         target.dhcpzone = zone_id
                         break
         zone = self.dhcpzones.get(name, None)
-        return self.hook(PiskieEvent.FoundTargetDhcpzone, zone, target=target)
+        return self.hook(NetbootEvent.FoundTargetDhcpzone, zone, target=target)
 
     def make_context(
-        self, target: "PiskieTarget", globals: list[dict] = None
-    ) -> PiskieContext:
+        self, target: "NetbootTarget", globals: list[dict] = None
+    ) -> NetbootContext:
         image = self.lookup_image(target.image, target)
         if not image:
             raise Exception(f"Image not found for target: {target.image}")
@@ -376,19 +376,19 @@ class Piskie:
 
         ctx = mergeObjects(self._ctxcls, ctx, *_globals)
 
-        ctx: PiskieContext
+        ctx: NetbootContext
         ctx._renderer = Renderer(loader=Loader(self._config.get("templates", [])))
-        ctx.version = f"piskie-v{self.VERSION}"
-        return self.hook(PiskieEvent.PiskieContextForTarget, ctx, target=target)
+        ctx.version = f"netboot-v{self.VERSION}"
+        return self.hook(NetbootEvent.NetbootContextForTarget, ctx, target=target)
 
-    def initialize(self, target: "PiskieTarget"):
-        target = self.hook(PiskieEvent.StartPiskieInitialize, target)
+    def initialize(self, target: "NetbootTarget"):
+        target = self.hook(NetbootEvent.StartNetbootInitialize, target)
         ctx = self.make_context(target)
         ctx = ctx.pxe_init(self)
-        return self.hook(PiskieEvent.EndPiskieInitialize, ctx)
+        return self.hook(NetbootEvent.EndNetbootInitialize, ctx)
 
-    def complete(self, target: "PiskieTarget"):
-        target = self.hook(PiskieEvent.StartPiskieComplete, target)
+    def complete(self, target: "NetbootTarget"):
+        target = self.hook(NetbootEvent.StartNetbootComplete, target)
         ctx = self.make_context(target)
         ctx = ctx.pxe_complete(self)
-        return self.hook(PiskieEvent.EndPiskieComplete, ctx)
+        return self.hook(NetbootEvent.EndNetbootComplete, ctx)

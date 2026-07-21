@@ -5,24 +5,24 @@ The engine and its context objects. Rendered from source via
 
 ## Engine
 
-::: piskie.Piskie
+::: netboot.Netboot
 
 ## Context
 
-::: piskie.PiskieContext
+::: netboot.NetbootContext
 
 ## Targets and images
 
-::: piskie.PiskieTarget
+::: netboot.NetbootTarget
 
-::: piskie.PiskieImage
+::: netboot.NetbootImage
 
 ## Events
 
-::: piskie.PiskieEvent
+::: netboot.NetbootEvent
 
 ## DHCP
 
-::: piskie.dhcp.DhcpZone
+::: netboot.dhcp.DhcpZone
 
-::: piskie.dhcp.DhcpServer
+::: netboot.dhcp.DhcpServer

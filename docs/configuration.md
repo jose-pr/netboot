@@ -1,10 +1,10 @@
 # Configuration
 
-piskie loads a YAML config (via [`yaconfiglib`](https://github.com/jose-pr/yaconfiglib),
-so `!include` and deep-merge are available). By default it reads `piskie.yaml` from
+netboot loads a YAML config (via [`yaconfiglib`](https://github.com/jose-pr/yaconfiglib),
+so `!include` and deep-merge are available). By default it reads `netboot.yaml` from
 `./config`; override with `--config FILE` or `--baseconfig DIR`.
 
-The top-level keys map to the `Piskie` engine's collections:
+The top-level keys map to the `Netboot` engine's collections:
 
 ```yaml
 # Values shared into every render context.
@@ -49,7 +49,7 @@ repos:
 ## How values resolve
 
 - **Targets** normalise `ip`/`mac`/`hostname` at load time. If a field is
-  missing, piskie fills it in where it can (a MAC-shaped id becomes the `mac`; an
+  missing, netboot fills it in where it can (a MAC-shaped id becomes the `mac`; an
   IP-shaped id becomes the `ip`; a hostname is resolved to an IP via DNS).
 - **Zones** derive `network` from a CIDR `gateway`, and coerce `nameservers` /
   `search` to lists. `dhcpservers` URIs are constructed into backends by scheme.
@@ -58,7 +58,7 @@ repos:
 
 ## Templates
 
-`templates` is a list of search paths (local or URI). For each render piskie looks
+`templates` is a list of search paths (local or URI). For each render netboot looks
 for a file named by the target's MAC (`aa-bb-cc-...`), hostname, or IP — falling
 back to the bare template name. A `.j2` / `.jinja` / `.jinja2` file is rendered
 with Jinja2; anything else is rendered with the `%`-delimited shell engine, whose

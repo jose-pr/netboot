@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import argparse
 
-from piskie import Piskie
-from piskie.logging import LOGGER
+from netboot import Netboot
+from netboot.logging import LOGGER
 
 
 def register(parser: argparse.ArgumentParser, args) -> None:
@@ -20,8 +20,8 @@ def register(parser: argparse.ArgumentParser, args) -> None:
     )
 
 
-def run(piskie: Piskie, args, conf: dict) -> int:
-    target = piskie.lookup_target(args.target)
+def run(netboot: Netboot, args, conf: dict) -> int:
+    target = netboot.lookup_target(args.target)
     if target is None:
         LOGGER.error("Target not found: %s", args.target)
         return 1
@@ -31,6 +31,6 @@ def run(piskie: Piskie, args, conf: dict) -> int:
         target.ip,
         target.mac,
     )
-    piskie.initialize(target)
-    LOGGER.info("Piskie initiated for: %s", args.target)
+    netboot.initialize(target)
+    LOGGER.info("Netboot initiated for: %s", args.target)
     return 0
