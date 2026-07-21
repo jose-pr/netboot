@@ -1,5 +1,11 @@
 # netboot
 
+[![PyPI](https://img.shields.io/pypi/v/netboot.svg)](https://pypi.org/project/netboot/)
+[![Python versions](https://img.shields.io/pypi/pyversions/netboot.svg)](https://pypi.org/project/netboot/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://jose-pr.github.io/netboot/)
+[![CI](https://img.shields.io/github/actions/workflow/status/jose-pr/netboot/test.yml)](https://github.com/jose-pr/netboot/actions/workflows/test.yml)
+
 PXE provisioning management: describe your netboot targets, images and DHCP
 zones in config, and let `netboot` render the per-target boot artifacts and arm (or
 disarm) DHCP for a machine as it enters and leaves the install process.
@@ -15,7 +21,7 @@ system and pluggable `DhcpServer` handlers.
 ## Install
 
 ```sh
-pip install netboot            # once published
+pip install netboot            # provides the `pixie` command
 # or, from a checkout:
 pip install .
 ```
