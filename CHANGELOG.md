@@ -6,7 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-07-21
+## [0.1.1] - 2026-07-21
+
+Packaging/CI fixes only — no library or CLI behaviour changes.
+
+### Fixed
+- Release runs no longer fail at GitHub Release creation: the release is pinned
+  to the tagged commit (`target_commitish`) instead of defaulting to the
+  repository's default branch, which broke note generation for a release object
+  still pointing at a pre-rename branch.
+- The release workflow's docs job self-enables GitHub Pages (`enablement: true`
+  plus `pages: write`), matching `docs.yml`, so a docs-site problem no longer
+  turns an otherwise-successful release red.
+- The docs-only workflow triggers on `main`; it was listening on `master`, a
+  branch this repo does not have, so it never ran on a docs change.
+
+### Documentation
+- README: version/pythons/license/docs/CI badge row, and the install note names
+  the `pixie` command instead of saying "once published".
+- README library example binds the engine to `pixie` rather than `netboot`,
+  which read as the package and left two calls referencing an undefined name.
 
 First packaged release: the `netboot` library with the `pixie` command line.
 
@@ -61,5 +80,6 @@ First packaged release: the `netboot` library with the `pixie` command line.
   config value construction no longer swallows non-`TypeError` errors; repo
   `joinpath` keeps `.local` a path so chained joins work.
 
-[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/jose-pr/netboot/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jose-pr/netboot/releases/tag/v0.1.0
