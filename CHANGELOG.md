@@ -6,34 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed
-- **Breaking:** public classes renamed with a `Pixie` prefix (PXE is pronounced
-  "pixie"): `Netboot` → `Pixie`, `NetbootTarget` → `PixieTarget`,
-  `NetbootImage` → `PixieImage`, `NetbootContext` → `PixieContext`,
-  `NetbootEvent` → `PixieEvent` (hook event string values change accordingly).
-  The import package and config layout stay `netboot`.
-- **Breaking:** the CLI is now `pixie` (the pronunciation of PXE); `netboot`
-  remains only as the library/import package. Console script `netboot` →
-  `pixie`, command-discovery env var `NETBOOT_PATH` → `PIXIE_CMDS_PATH`, default
-  config file `netboot.yaml` → `pixie.yaml`. `python -m netboot` still works.
+## [0.1.0] - 2026-07-21
 
-## [0.1.0] - 2026-07-18
-
-First packaged release, published as `netboot`.
+First packaged release: the `netboot` library with the `pixie` command line.
 
 ### Added
-- Packaged as `netboot` (src layout, hatchling, `netboot` console script, `py.typed`).
+- Packaged as `netboot` (src layout, hatchling, `pixie` console script, `py.typed`).
   Python 3.9+.
-- PXE provisioning engine: `Netboot` with target/image/dhcpzone/repo lookup, a
-  render `NetbootContext`, and an `initialize`/`complete` lifecycle.
-- Event-hook system (`NetbootEvent`, `Netboot(hooks=...)`) for customising lookup,
+- PXE provisioning engine: `Pixie` with target/image/dhcpzone/repo lookup, a
+  render `PixieContext`, and an `initialize`/`complete` lifecycle.
+- Event-hook system (`PixieEvent`, `Pixie(hooks=...)`) for customising lookup,
   context construction and the init/complete lifecycle.
 - Template rendering via a URI-aware Jinja2 loader plus a `%`-delimited shell
   template engine, selecting sources by MAC / hostname / IP.
 - Pluggable `DhcpServer` backends dispatched by URI scheme, discovered
   recursively so plugin modules loaded via `--load-module` are honoured.
-- CLI built on `duho`: `initiate` and `complete` commands with layered YAML
-  config (`yaconfiglib`), command discovery, and `--load-module`/`--cmdspath`.
+- `pixie` CLI built on `duho` (PXE is pronounced "pixie"; `netboot` is the
+  library/import package): `initiate` and `complete` commands with layered YAML
+  config (`config/pixie.yaml` via `yaconfiglib`), command discovery, and
+  `--load-module`/`--cmdspath`.
+- App settings read through `duho.env.Env("pixie")`, so `PIXIE_*` variables
+  (notably `PIXIE_CMDS_PATH`) configure the CLI; the resolved accessor reaches
+  commands as `args._env_`.
 - Config objects use `yaconfiglib`'s `TypedNamespace` (`_parse_<field>` coercers)
   and `OpaqueMerge` (last-object-wins) so fully-built targets/zones with
   factory-function field hints are merged as opaque values (requires
