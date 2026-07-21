@@ -67,6 +67,9 @@ jobs:
     name: Build documentation site
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write # required so configure-pages can self-enable Pages
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,7 +79,13 @@ jobs:
         with:
           python-version: "3.x"
 
+      # enablement: true turns Pages on via the API if it is not configured
+      # yet; without it this step fails with "Get Pages site failed ... Not
+      # Found" on a repo that has never had Pages enabled, and it is the only
+      # thing that made the release run red once the release itself was fixed.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Install package with docs tooling
         run: python -m pip install -e ".[dev,docs,config]"
