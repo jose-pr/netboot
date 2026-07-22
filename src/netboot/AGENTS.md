@@ -67,7 +67,7 @@ project overview, install instructions and CLI usage, see the shipped
   Construction fills gaps: a MAC-shaped `_id` with no explicit `mac` is
   adopted as the MAC (else `mac` defaults to the null MAC
   `00:00:00:00:00:00`); if `ip`/`hostname` are missing, resolves `hostname`
-  via reverse/forward DNS lookup (`netboot._netutils.nslookup`) or infers
+  via reverse/forward DNS lookup (`netboot.utils.net.resolve`) or infers
   `hostname`/`ip` from `_id` when it looks like one; `hostname` is
   lower-cased. Requires the `dns` extra for hostname resolution to actually
   find an IP (silently yields empty otherwise).
@@ -180,16 +180,26 @@ project overview, install instructions and CLI usage, see the shipped
   range.
 - **`import_(name: str) -> object`** — import `"pkg.mod.attr"` and return
   `attr` (splits on the last dot).
-- **IP/MAC re-exports** (from the vendored `netboot._netutils`, also available
-  as `netboot.utils.net.*`): `IPAddress`, `IPInterface`, `IPNetwork` (factories
-  over stdlib `ipaddress`; `IPNetwork` defaults `strict=False`), `parse_ip`/
-  `parse_network` (tolerate `None`/empty → `None`), `is_valid_ip` (never
-  raises), `MACAddress` (accepts colon/hyphen/Cisco-dot/bare textual forms,
-  int, or bytes; `.as_str(sep)`, `.packed`, hashable/comparable),
-  `active_nic_addresses`, `ping`, `nslookup` (needs the `dns` extra; always
-  returns a `list`, empty on any failure, never `None`). `netboot._netutils` is
-  a private, in-tree module — import these names via `netboot.utils` /
-  `netboot.utils.net`, not the private path directly.
+- **IP/MAC re-exports** from [`netimps`](https://pypi.org/project/netimps/),
+  available as `netboot.utils.net.*` (or `netboot.netutils`):
+  - `IPAddress`, `IPInterface`, `IPNetwork` — the v4/v6 **union types** you
+    annotate with. They are not callable; build values with
+    `parse(value, IPNetwork)`.
+  - `parse(value, type, **kw)` raises on bad input; `try_parse(value, type)`
+    returns `None` instead; `is_valid(value, type)` returns a bool. Networks
+    parse non-strict, so `"10.0.0.5/24"` normalises rather than raising.
+  - `MACAddress` — colon/hyphen/Cisco-dot/bare text, `int` or `bytes`;
+    `.as_str(sep)`, `.packed`, `.oui`, hashable and ordered.
+  - `resolve(query, rdtype="a")` → a list of **native** records (`A`/`AAAA`
+    are `IPv4Address`/`IPv6Address`, not strings); `[]` on a genuine lookup
+    failure, but a malformed query or unknown record type raises `ValueError`
+    rather than looking like "no such record".
+  - `ping(dst)` → a `PingResult` that is truthy on success and also carries
+    `.rtt_ms`/`.ttl`.
+  - `get_interfaces()` / `iter_addresses()` — real adapter enumeration with
+    true prefix lengths and MTU.
+
+  The `dns` extra is now a no-op: `dnspython` arrives transitively via netimps.
 
 ## Logging (`netboot.logging`)
 
