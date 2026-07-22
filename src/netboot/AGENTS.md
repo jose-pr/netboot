@@ -3,8 +3,8 @@
 Header-file-style reference for the `netboot` package: every public export with
 its signature, arguments, contract, and gotchas, so this module can be
 consumed without reading its source. Kept current with the public API. For the
-project overview, install instructions and CLI usage, see the repo-root
-overview doc.
+project overview, install instructions and CLI usage, see the shipped
+`README.md`, or <https://github.com/jose-pr/netboot>.
 
 ## Engine (`netboot` / `netboot.__init__`)
 
