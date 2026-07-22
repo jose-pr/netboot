@@ -1,24 +1,50 @@
-"""Network helpers for netboot.
+"""Network helpers for netboot, backed by :mod:`netimps`.
 
-The IP/MAC address machinery lives in the vendored :mod:`netboot._netutils` module;
-re-export the names netboot uses so the rest of the package can import them from a
-single place (``netboot.utils``).
+The IP/MAC machinery used to live in an in-tree copy of an earlier version of
+that library. It has since been published, gaining fixes this copy never had --
+real prefix lengths and MTU in interface enumeration, DNS errors that surface
+instead of being swallowed, and a ``ping`` that behaves the same on every
+platform -- so the copy is gone.
+
+This module re-exports netimps under netboot's own name rather than wrapping
+it: the point of adopting a library is to use its vocabulary. Only
+:class:`Host` is netboot's own, because it is a netboot concept.
 """
 
-from .._netutils import (  # noqa: F401
+from __future__ import annotations
+
+from netimps import (  # noqa: F401
     IPAddress,
     IPInterface,
     IPNetwork,
     IPv4Address,
     IPv4Interface,
     MACAddress,
-    active_nic_addresses,
-    is_valid_ip,
-    nslookup,
-    parse_ip,
-    parse_network,
+    get_interfaces,
+    is_valid,
+    iter_addresses,
+    parse,
     ping,
+    resolve,
+    try_parse,
 )
+
+__all__ = [
+    "Host",
+    "IPAddress",
+    "IPInterface",
+    "IPNetwork",
+    "IPv4Address",
+    "IPv4Interface",
+    "MACAddress",
+    "get_interfaces",
+    "is_valid",
+    "iter_addresses",
+    "parse",
+    "ping",
+    "resolve",
+    "try_parse",
+]
 
 
 class Host:
@@ -39,11 +65,12 @@ class Host:
         """Best-effort resolve to an IP; return the raw address on failure."""
         if not self.address:
             return self.address
-        if is_valid_ip(self.address):
-            return parse_ip(self.address)
-        resolved = nslookup(self.address)
+        literal = try_parse(self.address, IPAddress)
+        if literal is not None:
+            return literal
+        resolved = resolve(self.address)
         if resolved:
-            return parse_ip(resolved[0])
+            return resolved[0]
         return self.address
 
     def __str__(self) -> str:

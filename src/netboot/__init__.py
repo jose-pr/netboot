@@ -25,7 +25,7 @@ except ImportError:
 from argparse import Namespace
 from typing import Mapping, get_type_hints, Union
 
-from . import _netutils as netutils
+from .utils import net as netutils
 from pathlib_next.uri.schemes import *  # noqa: F401,F403
 from yaconfiglib import OpaqueMerge
 from yaconfiglib import typed_merge as mergeObjects
@@ -75,9 +75,9 @@ class PixieTarget(Namespace, OpaqueMerge):
         while resolve:
             resolve = False
             not_mac = not MACAddress._VALID_MAC.match(self._id)
-            id_is_ip = netutils.is_valid_ip(self._id)
+            id_is_ip = netutils.is_valid(self._id, netutils.IPAddress)
             if not self.ip and self.hostname:
-                _resolved = netutils.nslookup(self.hostname)
+                _resolved = netutils.resolve(self.hostname)
                 if _resolved:
                     self.ip = _resolved[0]
                 resolve = True
@@ -88,7 +88,7 @@ class PixieTarget(Namespace, OpaqueMerge):
                 self.hostname = self._id
                 resolve = True
         if self.ip:
-            self.ip = netutils.parse_ip(self.ip)
+            self.ip = netutils.try_parse(self.ip, netutils.IPAddress)
         self.hostname = self.hostname.lower()
 
 

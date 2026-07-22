@@ -29,6 +29,7 @@ classifiers = [
 ]
 dependencies = [
     "duho>=0.3.0",
+    "netimps>=0.0.1",
     "pathlib_next[uri]>=0.8.2",
     "jinja2",
     "yaconfiglib>=0.10.0",
@@ -38,6 +39,9 @@ dependencies = [
 # Config-file loading for the CLI (YAML with !include).
 config = ["pyyaml"]
 # DNS resolution of hostname targets (netboot._netutils.nslookup).
+# Retained for compatibility: dnspython now arrives transitively via netimps,
+# which uses it for resolve(). Installing netboot[dns] is a no-op but keeps
+# existing install commands working.
 dns = ["dnspython"]
 dev = ["build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml", "dnspython"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
