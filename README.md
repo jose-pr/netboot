@@ -31,13 +31,15 @@ Optional extras:
 | Extra | Enables |
 | ----- | ------- |
 | `netboot[config]` | YAML config loading for the CLI (`pyyaml`) |
-| `netboot[dns]` | DNS resolution of hostname targets (`dnspython`) |
+| `netboot[dns]` | The `dnspython` resolver backend (best coverage; without it hostname targets still resolve via the system/`nslookup` fallbacks) |
 | `netboot[docs]`   | Build the documentation site (`mkdocs`) |
 
 Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),
-[`pathlib_next`](https://github.com/jose-pr/pathlib_next) (URI-aware paths),
+[`pathlib_next`](https://github.com/jose-pr/pathlib-next) (URI-aware paths),
 [`yaconfiglib`](https://github.com/jose-pr/yaconfiglib) (layered YAML), and
-Jinja2. IP/MAC/DNS helpers are vendored in-tree (`netboot._netutils`).
+Jinja2. IP/MAC/DNS helpers come from
+[`netimps`](https://pypi.org/project/netimps/), re-exported as
+`netboot.utils.net`.
 
 ## CLI
 

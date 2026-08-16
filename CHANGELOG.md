@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+- README and the docs landing page no longer claim the IP/MAC/DNS helpers are
+  vendored in-tree as `netboot._netutils` — that module was deleted when
+  `netimps` was adopted; they now credit `netimps` and name the
+  `netboot.utils.net` re-export.
+- The `netboot[dns]` extra row describes what it actually does since netimps
+  0.2.0: it installs the `dnspython` resolver backend, and hostname targets
+  still resolve without it via the system/`nslookup` fallbacks.
+- Fixed the `pathlib_next` repository link (`pathlib-next`, with a hyphen) and
+  dropped the "once published" install note left on the docs landing page.
+
 ## [0.1.1] - 2026-07-21
 
 Packaging/CI fixes only — no library or CLI behaviour changes.
