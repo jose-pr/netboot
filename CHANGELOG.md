@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Test coverage for behaviour that was documented but unasserted: image
+  best-match ordering and its `{}` fallback, DHCP-zone lookup by IP containment
+  and its write-back onto the target, the hook chain (value threading, import
+  strings, target substitution) and the `initialize`/`complete` event sequence,
+  and repository/resource URI assembly with `Host.try_ip`. The suite goes from
+  27 tests to 71; no production behaviour changed.
 - Python 3.14 is advertised (trove classifier) and tested: the push matrix runs
   3.9–3.14 and the release matrix's ceiling moves from 3.13 to 3.14.
 
