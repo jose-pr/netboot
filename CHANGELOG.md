@@ -6,7 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Python 3.14 is advertised (trove classifier) and tested: the push matrix runs
+  3.9–3.14 and the release matrix's ceiling moves from 3.13 to 3.14.
+
 ### Changed
+- `black` is the project formatter: it joins the `dev` extra with
+  `[tool.black] target-version = ["py39"]` (the supported floor), and the tree
+  has been reformatted once to match.
 - The `netimps` floor is now `>=0.2.1`. `>=0.0.1` predated the API netboot
   actually calls: the optional-`dnspython` `resolve()` fallback chain (0.2.0),
   its auto-selected `rdtype` (0.2.1), and the 0.2.1 `ping(src=...)` `NameError`

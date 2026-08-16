@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Topic :: System :: Boot",
     "Topic :: System :: Installation/Setup",
@@ -44,7 +45,7 @@ config = ["pyyaml"]
 # explicit-nameserver support; without it, resolve() still works through
 # netimps' system/nslookup backends (address and reverse records only).
 dns = ["dnspython"]
-dev = ["build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml", "dnspython"]
+dev = ["black", "build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml", "dnspython"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]
@@ -69,6 +70,11 @@ exclude = ["/.*", "/.agents"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/netboot"]
+
+[tool.black]
+# Pinned to the project's minimum supported Python so black never emits syntax
+# the floor cannot parse.
+target-version = ["py39"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
