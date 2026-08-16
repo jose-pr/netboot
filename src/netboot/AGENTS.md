@@ -190,16 +190,22 @@ project overview, install instructions and CLI usage, see the shipped
     parse non-strict, so `"10.0.0.5/24"` normalises rather than raising.
   - `MACAddress` — colon/hyphen/Cisco-dot/bare text, `int` or `bytes`;
     `.as_str(sep)`, `.packed`, `.oui`, hashable and ordered.
-  - `resolve(query, rdtype="a")` → a list of **native** records (`A`/`AAAA`
+  - `resolve(query, rdtype=None)` → a list of **native** records (`A`/`AAAA`
     are `IPv4Address`/`IPv6Address`, not strings); `[]` on a genuine lookup
     failure, but a malformed query or unknown record type raises `ValueError`
-    rather than looking like "no such record".
+    rather than looking like "no such record". `rdtype=None` auto-selects:
+    `"ptr"` when `query` is an address literal, `"a"` otherwise.
   - `ping(dst)` → a `PingResult` that is truthy on success and also carries
     `.rtt_ms`/`.ttl`.
   - `get_interfaces()` / `iter_addresses()` — real adapter enumeration with
     true prefix lengths and MTU.
 
-  The `dns` extra is now a no-op: `dnspython` arrives transitively via netimps.
+  The `dns` extra installs the `dnspython` resolver backend (`pip install
+  netboot[dns]`) — best coverage, every record type, explicit `ns=`/`search=`
+  control. It is **not** a no-op and `dnspython` does **not** arrive
+  transitively: netimps >=0.2.0 makes it optional. Without it `resolve()`
+  still works, falling back to netimps' `system` and `nslookup` backends,
+  which serve address and reverse records only.
 
 ## Logging (`netboot.logging`)
 

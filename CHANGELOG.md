@@ -6,7 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- The `netimps` floor is now `>=0.2.1`. `>=0.0.1` predated the API netboot
+  actually calls: the optional-`dnspython` `resolve()` fallback chain (0.2.0),
+  its auto-selected `rdtype` (0.2.1), and the 0.2.1 `ping(src=...)` `NameError`
+  fix.
+
 ### Documentation
+- The shipped API header (`src/netboot/AGENTS.md`) no longer tells consumers the
+  `dns` extra is a no-op with `dnspython` arriving transitively — false since
+  netimps 0.2.0 made `dnspython` optional. `netboot[dns]` is the only thing that
+  installs the dnspython backend; without it `resolve()` falls back to netimps'
+  `system`/`nslookup` backends. `resolve`'s documented default `rdtype` is now
+  `None` (auto-selects `"ptr"` for address literals, `"a"` otherwise).
 - README and the docs landing page no longer claim the IP/MAC/DNS helpers are
   vendored in-tree as `netboot._netutils` — that module was deleted when
   `netimps` was adopted; they now credit `netimps` and name the
