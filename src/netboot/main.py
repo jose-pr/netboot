@@ -69,20 +69,21 @@ class Pixie_(PixieArgs, Cli):
     _version_ = __version__
 
 
-def _discover(argv: "_ty.Sequence[str] | None", env: Env) -> "list":
-    """Resolve the command set: built-ins, then env/CLI-provided paths.
+def _discover(argv: "_ty.Sequence[str] | None") -> "list":
+    """Resolve the command set passed to :func:`duho.app` as ``commands=``.
 
-    ``env`` supplies the app-prefixed ``CMDS_PATH`` (``PIXIE_CMDS_PATH``,
-    ``os.pathsep``-separated; duho's canonical key). We resolve it here rather
-    than letting :func:`duho.app` do it because netboot's built-ins come from a
-    package path and ``--cmdspath`` must be honoured pre-parse, so an explicit
-    ``commands=`` list is always passed. Later sources win on a name clash (a
-    user command shadows a built-in), then the list is de-duplicated by
+    Built-ins first, then ``--cmdspath`` entries, which have to be honoured
+    pre-parse and so cannot be left to duho. Later sources win on a name clash
+    (a user command shadows a built-in), then the list is de-duplicated by
     subcommand name preserving that precedence.
+
+    ``PIXIE_CMDS_PATH`` is deliberately *not* read here: since duho 0.4.1 the
+    env-derived ``CMDS_PATH`` is a layer :func:`duho.app` always merges on top
+    of whatever ``commands=`` it is handed, so resolving it here too would
+    discover the same modules twice.
     """
     globals_ = parse_globals(Pixie_, argv)
     sources: "list[str]" = [_BUILTIN_COMMANDS]
-    sources += env.paths("CMDS_PATH")
     sources += list(globals_.cmdspath or [])
 
     by_name: "dict[str, object]" = {}
@@ -221,7 +222,7 @@ def main(
     env = Env(name)
     return app(
         Pixie_,
-        commands=_discover(argv, env),
+        commands=_discover(argv),
         argv=argv,
         name=name,
         description=Pixie_.__doc__,

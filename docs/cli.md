@@ -53,6 +53,10 @@ def run(netboot, args, conf):       # required: the command body
 A module that instead follows duho's plain `run(args)` contract is dispatched by
 duho directly, so ordinary duho commands work too.
 
+Both sources add to the built-in commands rather than replacing them. On a name
+clash the more specific source wins: `PIXIE_CMDS_PATH` over `--cmdspath`, and
+either over a built-in.
+
 ## Environment
 
 App settings are read through `duho.env.Env("pixie")`, so they live under the
@@ -61,8 +65,9 @@ App settings are read through `duho.env.Env("pixie")`, so they live under the
 - `PIXIE_CMDS_PATH` — extra command sources, `os.pathsep`-separated (see above).
 - A `pixie_env` Python module importable at startup (e.g. a `pixie_env.py` in
   the working directory) may ship settings as `UPPER_CASE` module variables.
-  Note: as of current duho, these seeded values take precedence over real
-  `PIXIE_*` environment variables.
+  Precedence runs explicit `env` values (kwargs or runtime writes) > real
+  `PIXIE_*` environment variables > `pixie_env` module defaults, so an exported
+  variable always beats a shipped default.
 
 Commands receive the resolved accessor as `args._env_`, so a custom command can
 read its own `PIXIE_<KEY>` settings without touching `os.environ`.

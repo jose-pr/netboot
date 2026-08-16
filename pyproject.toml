@@ -29,7 +29,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "duho>=0.3.0",
+    "duho>=0.4.1",
     "netimps>=0.2.1",
     "pathlib_next[uri]>=0.8.2",
     "jinja2",

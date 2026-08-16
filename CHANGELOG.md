@@ -11,6 +11,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   3.9–3.14 and the release matrix's ceiling moves from 3.13 to 3.14.
 
 ### Changed
+- The `duho` floor is now `>=0.4.1`, the release that made `Env` consult
+  `os.environ` before a `pixie_env` companion module and turned `CMDS_PATH`
+  discovery into a layer merged on top of an explicit `commands=` list. netboot
+  now depends on both behaviours.
+- `PIXIE_CMDS_PATH` is left to duho instead of being re-resolved by netboot,
+  which had discovered the same modules a second time. One consequence is
+  visible: on a name clash `PIXIE_CMDS_PATH` now wins over `--cmdspath`, where
+  before the option won.
 - `black` is the project formatter: it joins the `dev` extra with
   `[tool.black] target-version = ["py39"]` (the supported floor), and the tree
   has been reformatted once to match.
@@ -20,6 +28,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fix.
 
 ### Documentation
+- `docs/cli.md` no longer tells operators that `pixie_env` module defaults
+  outrank real `PIXIE_*` environment variables. duho 0.4.1 fixed that
+  inversion; the note now states the true order (explicit `env` values > real
+  `PIXIE_*` > module defaults).
 - The shipped API header (`src/netboot/AGENTS.md`) no longer tells consumers the
   `dns` extra is a no-op with `dnspython` arriving transitively — false since
   netimps 0.2.0 made `dnspython` optional. `netboot[dns]` is the only thing that
