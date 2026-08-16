@@ -18,9 +18,11 @@ except ImportError:  # pragma: no cover - importlib.metadata is stdlib on 3.9+
 try:
     from enum import StrEnum
 except ImportError:
+
     class StrEnum(str, _enum.Enum):
         def __str__(self):
             return self.value
+
 
 from argparse import Namespace
 from typing import Mapping, get_type_hints, Union
@@ -292,7 +294,10 @@ class Pixie:
             else:
                 _value = hint(value) if value is not None else None
             prop, value = netboot.hook(
-                PixieEvent.SetPixieProperty, (prop, _value), origin=origin, rawvalue=value
+                PixieEvent.SetPixieProperty,
+                (prop, _value),
+                origin=origin,
+                rawvalue=value,
             )
             setattr(netboot, prop, value)
 

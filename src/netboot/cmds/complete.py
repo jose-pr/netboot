@@ -9,9 +9,7 @@ from netboot.logging import LOGGER
 
 
 def register(parser: argparse.ArgumentParser, args) -> None:
-    parser.add_argument(
-        "target", help="-/Hostname/MAC/IP of the target to complete"
-    )
+    parser.add_argument("target", help="-/Hostname/MAC/IP of the target to complete")
 
 
 def run(netboot: Pixie, args, conf: dict) -> int:

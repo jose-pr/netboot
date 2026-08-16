@@ -17,7 +17,9 @@ def test_target_id_is_mac_sets_mac():
 
 def test_target_id_is_hostname_resolves_ip(monkeypatch):
     monkeypatch.setattr(
-        netboot.netutils, "resolve", lambda name, *a, **kw: [netboot.netutils.parse("192.0.2.10")]
+        netboot.netutils,
+        "resolve",
+        lambda name, *a, **kw: [netboot.netutils.parse("192.0.2.10")],
     )
     target = netboot.PixieTarget(_id="host1")
     assert target.hostname == "host1"

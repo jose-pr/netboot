@@ -77,11 +77,9 @@ def test_wants_netboot_signature_detection():
     # Finding #3: only a 3-arg run(netboot, args, conf) gets the netboot-first call.
     from netboot.main import _wants_netboot
 
-    def netboot_run(netboot, args, conf):
-        ...
+    def netboot_run(netboot, args, conf): ...
 
-    def duho_run(args):
-        ...
+    def duho_run(args): ...
 
     assert _wants_netboot(netboot_run) is True
     assert _wants_netboot(duho_run) is False

@@ -69,9 +69,7 @@ def run_benchmarks(iterations: int, n_targets: int = 500) -> "dict[str, dict]":
 
     return {
         "lookup_target_last": _sample(lambda: p.lookup_target(last), iterations),
-        "template_names": _sample(
-            lambda: ctx._template_names("boot.j2"), iterations
-        ),
+        "template_names": _sample(lambda: ctx._template_names("boot.j2"), iterations),
     }
 
 

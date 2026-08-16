@@ -9,9 +9,7 @@ from netboot.logging import LOGGER
 
 
 def register(parser: argparse.ArgumentParser, args) -> None:
-    parser.add_argument(
-        "target", help="-/Hostname/MAC/IP of the target to initiate"
-    )
+    parser.add_argument("target", help="-/Hostname/MAC/IP of the target to initiate")
     parser.add_argument(
         "--iscsi",
         action="store_true",

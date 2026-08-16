@@ -123,7 +123,9 @@ def _load_config(args: "Pixie_") -> dict:
         baseconfig: Path = path.parent
         configs = [path.name]
     else:
-        baseconfig = parse_path(args.baseconfig) if args.baseconfig else (cwd / "config")
+        baseconfig = (
+            parse_path(args.baseconfig) if args.baseconfig else (cwd / "config")
+        )
         configs = ["pixie.yaml"]
 
     loader = ConfigLoader(
