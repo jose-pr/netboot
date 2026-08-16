@@ -6,6 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-16
+
+Dependency floor raise only — no library or CLI behaviour changes.
+
+### Changed
+- The four internal dependencies are now pinned to the minor series they are
+  supported on, rather than floored at whatever patch happened to be current:
+  `duho>=0.5.0,<0.6`, `netimps>=0.2.1,<0.3`, `pathlib_next[uri]>=0.9.0,<0.10`
+  and `yaconfiglib>=0.11.1,<0.12`. Each floor is the minor that netboot
+  actually requires, and each ceiling stops the next pre-1.0 minor — where, by
+  these projects' own versioning rule, the documented API is allowed to break
+  — from being resolved unattended. `jinja2` is third-party and stays
+  unpinned.
+- `duho` moves from `>=0.4.1` to the 0.5 series. 0.5.0 changed option parsing
+  for `list`/`set`/`tuple` fields to one value per flag occurrence, which is
+  the shape `--cmdspath` (`Arg[list[str], Extend(os.pathsep)]`) is now
+  written against. The `CMDS_PATH` layering that `_discover` leans on after
+  0.1.2 stopped re-resolving `PIXIE_CMDS_PATH` itself predates this at 0.4.1,
+  so it needs no floor above `0.5.0`.
+- `netimps` moves from `>=0.2.1` to `>=0.2.1,<0.3` — the floor stays above the
+  `.0` on purpose. `Host.try_ip` calls `resolve()` with no `rdtype`, and
+  auto-selection of that argument (`"ptr"` for an address literal, `"a"`
+  otherwise) is what 0.2.1 added; on 0.2.0 the same call resolves differently.
+- `pathlib_next[uri]` moves from `>=0.8.2` to the 0.9 series.
+  `Repository.service()` constructs `pathlib_next.uri.Source` directly from
+  `str(target.try_ip())`, and that direct-construction path raised
+  `socket.gaierror` out of `Source.is_local()` for a bare IPv6-literal host
+  until 0.9.0 — the same release that stopped `Source` rendering its password
+  in `str()`/`repr()`, so a service URI carrying credentials no longer leaks
+  through a traceback frame. 0.9.0's one breaking change is to `PathSyncer`,
+  which netboot does not use.
+- `yaconfiglib` moves from an unbounded `>=0.10.0` — which spanned two minor
+  series — to `>=0.11.1,<0.12`. This floor is also above the `.0` on purpose:
+  `load_config` builds `ConfigLoader(..., recursive=True)`, and that setting
+  was never forwarded to glob expansion until 0.11.1, so on 0.10.x and 0.11.0
+  an argument netboot passes does nothing. 0.11.1 also made `typed_merge`
+  read parametrized generics, which is what `Repository.services`
+  (`dict[str, UriPath]`) is annotated with.
+
 ## [0.1.2] - 2026-08-16
 
 ### Added
@@ -130,7 +169,8 @@ First packaged release: the `netboot` library with the `pixie` command line.
   config value construction no longer swallows non-`TypeError` errors; repo
   `joinpath` keeps `.local` a path so chained joins work.
 
-[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/jose-pr/netboot/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jose-pr/netboot/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/jose-pr/netboot/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jose-pr/netboot/releases/tag/v0.1.0

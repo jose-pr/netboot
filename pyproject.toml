@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "netboot"
-version = "0.1.2"
+version = "0.1.3"
 authors = [{ name = "Jose A." }]
 description = "PXE provisioning management: render netboot artifacts and drive DHCP for targets"
 readme = "README.md"
@@ -29,11 +29,17 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "duho>=0.4.1",
-    "netimps>=0.2.1",
-    "pathlib_next[uri]>=0.8.2",
+    "duho>=0.5.0,<0.6",
+    # Above the .0 deliberately: netboot calls netimps' resolve() with no
+    # rdtype, and 0.2.1 is the release that auto-selects it ("ptr" for an
+    # address literal, "a" otherwise). Don't normalize this back to 0.2.0.
+    "netimps>=0.2.1,<0.3",
+    "pathlib_next[uri]>=0.9.0,<0.10",
     "jinja2",
-    "yaconfiglib>=0.10.0",
+    # Above the .0 deliberately: load_config builds
+    # ConfigLoader(..., recursive=True), and that setting was never forwarded
+    # to glob expansion before 0.11.1 -- a documented silent no-op.
+    "yaconfiglib>=0.11.1,<0.12",
 ]
 
 [project.optional-dependencies]
