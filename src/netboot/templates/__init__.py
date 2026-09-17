@@ -45,6 +45,14 @@ class Loader(_JinjaLoader):
             filename = template
 
         filename = filename.removeprefix("/")
+        if ".." in PosixPathname(filename).parts:
+            # A template name is resolved against every search root, so a `..`
+            # segment would read files outside them. Jinja's own loaders refuse
+            # this for the same reason.
+            raise TemplateNotFound(
+                template,
+                message=f"template name escapes the search paths: {template!r}",
+            )
         _filename = PosixPathname(filename)
         _parent = _filename.parent
         if _parent != _filename and _parent.as_posix() != ".":

@@ -350,6 +350,12 @@ class Pixie:
 
         hooks = [(hook if callable(hook) else import_(hook)) for hook in hooks]
         cls = Pixie.hook(hooks, PixieEvent.NewPixieObject, cls, config=config)
+        if not isinstance(cls, type) or not issubclass(cls, Pixie):
+            # The event threads the class through the chain, so a hook that
+            # forgets to return it replaces the engine class with None.
+            raise PixieConfigError(
+                "a NewPixieObject hook must return a Pixie subclass; got " f"{cls!r}"
+            )
         inst = object.__new__(cls)
         inst._hooks = hooks
         return inst
@@ -359,7 +365,16 @@ class Pixie:
         /,
         **config,
     ):
-        netboot._config = netboot.hook(PixieEvent.StartPixieInit, config)
+        # Use what the hook returned, everywhere. Storing it while reading
+        # the original meant a hook that returned a new mapping (the natural
+        # non-mutating style) had its targets ignored but its templates
+        # honoured -- the config ended up half applied.
+        config = netboot._config = netboot.hook(PixieEvent.StartPixieInit, config)
+        if config is None:
+            raise PixieConfigError(
+                "a StartPixieInit hook returned None; it must return the config "
+                "mapping to pass on"
+            )
         netboot.globals = deepcopy(config.get("globals") or {})
         defaults = config.get("defaults") or {}
 

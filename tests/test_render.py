@@ -243,3 +243,12 @@ def test_shell_template_renders_none_as_empty():
     t = ShellTemplate("D=%{DOMAIN} B=%{FLAG}")
     t._globals_ = {"ctx": Namespace(domain=None, flag=True)}
     assert t.render() == "D= B=true"
+
+
+def test_a_template_name_cannot_escape_the_search_paths(templates_dir):
+    from jinja2 import TemplateNotFound
+
+    p = _make_netboot(templates_dir)
+    ctx = p.make_context(p.lookup_target("host1"))
+    with pytest.raises(TemplateNotFound):
+        ctx.render("../../../etc/passwd")

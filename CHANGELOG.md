@@ -48,6 +48,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now; a bare `%word` is literal text, including one that names a context
   variable. `%%` still yields a literal `%` and an unknown `%{NAME}` still
   raises. A template written with bare placeholders must brace them.
+- A `StartPixieInit` hook's return value is what gets built. The result was
+  stored but the original config was read, so a hook written in the usual
+  non-mutating style (`return {**value, "targets": ...}`) had its targets
+  ignored while its `templates` took effect — the config ended up half applied.
+  A hook that returns `None` for `StartPixieInit` or `NewPixieObject` now raises
+  `PixieConfigError` naming the contract instead of failing obscurely later.
+- A template name containing `..` is refused. Names are resolved against every
+  search root, so `../../etc/passwd` reached outside them.
 - Arming DHCP is all or nothing. `pxe_init` stopped at the first backend that
   raised, leaving the target armed on the earlier ones — it could boot an
   installer from one server while another handed out its normal lease. The

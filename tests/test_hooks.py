@@ -178,3 +178,33 @@ def test_unknown_dhcp_scheme_is_a_clear_error(tmp_path):
                 },
             )
         )
+
+
+def test_start_init_hook_result_is_what_gets_built():
+    # The returned config was stored but the original was read, so a hook
+    # written in the natural non-mutating style had its targets ignored while
+    # its templates took effect -- the config ended up half applied.
+    def add_a_target(event, engine, value, kwargs):
+        if event is not netboot.PixieEvent.StartPixieInit:
+            return value
+        merged = dict(value)
+        merged["targets"] = dict(merged.get("targets") or {})
+        merged["targets"]["injected"] = {"ip": "10.0.0.99", "image": "debian"}
+        return merged
+
+    engine = netboot.Pixie(
+        hooks=[add_a_target],
+        images={"debian": {"template_path": []}},
+        dhcpzones={"lan": {"network": "10.0.0.0/24"}},
+        targets={},
+    )
+    assert engine.lookup_target("injected") is not None
+
+
+def test_a_start_init_hook_returning_none_is_reported():
+    def drops_it(event, engine, value, kwargs):
+        # Passes other events through; only drops the config it is handed.
+        return None if event is netboot.PixieEvent.StartPixieInit else value
+
+    with pytest.raises(netboot.PixieConfigError, match="StartPixieInit"):
+        netboot.Pixie(hooks=[drops_it], targets={}, images={}, dhcpzones={})
