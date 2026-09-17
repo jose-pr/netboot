@@ -172,3 +172,59 @@ def test_get_local_server_accepts_the_strings_config_holds():
     )
     assert zone.get_local_server(["192.0.2.1"], "fallback") == "fallback"
     assert str(zone.get_local_server("10.0.0.9", "fallback")) == "10.0.0.9"
+
+
+def _netboot_two_targets_one_image(templates_dir):
+    config = {
+        "templates": [templates_dir],
+        "images": {"debian": {"template_path": [], "globals": {"kernel": "vmlinuz"}}},
+        "dhcpzones": {"lan": {"network": "10.0.0.0/24"}},
+        "targets": {
+            "host1": {"hostname": "host1", "ip": "10.0.0.5", "image": "debian"},
+            "host2": {"hostname": "host2", "ip": "10.0.0.6", "image": "debian"},
+        },
+    }
+    return netboot.Pixie(**config)
+
+
+def test_image_globals_survive_second_target(tmp_path):
+    # Regression: make_context must not delattr globals off the shared image.
+    d = tmp_path / "templates"
+    d.mkdir()
+    p = _netboot_two_targets_one_image(d)
+    ctx1 = p.make_context(p.lookup_target("host1"))
+    ctx2 = p.make_context(p.lookup_target("host2"))
+    assert getattr(ctx1, "kernel", None) == "vmlinuz"
+    assert getattr(ctx2, "kernel", None) == "vmlinuz"  # not dropped for host2
+
+
+class _Boom:
+    def __init__(self, _id=None, **kw):
+        raise ValueError("boom")
+
+
+class _BoomPixie(netboot.Pixie):
+    things: "dict[str, _Boom]"
+
+
+def test_valctr_typeerror_only_not_bare_except():
+    # Regression: a non-TypeError in a config value ctor must propagate, rather
+    # than being swallowed by a bare except and retried without _id.
+    with pytest.raises(ValueError):
+        _BoomPixie(things={"x": {}})
+
+
+def test_engine_globals_are_isolated_from_the_caller_config():
+    # The deepcopy in __init__ was overwritten by the annotated-attribute loop,
+    # so nested globals stayed shared with the caller's config dict.
+    config = {"globals": {"nested": {"k": "v"}}, "targets": {}, "images": {}}
+    engine = netboot.Pixie(**config)
+    engine.globals["nested"]["k"] = "changed"
+    assert config["globals"]["nested"]["k"] == "v"
+
+
+def test_underscore_prefixed_globals_are_kept():
+    # `_`-prefixed keys are skipped for collections (ids), but a global named
+    # `_internal` is just a variable name.
+    engine = netboot.Pixie(globals={"_internal": 1, "plain": 2})
+    assert engine.globals == {"_internal": 1, "plain": 2}

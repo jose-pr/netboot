@@ -170,3 +170,16 @@ def test_ordinary_interpolation_still_works(in_tmp_cwd):
         name="interp.yaml",
     )
     assert main(argv=["-c", str(path), "initiate", "web01"]) == 0
+
+
+def test_wants_netboot_signature_detection():
+    # Regression: only a 3-arg run(netboot, args, conf) gets the netboot-first call.
+    from netboot.main import _wants_netboot
+
+    def netboot_run(netboot, args, conf): ...
+
+    def duho_run(args): ...
+
+    assert _wants_netboot(netboot_run) is True
+    assert _wants_netboot(duho_run) is False
+    assert _wants_netboot(None) is False

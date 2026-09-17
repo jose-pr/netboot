@@ -32,23 +32,17 @@ def test_unknown_dhcpserver_scheme_raises():
         DhcpServer("nosuchscheme://host")
 
 
-def test_dhcpserver_dispatches_to_registered_subclass():
-    class memdhcp(DhcpServer):  # noqa: N801 - name is the URI scheme
-        pass
-
-    try:
-        server = DhcpServer("memdhcp://host/path")
-        assert isinstance(server, memdhcp)
-        assert server.uri == "memdhcp://host/path"
-    finally:
-        # keep the subclass registry clean for other tests
-        DhcpServer.__init_subclass__  # noqa: B018 - touch to be explicit
+def test_dhcpserver_dispatches_to_registered_subclass(dhcp_backend):
+    # The `dhcp_backend` fixture unregisters the class afterwards: dispatch is
+    # by class name, so a leftover subclass shadows another test's backend.
+    memdhcp = dhcp_backend("memdhcp")
+    server = DhcpServer("memdhcp://host/path")
+    assert isinstance(server, memdhcp)
+    assert server.uri == "memdhcp://host/path"
 
 
-def test_zone_builds_dhcpservers_from_uris():
-    class zoneback(DhcpServer):  # noqa: N801
-        pass
-
+def test_zone_builds_dhcpservers_from_uris(dhcp_backend):
+    zoneback = dhcp_backend("zoneback")
     zone = DhcpZone(network="10.0.0.0/24", dhcpservers=["zoneback://h"])
     assert len(zone.dhcpservers) == 1
     assert isinstance(zone.dhcpservers[0], zoneback)

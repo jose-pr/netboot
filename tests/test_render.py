@@ -7,6 +7,7 @@ Jinja2 and shell template engines against a temporary search path.
 import pytest
 
 import netboot
+from netboot.templates.shell import ShellTemplate
 
 
 @pytest.fixture
@@ -201,3 +202,44 @@ def test_shell_templates_notice_an_edited_file(templates_dir):
     (templates_dir / "cached.sh").write_text("v2")
     os.utime(templates_dir / "cached.sh", (time.time() + 1, time.time() + 1))
     assert template.is_up_to_date is False
+
+
+def test_template_names_accepts_options(tmp_path):
+    # Regression: _template_names(**options) must not TypeError.
+    d = tmp_path / "templates"
+    d.mkdir()
+    config = {
+        "templates": [d],
+        "images": {"deb": {"template_path": []}},
+        "dhcpzones": {"lan": {"network": "10.0.0.0/24"}},
+        "targets": {"h": {"hostname": "h", "ip": "10.0.0.9", "image": "deb"}},
+    }
+    p = netboot.Pixie(**config)
+    ctx = p.make_context(p.lookup_target("h"))
+    names = ctx._template_names("boot.j2", foo="bar")
+    assert "boot.j2" in names
+    assert any(n == "10.0.0.9.boot.j2" for n in names)  # IP stringified in name
+
+
+@pytest.mark.parametrize("unset_ip", ["", "0.0.0.0", "::"])
+def test_template_names_skips_an_unset_ip(unset_ip):
+    # An unset ip must not emit a name; MAC/hostname still do. The previous
+    # version of this test never built a 0.0.0.0 target, so it did not pin the
+    # guard it was named after.
+    from netboot import PixieContext, PixieTarget
+
+    ctx = PixieContext.__new__(PixieContext)
+    ctx.target = PixieTarget(_id="aa:bb:cc:dd:ee:ff", ip=unset_ip)
+    assert str(ctx.target.ip or "") in ("", unset_ip)
+    names = ctx._template_names("boot.j2")
+    assert not any(n.startswith(("0.0.0.0", "::")) for n in names)
+    assert names == ["aa-bb-cc-dd-ee-ff.boot.j2", "boot.j2"]
+
+
+def test_shell_template_renders_none_as_empty():
+    # Regression: None must render as '' not the literal 'None'.
+    from argparse import Namespace
+
+    t = ShellTemplate("D=%{DOMAIN} B=%{FLAG}")
+    t._globals_ = {"ctx": Namespace(domain=None, flag=True)}
+    assert t.render() == "D= B=true"

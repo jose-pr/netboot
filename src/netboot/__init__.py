@@ -28,16 +28,40 @@ from argparse import Namespace
 from typing import Mapping, get_type_hints, Union
 
 from .utils import net as netutils
-from pathlib_next.uri.schemes import *  # noqa: F401,F403
+
+# Imported for its side effect: importing the scheme modules is what registers
+# `http://`, `file://`, `tftp://` and friends with pathlib_next's URI parser.
+# It used to be a star import, which also dumped every scheme class into
+# `netboot`'s namespace.
+import pathlib_next.uri.schemes  # noqa: F401
+
 from yaconfiglib import OpaqueMerge
 from yaconfiglib import typed_merge as mergeObjects
 
 from .content import Repository, Resource
-from .dhcp import DhcpZone
+from .dhcp import DhcpServer, DhcpZone
 from .logging import LOGGER
 from .templates import Loader, Renderer
 from .utils import IPAddress, MACAddress, T
 from .utils.misc import import_
+
+__all__ = [
+    "Pixie",
+    "PixieContext",
+    "PixieEvent",
+    "PixieImage",
+    "PixieTarget",
+    "PixieError",
+    "PixieConfigError",
+    "PixieLookupError",
+    "DhcpServer",
+    "DhcpZone",
+    "Repository",
+    "Resource",
+    "LOGGER",
+    "netutils",
+    "__version__",
+]
 
 
 class PixieError(Exception):

@@ -190,3 +190,10 @@ def test_file_services_do_not_need_the_http_extra(monkeypatch):
         content, "_importlib_util", types.SimpleNamespace(find_spec=lambda name: None)
     )
     assert str(_repo(local="/srv/tftp").service(None)) == "file:/srv/tftp"
+
+
+def test_repository_joinpath_chains_without_local():
+    # Regression: .local must stay a Pathname so chained joins work.
+    repo = Repository(address="host", services={"http": "http://host/base"})
+    chained = repo.joinpath("a").joinpath("b")
+    assert str(chained.services["http"]).endswith("/a/b")
