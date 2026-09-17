@@ -82,6 +82,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `Pixie.lookup_dhcpzone` returns `None` instead of raising `AttributeError`
   when the target has no usable IP — the documented MAC-keyed target shape hit
   this on every `initiate` that did not name a `dhcpzone`.
+- Rendered artifacts keep the template's final newline. The Jinja engine dropped
+  it while the shell engine kept it, so the same content rendered differently
+  depending on the file's suffix, and a kickstart or iPXE script could end
+  without a newline.
+- MAC-less targets no longer all look for `00-00-00-00-00-00.<name>` first: the
+  null MAC is skipped when building candidate template names, as the unset IP
+  already was. One stray file of that name used to apply to every such target.
+- A `http://...` entry in `templates` or in an image's `template_path` stays a
+  URI instead of being turned into a directory named `http:` under the working
+  directory, so URI search paths are searched at all. A repository's `local`
+  path accepts a Windows drive path (`C:\\tftp`), which was previously read as
+  URI scheme `c` and then failed on every read.
+- An edited shell template is picked up again: the loader assigned its freshness
+  *check function* to `is_up_to_date`, and a function object is always truthy,
+  so a cached template was never reloaded.
+- `Loader` works without a `PixieContext` in the environment: it resolves a
+  plain template name instead of raising `AttributeError`.
 - Template selection is deterministic. Within a search directory an exact
   filename now wins, and several files sharing a stem (`boot` matching
   `boot.j2`, `boot.sh`, `boot.j2.bak`) resolve lowest-name-first instead of in

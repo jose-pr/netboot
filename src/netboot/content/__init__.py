@@ -62,7 +62,14 @@ class Repository(_NS):
         if not isinstance(self.address, Host):
             self.address = Host(self.address)
         if self.local and not isinstance(self.local, UriPath):
-            self.local = UriPath(self.local)
+            text = str(self.local)
+            if len(text) > 1 and text[1] == ":" and text[0].isalpha():
+                # A drive letter is not a URI scheme: "C:\\tftp" parsed as
+                # scheme "c" produced a path nothing could read. Spell it as
+                # the file URI it is.
+                self.local = UriPath("file:///" + text.replace("\\", "/"))
+            else:
+                self.local = UriPath(text)
 
     def __getitem__(self, key: tuple[str, str]) -> UriPath:
         rel_path, service = key

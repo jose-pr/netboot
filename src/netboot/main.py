@@ -27,25 +27,10 @@ from pathlib_next import LocalPath, Path, UriPath
 
 from . import Pixie, PixieConfigError, PixieError, __version__
 from .logging import LOGGER, quiet_noisy_dependencies
+from .utils.misc import parse_path  # re-exported: the CLI's documented helper
 
 #: Package import path to the built-in command modules.
 _BUILTIN_COMMANDS = "netboot.cmds"
-
-
-def parse_path(path: "str | Path") -> Path:
-    """Parse a config/template path: a bare path is local, ``scheme:`` is a URI.
-
-    A single-letter scheme is a Windows drive, not a URI: ``C:\\srv\\tftp`` and
-    ``C:/srv/tftp`` are local paths. URI schemes are at least two characters
-    (RFC 3986 allows one, but no real scheme is), so this costs nothing and
-    stops every absolute Windows path from being parsed as a URI.
-    """
-    if isinstance(path, Path):
-        return path
-    scheme, sep, _ = path.partition(":")
-    if not sep or len(scheme) < 2 or not scheme.isalnum():
-        return LocalPath(path)
-    return UriPath(path)
 
 
 class PixieArgs(LoggingArgs):

@@ -226,11 +226,16 @@ class PixieContext(Namespace):
         # compatibility; name selection does not use it today.
         suffixes = suffix if isinstance(suffix, list) else [suffix]
         ip = self.target.ip
-        # Skip an unset/unspecified IP so it never yields a spurious name.
+        # Skip unset values so they never yield a spurious name. The null MAC
+        # is the same case as the unspecified IP: every MAC-less target would
+        # otherwise share the candidate `00-00-00-00-00-00.<name>`, and one
+        # stray file of that name would apply to all of them.
         ip_name = str(ip) if ip and str(ip) not in ("0.0.0.0", "::") else ""
+        mac = self.target.mac
+        mac_name = mac.as_str("-") if str(mac) != PixieTarget._NULL_MAC else ""
         names = []
         for version in [
-            self.target.mac.as_str("-"),
+            mac_name,
             self.target.hostname,
             ip_name,
         ]:
@@ -550,7 +555,13 @@ class Pixie:
         ctx = mergeObjects(self._ctxcls, ctx, *_globals)
 
         ctx: PixieContext
-        ctx._renderer = Renderer(loader=Loader(self._config.get("templates", [])))
+        ctx._renderer = Renderer(
+            loader=Loader(self._config.get("templates", [])),
+            # Boot artifacts are line-oriented files: a kickstart or iPXE
+            # script whose last line lost its newline is a different file. The
+            # shell engine already kept it, so the two engines disagreed.
+            keep_trailing_newline=True,
+        )
         ctx.version = f"netboot-v{self.VERSION}"
         return self.hook(PixieEvent.PixieContextForTarget, ctx, target=target)
 

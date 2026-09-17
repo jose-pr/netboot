@@ -172,7 +172,8 @@ project overview, install instructions and CLI usage, see the shipped
   `src` (repo id string). `resource / "sub"` joins the path, same `src`.
 - **`Repository(**kwargs)`** — `address` (`Host`), `services`
   (`dict[str, UriPath]`), `local` (`UriPath | None`, a filesystem/local
-  service). `repo / "sub"` (`.joinpath`) returns a **new** `Repository` with
+  service; a Windows drive path such as `C:\tftp` is read as a path and becomes
+  a `file:` URI, not URI scheme `c`). `repo / "sub"` (`.joinpath`) returns a **new** `Repository` with
   every service (and `.local`) suffixed by `sub` — the original is untouched.
   **`.get(*path, service=None) -> UriPath | None`** — join `path` onto the
   named service's base URI (`service=None` → `.local`, scheme `"file"`);
@@ -188,9 +189,15 @@ project overview, install instructions and CLI usage, see the shipped
 ## Templates (`netboot.templates`)
 
 - **`Loader(searchpaths, template_types=(JinjaTemplate, ShellTemplate))`** — a
-  Jinja2 `BaseLoader`. **Name specificity outranks search-path order**: the
+  Jinja2 `BaseLoader`. Search-path entries are parsed the same way as config
+  paths, so a `http://...` entry stays a URI instead of becoming a directory
+  named `http:`. Without a `ctx` in the environment globals the loader still
+  resolves a plain name (it just has no target to name candidates after).
+  **Name specificity outranks search-path order**: the
   loader walks the candidate names `ctx._template_names(...)` yields (MAC,
-  hostname, IP, then the bare name) and, for each one, scans every search path
+  hostname, IP, then the bare name — an unset IP and the null MAC are skipped,
+  so MAC-less targets do not all share a `00-00-00-00-00-00.<name>` candidate)
+  and, for each one, scans every search path
   (`ctx.searchpaths` then `searchpaths`) before moving to the next name — so a
   MAC-named file in the *last* search path beats a bare-named file in the
   first. Within one directory an exact filename match wins; otherwise a
@@ -201,11 +208,16 @@ project overview, install instructions and CLI usage, see the shipped
   `template_types` entry whose `.can_process(path, source)` is true; raises
   `jinja2.TemplateNotFound` if nothing matches, or a plain `Exception` if a
   matching type has no usable engine.
-- **`Renderer`** — alias for `jinja2.Environment`; one is created per
+- **`Renderer`** — alias for `jinja2.Environment`; `make_context` builds it
+  with `keep_trailing_newline=True`, so a rendered artifact keeps the
+  template's final newline (the shell engine always did). One is created per
   `PixieContext` (never share one across contexts — `globals["ctx"]` is
   mutated per render).
 - **`Template`** — minimal base (`.render(**globals)`, classmethod
-  `.can_process(file, template) -> bool`, both no-ops/`False` on the base).
+  `.can_process(file, template) -> bool`, both no-ops/`False` on the base),
+  plus **`.is_up_to_date`** — a property that calls the loader's freshness
+  check, so an edited shell template is reloaded rather than served from cache
+  forever.
 - **`JinjaTemplate`** (`.j2`/`.jinja`/`.jinja2` suffix) — a real
   `jinja2.Template`; `.render()` additionally injects `shell_quote`, `Path`
   (**`pathlib_next.Path`**, not the stdlib's — it accepts URI paths too) and

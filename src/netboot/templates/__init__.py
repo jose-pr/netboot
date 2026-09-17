@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Callable, MutableMapping, Tuple, Type, Un
 from jinja2 import TemplateNotFound
 from pathlib_next import Path, PosixPathname
 
+from ..utils.misc import parse_path
 from .common import Renderer, Template
 from .jinja import JinjaTemplate, _Jinja2Template
 from .shell import ShellTemplate
@@ -21,7 +22,7 @@ class Loader(_JinjaLoader):
         template_types: list[Type[Template]] = [JinjaTemplate, ShellTemplate],
     ) -> None:
         self.searchpaths = [
-            path if isinstance(path, Path) else Path(path) for path in searchpaths
+            path if isinstance(path, Path) else parse_path(path) for path in searchpaths
         ]
         self.template_types = template_types
         super().__init__()
@@ -51,12 +52,20 @@ class Loader(_JinjaLoader):
             filename = _filename.name
         else:
             parent = None
+        # A `http://...` entry in `templates` or in an image's
+        # `template_path` is a URI, not a directory named "http:" under the
+        # CWD -- which is what `Path(".") / str(path)` used to make of it.
         searchpaths: list[Path] = [
-            path if isinstance(path, Path) else (Path(".") / str(path))
-            for path in [*(ctx.searchpaths or []), *self.searchpaths]
+            path if isinstance(path, Path) else parse_path(str(path))
+            for path in [*((ctx.searchpaths if ctx else None) or []), *self.searchpaths]
         ]
 
-        for filename in ctx._template_names(filename, **options):
+        # Without a context there is no target to name candidates after, but a
+        # plain name must still resolve: `Loader` is usable on its own.
+        candidates = (
+            ctx._template_names(filename, **options) if ctx is not None else [filename]
+        )
+        for filename in candidates:
             for searchpath in searchpaths:
                 if parent is not None:
                     searchpath = searchpath / parent
@@ -132,7 +141,7 @@ class Loader(_JinjaLoader):
                 else:
                     template = t(source)
                     template._globals_ = globals
-                    setattr(template, "is_up_to_date", uptodate)
+                    template._uptodate_ = uptodate
 
                 template.loader = self
                 return template

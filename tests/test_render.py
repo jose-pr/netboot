@@ -153,3 +153,51 @@ def test_templates_are_read_as_utf8(templates_dir):
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
     assert ctx.render("utf8.j2") == "mot=debian-café-日本"
+
+
+def test_jinja_keeps_the_templates_trailing_newline(templates_dir):
+    # A boot artifact whose last line lost its newline is a different file, and
+    # the shell engine kept it while Jinja did not.
+    (templates_dir / "trailing.j2").write_text("label {{ ctx.target.hostname }}\n")
+    p = _make_netboot(templates_dir)
+    ctx = p.make_context(p.lookup_target("host1"))
+    assert ctx.render("trailing.j2") == "label host1\n"
+
+
+def test_mac_less_targets_do_not_share_a_null_mac_candidate(templates_dir):
+    # Every MAC-less target used to look for `00-00-00-00-00-00.<name>` first,
+    # so one stray file of that name applied to all of them.
+    (templates_dir / "00-00-00-00-00-00.boot.sh").write_text("WRONG")
+    (templates_dir / "boot.sh").write_text("HOST=%{TARGET_HOSTNAME}")
+    p = _make_netboot(templates_dir)
+    ctx = p.make_context(p.lookup_target("host1"))
+    assert ctx.render("boot.sh") == "HOST=host1"
+
+
+def test_a_uri_search_path_is_not_turned_into_a_local_directory():
+    from netboot.templates import Loader
+
+    loader = Loader(["http://boot.example/templates", "templates"])
+    assert str(loader.searchpaths[0]).startswith("http://")
+
+
+def test_shell_templates_notice_an_edited_file(templates_dir):
+    # `is_up_to_date` was assigned the checker function itself, which is always
+    # truthy, so a cached template never reloaded.
+    from netboot.templates import Loader
+    from netboot.templates.common import Renderer
+
+    (templates_dir / "cached.sh").write_text("v1")
+    p = _make_netboot(templates_dir)
+    ctx = p.make_context(p.lookup_target("host1"))
+    renderer = Renderer(loader=Loader([templates_dir]))
+    renderer.globals["ctx"] = ctx
+    template = renderer.get_template("cached.sh")
+    assert template.is_up_to_date is True
+    import os
+    import time
+
+    time.sleep(0.01)
+    (templates_dir / "cached.sh").write_text("v2")
+    os.utime(templates_dir / "cached.sh", (time.time() + 1, time.time() + 1))
+    assert template.is_up_to_date is False
