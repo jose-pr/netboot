@@ -1,16 +1,45 @@
+import importlib as _importlib
 import typing as _ty
 from argparse import Namespace
 
-from .utils import net as netutils
+from ..utils import net as netutils
 from yaconfiglib import OpaqueMerge
 
-from .logging import LOGGER
-from .utils.net import IPAddress, IPInterface, IPNetwork
+from ..logging import LOGGER
+from ..utils.net import IPAddress, IPInterface, IPNetwork
 
 if _ty.TYPE_CHECKING:
-    from . import PixieContext
+    from .. import PixieContext
 
 from urllib.parse import urlparse
+
+from .options import DhcpOptions, build_options, split_query
+
+#: Backends netboot ships, and the extra each needs. Used only to turn "no
+#: backend for scheme" into a message that names the fix.
+_SHIPPED = {
+    "dnsmasq": "netboot[ssh] for remote paths (local needs nothing)",
+    "kea": "netboot[kea]",
+    "dhcpd": "netboot[dhcpd]",
+    "windhcp": "netboot[winrm] for WinRM (ssh needs nothing)",
+}
+
+
+def _load_backend(scheme: "str|None") -> None:
+    """Import the shipped backend for `scheme`, if there is one.
+
+    Keeps `import netboot.dhcp` free of requests/paramiko/pywinrm: a backend and
+    its dependency are only imported when a config actually names its scheme. A
+    missing *backend module* is not an error (a plugin may provide the scheme),
+    but a backend that fails to import for its own reasons must say so.
+    """
+    if not scheme or not scheme.isidentifier():
+        return
+    try:
+        _importlib.import_module(f"{__name__}.{scheme}")
+    except ModuleNotFoundError as exc:
+        if exc.name != f"{__name__}.{scheme}":
+            raise  # the backend imported, one of *its* imports is missing
 
 
 def _iter_subclasses(cls: type) -> "_ty.Iterator[type]":
@@ -35,10 +64,15 @@ class DhcpServer:
 
     DEFAULT_SCHEME = None
 
+    #: Query keys this backend reads as connection settings. Everything else in
+    #: the query is a client option -- the two sets must stay disjoint.
+    SETTINGS: "frozenset[str]" = frozenset()
+
     def __new__(cls, uri: str):
         if cls is DhcpServer:
             parsed = urlparse(uri)
             scheme = parsed.scheme or cls.DEFAULT_SCHEME
+            _load_backend(scheme)
             handlers = [
                 sub for sub in _iter_subclasses(cls) if sub.__name__.lower() == scheme
             ]
@@ -54,14 +88,27 @@ class DhcpServer:
                 )
             if handlers:
                 return object.__new__(handlers[-1])
+            hint = _SHIPPED.get(scheme)
             raise ValueError(
                 f"No DhcpServer backend registered for scheme {scheme!r} "
-                f"(uri={uri!r}); import a plugin module providing it via --load-module"
+                f"(uri={uri!r}); "
+                + (
+                    f"install {hint}"
+                    if hint
+                    else "import a plugin module providing it via --load-module"
+                )
             )
         return object.__new__(cls)
 
     def __init__(self, uri: str):
         self.uri = uri
+        self.settings, self.options, self.options_builder = split_query(
+            uri, self.SETTINGS, type(self).__name__
+        )
+
+    def options_for(self, ctx) -> DhcpOptions:
+        """The client options for this target on this server, fully merged."""
+        return build_options(ctx, self)
 
     def remove_target(self, netboot: "PixieContext"):
         """Disarm this backend for the target in `netboot` (a `PixieContext`)."""

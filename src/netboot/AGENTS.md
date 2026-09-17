@@ -98,8 +98,8 @@ is the same object. `netboot.netutils` remains an alias for
 - **`PixieEvent`** (`StrEnum`) — hook event names: `NewPixieObject`,
   `StartPixieInit`, `SetPixieProperty`, `PixieInitiated`, `LookupTarget`,
   `FoundTarget`, `FoundTargetImage`, `FoundTargetDhcpzone`,
-  `PixieContextForTarget`, `StartPixieInitialize`, `EndPixieInitialize`,
-  `StartPixieComplete`, `EndPixieComplete`.
+  `PixieContextForTarget`, `BuildDhcpOptions`, `StartPixieInitialize`,
+  `EndPixieInitialize`, `StartPixieComplete`, `EndPixieComplete`.
 
 - **`PixieTarget(**kwargs)`** (`argparse.Namespace` + `yaconfiglib.OpaqueMerge`)
   — `_id`, `hostname`, `ip` (`IPAddress`), `mac` (`MACAddress`), `image`,
@@ -173,6 +173,12 @@ is the same object. `netboot.netutils` remains an alias for
   skips anything unparseable with a warning, and returns `default` when no
   server lies inside the zone's network.
 
+- **`DhcpServer.SETTINGS`** — the query keys a backend reads as *connection*
+  settings. Every other key in a `dhcpservers` URI query is a **client option**
+  (see `netboot.dhcp.options`), so the two vocabularies must stay disjoint.
+- **`DhcpServer.options_for(ctx) -> DhcpOptions`** — the merged client options
+  for this target on this server.
+
 - **`DhcpZone(**kwargs)`** (`Namespace` + `OpaqueMerge`) — `network`
   (`IPNetwork`), `gateway` (`IPAddress | None`), `domain` (`str | None`),
   `search` (`list[str]`), `nameservers` (`list[IPAddress]`), `globals`,
@@ -181,6 +187,31 @@ is the same object. `netboot.netutils` remains an alias for
   derives the rest. **`.nameserver`** — first of `.nameservers`, or `""`.
   **`.get_local_server(servers, default)`** — first `server` contained in
   `.network`, else `default`.
+
+## DHCP options (`netboot.dhcp.options`)
+
+- **`GENERIC_OPTIONS`** — the option names netboot models and every backend
+  translates (`router`, `domain-name-servers`, `domain-name`, `domain-search`,
+  `next-server`, `boot-file-name`, `tftp-server-name`, `host-name`,
+  `subnet-mask`, `broadcast-address`, `lease-time`, `ntp-servers`,
+  `vendor-class-identifier`). A numeric `option-<n>` or a bare number is always
+  accepted, for anything not modelled.
+- **`APPLY_TIME`** — names that are resolved **when a target is applied**, never
+  from a connection string: `subnet_id`/`scope` belong to the **zone**,
+  `boot-file-name`/`next-server`/`tftp-server-name` to the **image or target**,
+  `host-name` to the target itself. Passing one in a URI query raises
+  `PixieConfigError` naming where it belongs — a boot file pinned to a
+  connection would hand every target on that server the same one.
+- **`DhcpOptions(dict)`** — the merged options, plus **`.raw`** /
+  **`.raw_for(backend)`**: backend-native text from `raw.<backend>=` in the
+  query, never translated.
+- **`build_options(ctx, server) -> DhcpOptions`** — merges, later winning: zone
+  defaults (from `gateway`/`nameservers`/`domain`/`search`/`network`) → the
+  server URI's query → `image.dhcp_options` → `target.dhcp_options` → the
+  server's `options_builder=` callback (`fn(ctx, options) -> options`) → the
+  `PixieEvent.BuildDhcpOptions` hook. An unknown option name raises.
+- **`split_query(uri, settings, backend)`** → `(settings, options, builder)`.
+  A repeated key becomes a list, which is how a multi-valued option is written.
 
 ## Content (`netboot.content`)
 

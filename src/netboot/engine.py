@@ -321,6 +321,7 @@ class PixieEvent(StrEnum):
     FoundTargetImage = "PixieEvent.FoundTargetImage"
     FoundTargetDhcpzone = "PixieEvent.FoundTargetDhcpzone"
     PixieContextForTarget = "PixieEvent.PixieContextForTarget"
+    BuildDhcpOptions = "PixieEvent.BuildDhcpOptions"
     StartPixieInitialize = "PixieEvent.StartPixieInitialize"
     EndPixieInitialize = "PixieEvent.EndPixieInitialize"
     StartPixieComplete = "PixieEvent.StartPixieComplete"
@@ -679,6 +680,9 @@ class Pixie:
             keep_trailing_newline=True,
         )
         ctx.version = f"netboot-v{self.VERSION}"
+        # DHCP backends fire BuildDhcpOptions through the engine, and they only
+        # ever see the context.
+        ctx._netboot_ = self
         return self.hook(PixieEvent.PixieContextForTarget, ctx, target=target)
 
     def _without_reserved_keys(self, values: dict) -> dict:

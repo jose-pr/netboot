@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `netboot.dhcp` is a package, and DHCP backends carry **client options**. A
+  `dhcpservers` entry is still a plain URI string; its query string now holds the
+  options the server should give the client (`?router=10.0.0.1`), alongside each
+  backend's own connection settings. `netboot.dhcp.options` models them:
+  `GENERIC_OPTIONS` for the names netboot translates, `option-<n>` for anything
+  else, `raw.<backend>=` for untranslated backend-native text, and
+  `options_builder=my.mod.fn` plus the new `PixieEvent.BuildDhcpOptions` for
+  building them from the context. Merge order, later winning: zone defaults, the
+  connection query, `image.dhcp_options`, `target.dhcp_options`, the callback,
+  the hook.
+- Anything that varies per target is refused in a connection string and resolved
+  when the target is applied instead: `subnet_id`/`scope` belong to the zone,
+  `boot-file-name`/`next-server`/`tftp-server-name` to the image or target. The
+  error names where each belongs. `from netboot.dhcp import DhcpServer, DhcpZone`
+  is unchanged, and a backend module is imported only when a config names its
+  scheme.
+
 ## [0.2.0] - 2026-09-17
 
 A correctness and hardening release from a full review of the code base.
