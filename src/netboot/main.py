@@ -175,6 +175,24 @@ def _load_config(args: "Pixie_") -> dict:
     return conf
 
 
+def _entrypoint(command: ModuleCommand) -> "_ty.Callable | None":
+    """The function duho would call for this module command.
+
+    duho resolves `main`, then `run`, then `call`, and remembers the result.
+    Looking only at `module.run` (as this used to) missed a command whose body
+    is `main`, and then handed it to duho's single-argument dispatch.
+    """
+    resolved = getattr(command, "_entrypoint", None)
+    if callable(resolved):
+        return resolved
+    module = getattr(command, "module", None)
+    for name in ("main", "run", "call"):
+        candidate = getattr(module, name, None)
+        if callable(candidate):
+            return candidate
+    return None
+
+
 def _wants_netboot(run: "_ty.Callable | None") -> bool:
     """Does this command's ``run`` follow netboot's ``run(netboot, args, conf)`` shape?
 
@@ -218,7 +236,7 @@ def _dispatch(command: object, instance: "Pixie_") -> int:
     # A user command discovered via --cmdspath/PIXIE_CMDS_PATH may follow duho's plain
     # 1-arg run(args) contract rather than netboot's run(netboot, args, conf); only the
     # netboot-first contract needs a built Pixie, so introspect before building one.
-    run = getattr(command.module, "run", None)
+    run = _entrypoint(command)
     if not _wants_netboot(run):
         return run_command(command, instance)
 

@@ -107,6 +107,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Other schemes still resolve, since a PXE client often has no DNS yet.
 - `repo / "/sub"` extends the repository root instead of replacing it, and a
   trailing slash no longer doubles up.
+- A command module whose body is `main(netboot, args, conf)` gets netboot's
+  contract. Dispatch looked only at `module.run`, while duho resolves
+  `main` → `run` → `call`, so such a command was handed to duho's
+  single-argument dispatch and failed on the signature.
+- Two context values that flatten to the same shell-template variable (a global
+  `target_ip` beside `target.ip`, or `domain` beside `DOMAIN`) now log a warning
+  naming both; the later one still wins, but silently building an artifact from
+  the wrong value is what this prevents.
 - A relative `template_path` is resolved inside the template roots
   (`config["templates"]`, `./templates` by default) rather than against the
   process's working directory, so a config means the same thing whichever

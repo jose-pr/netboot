@@ -2,6 +2,7 @@ from string import Template as _BasicTemplate
 
 from pathlib_next import Path
 
+from ..logging import LOGGER
 from ..utils import flatten
 from .common import Template
 
@@ -39,7 +40,18 @@ class ShellTemplate(Template):
                 v = str(v).lower()
             else:
                 v = str(v)
-            _upper[k.upper()] = v
+            key = k.upper()
+            if key in _upper and _upper[key] != v:
+                # `domain` and `DOMAIN` are different context keys but one
+                # placeholder; say which value the template will get.
+                LOGGER.warning(
+                    "shell template variable %s has two sources (%r and %r); "
+                    "using the later",
+                    key,
+                    _upper[key],
+                    v,
+                )
+            _upper[key] = v
         return self._template.substitute(_upper)
 
     @classmethod

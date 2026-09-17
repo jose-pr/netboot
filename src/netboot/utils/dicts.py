@@ -1,6 +1,8 @@
 from argparse import Namespace
 from typing import Mapping, TypeVar
 
+from ..logging import LOGGER
+
 #: Explicit, so `from .dicts import *` (in `netboot.utils`) does not re-export
 #: `argparse.Namespace` under a name consumers would read as netboot's own
 #: config `Namespace` (which lives in `netboot.utils.config`).
@@ -31,10 +33,30 @@ def flatten(map: "dict|Namespace|list", _prefix: str = "") -> dict:
     for key, val in items:
         full = f"{_prefix}_{key}" if _prefix else key
         if isinstance(val, (Mapping, list, Namespace)):
-            result.update(flatten(val, full))
+            nested = flatten(val, full)
+            _warn_collisions(result, nested)
+            result.update(nested)
         else:
+            _warn_collisions(result, {full: val})
             result[full] = val
     return result
+
+
+def _warn_collisions(existing: dict, incoming: dict) -> None:
+    """Report keys that flattening makes indistinguishable.
+
+    `{"target": {"ip": x}}` and a global named `target_ip` both flatten to
+    `target_ip`, and the later one silently wins -- in a shell template that
+    means an artifact built from a value nobody meant to use.
+    """
+    for key, value in incoming.items():
+        if key in existing and existing[key] != value:
+            LOGGER.warning(
+                "flattened key %r has two values (%r and %r); the later one wins",
+                key,
+                existing[key],
+                value,
+            )
 
 
 def arr_get(arr: list, pos: int, default=None):

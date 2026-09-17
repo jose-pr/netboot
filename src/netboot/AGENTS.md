@@ -233,6 +233,11 @@ is the same object. `netboot.netutils` remains an alias for
   plus **`.is_up_to_date`** — a property that calls the loader's freshness
   check, so an edited shell template is reloaded rather than served from cache
   forever.
+  A Jinja template can only `{% include %}` or `{% import %}` **another Jinja
+  template**: the shell engine is not a Jinja loader, so including a
+  `%{NAME}`-style file raises `TemplateNotFound`. An imported macro file does
+  not see `shell_quote`/`Path`/`Uri` unless imported `with context`.
+
 - **`JinjaTemplate`** (`.j2`/`.jinja`/`.jinja2` suffix) — a real
   `jinja2.Template`; `.render()` additionally injects `shell_quote`, `Path`
   (**`pathlib_next.Path`**, not the stdlib's — it accepts URI paths too) and
@@ -264,7 +269,9 @@ is the same object. `netboot.netutils` remains an alias for
   Equality/hash by `.address`.
 - **`flatten(map, _prefix="") -> dict`** — recursively flattens a
   dict/`Namespace`/list into a single-level dict, joining keys with `_`
-  (`{"a": {"b": 1}}` → `{"a_b": 1}`) and using list indices as keys.
+  (`{"a": {"b": 1}}` → `{"a_b": 1}`) and using list indices as keys. Two
+  sources that flatten to one key (a global `target_ip` beside
+  `target.ip`) log a warning naming both values; the later one wins.
 - **`shell_quote(text: str | list[str], quote="'") -> str | list[str]`** —
   quote value(s) so a POSIX shell reads them as literal text. `str` in → `str`
   out, `list` in → `list` out (element-wise); non-strings are stringified and

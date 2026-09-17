@@ -87,3 +87,29 @@ def test_env_cmdspath_is_not_read_twice(tmp_path, monkeypatch):
     monkeypatch.setenv("PIXIE_CMDS_PATH", str(tmp_path / "envcmds"))
 
     assert "pixiedupcheckcmd" not in _command_names(_main._discover([]))
+
+
+def test_a_command_whose_body_is_main_gets_the_netboot_contract(tmp_path, monkeypatch):
+    # duho resolves main -> run -> call; netboot used to look only at `run`, so
+    # a command written as `main(netboot, args, conf)` was dispatched through
+    # duho's single-argument path instead.
+    cmds = tmp_path / "cmds"
+    cmds.mkdir()
+    (cmds / "viamain.py").write_text(
+        "def register(parser, args):\n"
+        "    pass\n"
+        "\n"
+        "def main(netboot, args, conf):\n"
+        "    print('netboot-contract', type(netboot).__name__)\n"
+        "    return 0\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "pixie.yaml").write_text(
+        "targets: {}\nimages: {}\ndhcpzones: {}\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    from netboot.main import main as pixie_main
+
+    assert pixie_main(argv=["--cmdspath", str(cmds), "viamain"]) == 0
