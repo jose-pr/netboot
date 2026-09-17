@@ -53,6 +53,13 @@ class PixieConfigError(PixieError, ValueError):
 
 
 class PixieTarget(Namespace, OpaqueMerge):
+    """One machine to provision, as configured under `targets:`.
+
+    Gaps are filled at construction: a MAC-shaped id becomes the MAC, an
+    IP-shaped id the IP, anything else the hostname, and an unknown IP is
+    resolved once (never in a loop, never fatally).
+    """
+
     _id: str
     hostname: str
     #: An `IPAddress` once known, but `""` while it is not: a MAC-keyed target
@@ -122,6 +129,12 @@ class PixieTarget(Namespace, OpaqueMerge):
 
 
 class PixieImage(Resource):
+    """What a target boots, as configured under `images:`.
+
+    Also a `content.Resource`, so it carries `src`/`path` addressing its
+    artifacts in a repository. Those play no part in template lookup.
+    """
+
     template_path: list["Path"]
     globals: dict
 
@@ -132,10 +145,21 @@ class PixieImage(Resource):
         super().__init__(**kwargs)
 
     def match(self, name: str, check: str):
+        """Does image `name` serve `check`? Override point for image selection.
+
+        Return a bool, or a comparable score so `lookup_image` can prefer the best
+        of several matches. Anything falsy means "not this one".
+        """
         return name == check
 
 
 class PixieContext(Namespace):
+    """Everything a template can see for one target.
+
+    Built by `Pixie.make_context`, never constructed directly: it carries the
+    target, its image and zone, the repositories, and its own renderer.
+    """
+
     target: PixieTarget
     image: PixieImage
     dhcpzone: DhcpZone
@@ -150,6 +174,11 @@ class PixieContext(Namespace):
         super().__init__(**kwargs)
 
     def resource(self, name: Union[str, Resource], service: str = None):
+        """Resolve a resource to a fetchable URI through its repository.
+
+        Takes a resource id (looked up in `.resources`) or a `Resource` directly.
+        `None` if the repo or the resource is unknown.
+        """
         if isinstance(name, Resource):
             repo = self.repos.get(name.src, None)
             path = name.path
@@ -163,6 +192,7 @@ class PixieContext(Namespace):
         return repo.get(path, service=service)
 
     def resource_repo(self, name: str):
+        """The `Repository` backing resource `name`, or `None`."""
         resource = self.resources.get(name)
         if not resource:
             return
@@ -244,12 +274,23 @@ class PixieContext(Namespace):
 
     @property
     def searchpaths(self) -> list[Path]:
+        """Template directories for this context: target first, then image.
+
+        These extend the engine-wide template roots rather than replacing them; a
+        relative entry is resolved inside each root.
+        """
         return [*self.target.template_path, *self.image.template_path]
 
     def render(self, filename: str, strict=True):
         # Each PixieContext owns its own Renderer (built in make_context), so
         # setting globals["ctx"] here is per-context; do not share one Renderer
         # across contexts or nested renders would clobber this.
+        """Render `filename` against this context and return the text.
+
+        The name is resolved by the template search (MAC, hostname, IP, then the
+        bare name). `strict=False` logs the failure at DEBUG and returns `None`
+        instead of raising.
+        """
         self._renderer.globals["ctx"] = self
         try:
             template = self._renderer.get_template(filename)
@@ -265,6 +306,12 @@ class PixieContext(Namespace):
 
 
 class PixieEvent(StrEnum):
+    """The points in the engine where hooks run.
+
+    The string value carries the `PixieEvent.` prefix (`PixieEvent.LookupTarget`),
+    which hooks comparing against raw strings rely on.
+    """
+
     NewPixieObject = "PixieEvent.NewPixieObject"
     StartPixieInit = "PixieEvent.StartPixieInit"
     SetPixieProperty = "PixieEvent.SetPixieProperty"
@@ -284,6 +331,14 @@ _PixieHook = _ty.Callable[["PixieEvent", "Pixie", T, dict], T]
 
 
 class Pixie:
+    """The engine: config in, provisioning decisions out.
+
+    Built from a merged config mapping, it resolves targets, images and DHCP
+    zones, builds render contexts, and arms or disarms DHCP through the
+    `initialize`/`complete` lifecycle. Every step fires a `PixieEvent`, so
+    behaviour can be changed without subclassing.
+    """
+
     targets: "dict[str,PixieTarget]"
     dhcpzones: "dict[str,DhcpZone]"
     images: "dict[str, PixieImage]"
@@ -301,6 +356,11 @@ class Pixie:
         /,
         **kwargs,
     ):
+        """Run the hook chain for `event`, threading `value` through it.
+
+        Each hook is called as `f(event, netboot, value, kwargs)` and **must
+        return** the value to pass on. `value` is positional-only.
+        """
         LOGGER.debug(f"Running Hooks for: {event}")
         if isinstance(self, Pixie):
             netboot = self
@@ -466,6 +526,12 @@ class Pixie:
         return matches[0] if matches else None
 
     def lookup_target(self, target: str) -> "PixieTarget|None":
+        """Find the target a user named, or `None`.
+
+        Exact id first, then an exact hostname/MAC/IP match anywhere in the table,
+        then a unique hostname prefix. Raises `PixieLookupError` rather than
+        guessing when a query matches several targets.
+        """
         target: Union[str, PixieTarget] = self.hook(PixieEvent.LookupTarget, target)
         if isinstance(target, str):
             _target = self._match_target(target)
@@ -496,6 +562,10 @@ class Pixie:
         return self.hook(PixieEvent.FoundTargetImage, best_image, target=target)
 
     def lookup_dhcpzone(self, name: str, target: PixieTarget = None) -> "DhcpZone|None":
+        """The zone for `name`, or the most specific one containing the target's IP.
+
+        The resolved id is cached back onto `target.dhcpzone`.
+        """
         if not name and target:
             if target.dhcpzone:
                 name = target.dhcpzone
@@ -528,6 +598,13 @@ class Pixie:
         globals: list[dict] = None,
         require_image: bool = True,
     ) -> PixieContext:
+        """Build the render context for `target`.
+
+        Resolves the image and zone, layers the globals (engine, then image, zone
+        and target), and attaches a renderer over the configured template roots.
+        `require_image=False` tolerates an image that is no longer configured, so
+        cleanup can still run.
+        """
         image = self.lookup_image(target.image, target)
         if not image and not require_image:
             # `complete` only needs the zone, to disarm DHCP. Refusing to clean
@@ -611,12 +688,20 @@ class Pixie:
         return {k: v for k, v in values.items() if k not in clashes}
 
     def initialize(self, target: "PixieTarget"):
+        """Arm DHCP for `target` and return its context.
+
+        All or nothing: a backend that fails rolls back the ones already armed.
+        """
         target = self.hook(PixieEvent.StartPixieInitialize, target)
         ctx = self.make_context(target)
         ctx = ctx.pxe_init(self)
         return self.hook(PixieEvent.EndPixieInitialize, ctx)
 
     def complete(self, target: "PixieTarget"):
+        """Disarm DHCP for `target` and return its context.
+
+        Every backend is tried even if one fails; the first error is raised after.
+        """
         target = self.hook(PixieEvent.StartPixieComplete, target)
         ctx = self.make_context(target, require_image=False)
         ctx = ctx.pxe_complete(self)

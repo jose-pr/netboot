@@ -60,6 +60,7 @@ class Loader(_JinjaLoader):
     def get_source(
         self, environment: Renderer, template: str, **options
     ) -> Tuple[str, str, Callable[[], bool]]:
+        """Find `template` and return its text, path and freshness check."""
         ctx: "PixieContext" = environment.globals.get("ctx")
         options: dict[str, str]
 
@@ -156,6 +157,7 @@ class Loader(_JinjaLoader):
         name: str,
         globals: Union[MutableMapping[str, Any], None] = None,
     ) -> Template:
+        """Build the template object, picking the first engine that can process it."""
         if globals is None:
             globals = {}
         source, filename, uptodate = self.get_source(environment, name)

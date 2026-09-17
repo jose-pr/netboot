@@ -60,6 +60,7 @@ def _warn_collisions(existing: dict, incoming: dict) -> None:
 
 
 def arr_get(arr: list, pos: int, default=None):
+    """`arr[pos]`, or `default` when the index is out of range."""
     if len(arr) > pos:
         return arr[pos]
     else:

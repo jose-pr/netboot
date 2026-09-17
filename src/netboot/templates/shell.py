@@ -25,10 +25,17 @@ class _Basic(_BasicTemplate):
 
 
 class ShellTemplate(Template):
+    """The fallback engine: `%{UPPER_SNAKE}` placeholders from the context.
+
+    Only the braced form substitutes, so a bare `%` is literal text and a
+    kickstart keeps its `%packages`/`%pre`/`%post` sections.
+    """
+
     def __init__(self, template: str) -> None:
         self._template = _Basic(template)
 
     def render(self, **extras):
+        """Substitute the flattened context into the template."""
         _globals = getattr(self, "_globals_", {})
         context = _globals.get("ctx", {})
         _args = flatten(context)
@@ -56,4 +63,5 @@ class ShellTemplate(Template):
 
     @classmethod
     def can_process(cls, file: Path, template: str) -> bool:
+        """True for anything: keep this engine last in `template_types`."""
         return True

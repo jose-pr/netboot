@@ -8,6 +8,8 @@ if TYPE_CHECKING:
 
 
 class Template:
+    """The minimal template contract: render, and say what you can process."""
+
     loader: "Loader"
 
     def __init__(self, template: str) -> None:
@@ -25,8 +27,10 @@ class Template:
         return check() if callable(check) else True
 
     def render(self, **globals):
+        """Render this template and return the text."""
         pass
 
     @classmethod
     def can_process(cls, file: Path, template: str) -> bool:
+        """Can this engine render `file`? Checked in `template_types` order."""
         return False

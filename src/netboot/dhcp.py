@@ -64,13 +64,21 @@ class DhcpServer:
         self.uri = uri
 
     def remove_target(self, netboot: "PixieContext"):
+        """Disarm this backend for the target in `netboot` (a `PixieContext`)."""
         pass
 
     def add_target(self, netboot: "PixieContext"):
+        """Arm this backend for the target in `netboot` (a `PixieContext`)."""
         pass
 
 
 class DhcpZone(Namespace, OpaqueMerge):
+    """A network netboot can provision into, as configured under `dhcpzones:`.
+
+    Derives `network` from a CIDR `gateway`, coerces `nameservers`/`search` to
+    lists, and builds `dhcpservers` URIs into backends by scheme.
+    """
+
     network: IPNetwork
     gateway: "_ty.Optional[IPAddress]"
     domain: "_ty.Optional[str]"
@@ -81,6 +89,7 @@ class DhcpZone(Namespace, OpaqueMerge):
 
     @property
     def nameserver(self):
+        """The first nameserver, or `""` when none is configured."""
         return self.nameservers[0] if self.nameservers else ""
 
     def get_local_server(self, servers: "list[IPAddress]", default: IPAddress):

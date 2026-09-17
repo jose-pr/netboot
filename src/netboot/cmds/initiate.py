@@ -9,6 +9,7 @@ from netboot.logging import LOGGER
 
 
 def register(parser: argparse.ArgumentParser, args) -> None:
+    """Add this command's arguments to its subparser."""
     parser.add_argument(
         "target", help="Id, hostname, MAC or IP of the target to initiate"
     )
@@ -21,6 +22,7 @@ def register(parser: argparse.ArgumentParser, args) -> None:
 
 
 def run(netboot: Pixie, args, conf: dict) -> int:
+    """Look up the target and arm DHCP for it. Exit 1 if it cannot be found."""
     try:
         target = netboot.lookup_target(args.target)
     except LookupError as exc:  # more than one target matches: refuse, never guess

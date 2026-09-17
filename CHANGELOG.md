@@ -238,6 +238,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `docs/configuration.md` example is runnable as written (the MAC-keyed target
   names its zone) and says that a `dnsmasq://` backend has to be provided and
   imported. The shell-template section documents that only `%{NAME}` substitutes.
+- The public API is documented in the source, so the API Reference renders
+  prose rather than bare signatures: 41 docstrings added, leaving only dunders
+  undocumented (which the reference filters out anyway).
 - The API Reference page covers the content, template, utility and CLI modules
   as well as the engine, and renders members that have no docstring; the site
   gains a Changelog page.

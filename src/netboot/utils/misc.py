@@ -6,6 +6,7 @@ __all__ = ["import_", "parse_path"]
 
 
 def import_(name: str):
+    """Import `"pkg.mod.attr"` and return `attr` (splits on the last dot)."""
     module, obj = name.rsplit(".", maxsplit=1)
     return getattr(import_module(module), obj)
 

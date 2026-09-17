@@ -37,6 +37,8 @@ def _require_scheme_support(*schemes: str) -> None:
 
 
 class Resource(_NS):
+    """A file in a repository: `path` within it, `src` naming the repo."""
+
     path: Pathname
     src: str
 
@@ -51,6 +53,13 @@ class Resource(_NS):
 
 
 class Repository(_NS):
+    """Where artifacts are served from.
+
+    `services` maps a scheme name to a base path or full URI; `local` is the
+    filesystem view. `address` fills in the authority for a relative service
+    path.
+    """
+
     address: Host
     services: dict[str, UriPath]
     local: "_ty.Optional[UriPath]"
@@ -102,6 +111,7 @@ class Repository(_NS):
         return repo
 
     def get(self, *path: Union[RepoPath, str], service: str = None) -> UriPath:
+        """Join `path` onto a service's base URI, or `None` if undefined."""
         path: RepoPath = RepoPath(
             *[(p if isinstance(p, Pathname) else RepoPath(p)).as_posix() for p in path]
         )
@@ -145,6 +155,11 @@ class Repository(_NS):
         return text, None
 
     def service(self, name: str):
+        """The base URI for a service name, `None` for `.local` when unset.
+
+        A relative service path gets its authority from `.address`: resolved to an
+        IP for every scheme except `https`, which keeps the configured name.
+        """
         if name is None:
             baseuri = self.local
             name = "file"
