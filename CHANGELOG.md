@@ -197,6 +197,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Packaging excludes `*.local.*` from both sdist and wheel. A personal override
   such as `pixie.local.yaml` or `AGENTS.local.md` previously shipped, because a
   dotfile pattern does not match a name that has no leading dot.
+- The engine moved to `netboot.engine`, leaving the package root as a surface
+  (44 lines). `from netboot import Pixie` and every other documented import are
+  unchanged; `netboot.engine.Pixie` is the same object. `netboot._version`
+  holds the version lookup.
 - `netboot.utils` no longer re-exports `argparse.Namespace` as
   `netboot.utils.Namespace`, where it read as netboot's own config base. The
   config base is `netboot.utils.config.Namespace`, as documented.

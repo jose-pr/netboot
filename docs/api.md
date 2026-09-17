@@ -50,3 +50,11 @@ The engine and its context objects. Rendered from source via
 ## CLI entry point
 
 ::: netboot.main
+
+## Errors
+
+::: netboot.PixieError
+
+::: netboot.PixieLookupError
+
+::: netboot.PixieConfigError

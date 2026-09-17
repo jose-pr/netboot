@@ -15,7 +15,12 @@ project overview, install instructions and CLI usage, see the shipped
   - **`PixieConfigError(PixieError, ValueError)`** — the configuration cannot
     be used as given (for example a top level that is not a mapping).
 
-## Engine (`netboot` / `netboot.__init__`)
+## Engine (`netboot.engine`, re-exported from `netboot`)
+
+The engine lives in `netboot.engine`; the package root re-exports it, so
+`from netboot import Pixie` is the supported import and `netboot.engine.Pixie`
+is the same object. `netboot.netutils` remains an alias for
+`netboot.utils.net`.
 
 - **`Pixie(hooks=(), **config)`** — the engine. `config` is the merged config
   mapping: `targets`, `images`, `dhcpzones`, `repos` (each a `dict[id, ...]`
