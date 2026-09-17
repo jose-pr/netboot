@@ -20,21 +20,30 @@ from copy import deepcopy as _deepcopy
 from importlib import import_module as _import_module
 
 from duho import Arg, Cli, Extend, LoggingArgs, app, parse_globals
+from jinja2 import TemplateError as _TemplateError
 from duho.discovery import ModuleCommand, discover_commands
 from duho.env import Env
 from pathlib_next import LocalPath, Path, UriPath
 
-from . import Pixie, __version__
+from . import Pixie, PixieConfigError, PixieError, __version__
+from .logging import LOGGER, quiet_noisy_dependencies
 
 #: Package import path to the built-in command modules.
 _BUILTIN_COMMANDS = "netboot.cmds"
 
 
 def parse_path(path: "str | Path") -> Path:
-    """Parse a config/template path: a bare path is local, ``scheme:`` is a URI."""
+    """Parse a config/template path: a bare path is local, ``scheme:`` is a URI.
+
+    A single-letter scheme is a Windows drive, not a URI: ``C:\\srv\\tftp`` and
+    ``C:/srv/tftp`` are local paths. URI schemes are at least two characters
+    (RFC 3986 allows one, but no real scheme is), so this costs nothing and
+    stops every absolute Windows path from being parsed as a URI.
+    """
     if isinstance(path, Path):
         return path
-    if ":" not in path:
+    scheme, sep, _ = path.partition(":")
+    if not sep or len(scheme) < 2 or not scheme.isalnum():
         return LocalPath(path)
     return UriPath(path)
 
@@ -67,6 +76,13 @@ class Pixie_(PixieArgs, Cli):
     """Pixie: PXE provisioning management."""
 
     _version_ = __version__
+    #: Parser name: without it argparse reports errors and --version as
+    #: "Pixie_", the class name, rather than the command the user typed.
+    _parsername_ = "pixie"
+    #: duho applies -v/-q/--loglevel to the logger of this name. Point it at
+    #: netboot's own logger, or the verbosity flags adjust a logger nothing
+    #: in this package ever writes to.
+    _logger_name_ = "netboot"
 
 
 def _discover(argv: "_ty.Sequence[str] | None") -> "list":
@@ -134,13 +150,39 @@ def _load_config(args: "Pixie_") -> dict:
         interpolate=True,
         recursive=True,
         merge=ConfigLoaderMergeMethod.Deep,
+        # Hardened on purpose. A netboot config is assembled from `!include`s
+        # that often come from inventory exports rather than from the operator's
+        # own hand, and netboot has never documented running commands from a
+        # config document. `allow_commands=False` drops the command source and
+        # `sandbox=True` renders interpolation in jinja2's sandbox, so a value
+        # cannot reach out of the template language. Restricting *where*
+        # includes may read from is a separate policy: set
+        # `YACONFIGLIB_CONFINE_TO` to confine them to a directory.
+        allow_commands=False,
+        sandbox=True,
     )
     # yaconfiglib auto-registers !include/!load on the active loader class during
     # load(); a manual yaml.add_constructor is redundant (and since yaconfiglib
     # 0.10.0 it warns that it overrides the built-in handler).
-    conf: dict = loader.load(*configs)
+    conf = loader.load(*configs)
 
-    templates: "list" = conf.setdefault("templates", [])
+    # An empty or comment-only file loads as None, and a file whose top level
+    # is a list or a scalar is a config mistake: say so here instead of
+    # failing later with an AttributeError from inside the engine.
+    if conf is None:
+        conf = {}
+    if not isinstance(conf, dict):
+        raise PixieConfigError(
+            f"config must be a mapping at the top level, got "
+            f"{type(conf).__name__}: {baseconfig}/{configs[0]}"
+        )
+
+    templates = conf.setdefault("templates", [])
+    if templates is None:
+        templates = conf["templates"] = []
+    elif not isinstance(templates, list):
+        # `templates: some/dir` is the obvious way to write a single path.
+        templates = conf["templates"] = [templates]
     templates.insert(0, cwd / "templates")
     for idx, template in enumerate(templates):
         if not isinstance(template, Path):
@@ -204,7 +246,32 @@ def _dispatch(command: object, instance: "Pixie_") -> int:
     netboot = Pixie(**conf)
 
     result = run(netboot, instance, orig)
-    return 0 if result is None else int(result)
+    if result is None:
+        return 0
+    if isinstance(result, int):
+        return result
+    # The command already did its work; a return value we cannot use is worth a
+    # warning, not a crash that reports failure after a successful run.
+    LOGGER.warning(
+        "command %r returned %r (%s), which is not an exit code; treating as success",
+        getattr(command, "__name__", command),
+        result,
+        type(result).__name__,
+    )
+    return 0
+
+
+#: Exceptions an operator can trigger with bad input. Reported as one line;
+#: anything else keeps its traceback, because it is netboot's bug to fix.
+#: `TemplateError` covers both a broken template and the sandbox refusing an
+#: expression in a config value (`SecurityError`).
+_USER_ERRORS = (
+    PixieError,
+    FileNotFoundError,
+    NotADirectoryError,
+    PermissionError,
+    _TemplateError,
+)
 
 
 def main(
@@ -217,18 +284,46 @@ def main(
     prefix: settings are read through :class:`duho.env.Env`, so ``PIXIE_<KEY>``
     variables (and an optional ``pixie_env`` companion module of defaults) apply.
     The resolved ``Env`` is attached to the dispatched instance as ``_env_``.
+
+    A configuration or lookup error is reported as a single line and exits 2;
+    the traceback is logged at DEBUG, so ``-v`` still shows it. Other
+    exceptions propagate untouched.
     """
     name = name or "pixie"
     env = Env(name)
-    return app(
-        Pixie_,
-        commands=_discover(argv),
-        argv=argv,
-        name=name,
-        description=Pixie_.__doc__,
-        env=env,
-        dispatch=_dispatch,
-    )
+    # The CLI is an application, so it may quiet noisy dependencies; importing
+    # the library does not do this for its host.
+    quiet_noisy_dependencies()
+    try:
+        return app(
+            Pixie_,
+            commands=_discover(argv),
+            argv=argv,
+            name=name,
+            description=Pixie_.__doc__,
+            env=env,
+            dispatch=_dispatch,
+        )
+    except _USER_ERRORS as exc:
+        LOGGER.error("%s", exc)
+        LOGGER.debug("%s", exc, exc_info=True)
+        return 2
+    except yaml_error() as exc:  # malformed YAML: the file and line are in `exc`
+        LOGGER.error("could not parse the configuration: %s", exc)
+        LOGGER.debug("%s", exc, exc_info=True)
+        return 2
+
+
+def yaml_error() -> "type[BaseException]":
+    """``yaml.YAMLError`` if PyYAML is installed, else an unraisable placeholder."""
+    try:
+        import yaml
+    except ImportError:  # pragma: no cover - only without the config extra
+
+        class _NoYamlError(Exception): ...
+
+        return _NoYamlError
+    return yaml.YAMLError
 
 
 if __name__ == "__main__":

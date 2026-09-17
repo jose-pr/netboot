@@ -51,6 +51,22 @@ repos:
     local: /srv/mirror/debian
 ```
 
+## Interpolation, includes and trust
+
+Config values may use `{{ ... }}` interpolation, evaluated while the config
+loads: `greeting: "{{ globals.site }}-boot"` resolves against the merged
+document. It renders in jinja2's **sandbox**, and the loader runs with commands
+disabled, so a config document cannot execute a command or reach out of the
+template language -- netboot never documented those capabilities and a config is
+often assembled by `!include` from inventory exports rather than written by
+hand.
+
+`!include` can still read any file the process can read. To confine it, set
+`YACONFIGLIB_CONFINE_TO` to the directories includes may come from.
+
+An empty or comment-only config loads as an empty mapping. A top level that is
+not a mapping is an error naming the file.
+
 ## How values resolve
 
 - **Targets** normalise `ip`/`mac`/`hostname` at load time. If a field is

@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `PixieError`, `PixieLookupError` and `PixieConfigError`. Netboot's deliberate
+  failures are now distinguishable from bugs: lookups that fail or are
+  ambiguous raise `PixieLookupError` (still a `LookupError`) instead of a plain
+  `Exception`, and the messages name the target and what was configured.
+- `netboot.logging.quiet_noisy_dependencies(insecure_warnings=False)`.
 - `netboot[http]` extra. `http`/`https` repository services reach the network
   through `requests`, which nothing installed: `pathlib_next[uri]` does not
   depend on it, so `Repository.service("http")` failed with
@@ -16,6 +21,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now raise `ImportError` naming it instead of failing inside the library.
 
 ### Security
+- Config loading is hardened: the loader runs with `allow_commands=False` and
+  `sandbox=True`, so `{{ ... }}` interpolation in a config value renders in
+  jinja2's sandbox and a config document can no longer run commands. Previously
+  a value such as `{{ ''.__class__.__mro__[1].__subclasses__() }}` was evaluated
+  unsandboxed — and a netboot config is often assembled by `!include` from
+  inventory exports rather than written by hand. Ordinary interpolation is
+  unchanged; set `YACONFIGLIB_CONFINE_TO` to also restrict where `!include` may
+  read from.
 - `shell_quote` now actually quotes. It wrapped values in `"` without escaping
   anything, so a value containing `` ` ``, `$`, `"` or `;` was expanded or
   executed by the shell that read the generated script — a password with `$` in
@@ -76,6 +89,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `yaconfiglib` moves to the 0.12 series (`>=0.12.0,<0.13`). The APIs netboot
   uses are unchanged; the previous `<0.12` ceiling made netboot uninstallable
   alongside yaconfiglib 0.12.
+- The package logger is named `netboot`, not `NETBOOT`, and `-v`/`-q` now reach
+  it: duho sets the level of the logger named after the parser, which never
+  matched the one netboot writes to, so the verbosity flags had no effect on
+  netboot's own output. Anything filtering on the old name must use `netboot`.
+- Importing `netboot` no longer has logging side effects. It used to quiet
+  urllib3/paramiko and disable urllib3's `InsecureRequestWarning`
+  process-wide — a decision belonging to the application, not to a library, and
+  it imported urllib3 as a side effect of `import netboot`. The `pixie` CLI
+  calls `quiet_noisy_dependencies()`; embedders opt in.
+- The CLI reports operator errors as one line and exits 2 instead of printing a
+  traceback: a missing or malformed config, a non-mapping config, an unknown
+  image or zone, or a sandbox refusal. `-v` still shows the traceback, and an
+  unexpected exception is still raised in full. `--version` and usage errors
+  say `pixie` rather than the class name `Pixie_`.
+- An absolute Windows path is accepted for `--config`/`--baseconfig`/template
+  paths. `C:\\srv\\tftp` was parsed as URI scheme `c`, which then failed with
+  `NotImplementedError`; a single-letter scheme is now read as a drive letter.
+- An empty or comment-only config loads as `{}` rather than raising
+  `AttributeError`, a scalar `templates:` is accepted as a one-element list, and
+  a command returning a non-int value is warned about and treated as success
+  rather than crashing after the command's work is done.
 - License metadata is PEP 639: `license = "MIT"` plus `license-files`, and the
   legacy `License :: OSI Approved :: MIT License` classifier is gone (building
   now needs `hatchling>=1.27`). The wheel carries the licence at

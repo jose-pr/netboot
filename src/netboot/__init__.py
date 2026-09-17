@@ -40,6 +40,23 @@ from .utils import IPAddress, MACAddress, T
 from .utils.misc import import_
 
 
+class PixieError(Exception):
+    """Base for the errors netboot raises on purpose.
+
+    Separates "the operator gave us something unusable" from "netboot has a
+    bug": the CLI reports the former as a one-line message and keeps the
+    traceback for the latter.
+    """
+
+
+class PixieLookupError(PixieError, LookupError):
+    """A target, image or zone could not be resolved, or the query was ambiguous."""
+
+
+class PixieConfigError(PixieError, ValueError):
+    """The configuration cannot be used as given."""
+
+
 class PixieTarget(Namespace, OpaqueMerge):
     _id: str
     hostname: str
@@ -359,7 +376,7 @@ class Pixie:
                 if candidate.hostname and candidate.hostname.lower().startswith(lower)
             ]
         if len(matches) > 1:
-            raise LookupError(
+            raise PixieLookupError(
                 f"ambiguous target {query!r}: matches "
                 f"{sorted(str(candidate._id) for candidate in matches)}"
             )
@@ -407,13 +424,25 @@ class Pixie:
     ) -> PixieContext:
         image = self.lookup_image(target.image, target)
         if not image:
-            raise Exception(f"Image not found for target: {target.image}")
+            known = ", ".join(sorted(str(i) for i in self.images)) or "none configured"
+            raise PixieLookupError(
+                f"target {target._id!r} wants image {target.image!r}, which no "
+                f"configured image matches (images: {known})"
+            )
         LOGGER.info(f"Found target image: {target.image}")
 
         zone = self.lookup_dhcpzone(target.dhcpzone, target)
         if not zone:
-            raise Exception(
-                f"Not supported client due to missing subnet: {target.dhcpzone}"
+            known = (
+                ", ".join(sorted(str(z) for z in self.dhcpzones)) or "none configured"
+            )
+            wanted = target.dhcpzone or (
+                f"a zone containing {target.ip}"
+                if target.ip
+                else "a zone, but the target has neither a dhcpzone nor an ip"
+            )
+            raise PixieLookupError(
+                f"target {target._id!r} needs {wanted} (zones: {known})"
             )
         LOGGER.info(f"Found target dhcpzone: {target.dhcpzone}")
 

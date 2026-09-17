@@ -6,6 +6,15 @@ consumed without reading its source. Kept current with the public API. For the
 project overview, install instructions and CLI usage, see the shipped
 `README.md`, or <https://github.com/jose-pr/netboot>.
 
+## Errors (`netboot`)
+
+- **`PixieError(Exception)`** — base for what netboot raises on purpose, as
+  opposed to a bug. The CLI reports these as one line and exits 2.
+  - **`PixieLookupError(PixieError, LookupError)`** — a target, image or zone
+    could not be resolved, or a target query was ambiguous.
+  - **`PixieConfigError(PixieError, ValueError)`** — the configuration cannot
+    be used as given (for example a top level that is not a mapping).
+
 ## Engine (`netboot` / `netboot.__init__`)
 
 - **`Pixie(hooks=(), **config)`** — the engine. `config` is the merged config
@@ -36,8 +45,9 @@ project overview, install instructions and CLI usage, see the shipped
     first, then an exact match on hostname (case-insensitive), MAC or IP
     across the whole table, and only then a hostname *prefix* match. MAC input
     is parsed, so colon, hyphen and Cisco-dot spellings all match, and the
-    null MAC matches nothing. Raises `LookupError` when a query matches more
-    than one target rather than picking one; an empty string matches nothing.
+    null MAC matches nothing. Raises `PixieLookupError` (a `LookupError`)
+    when a query matches more than one target rather than picking one; an
+    empty string matches nothing.
     Fires `PixieEvent.LookupTarget` (may substitute a `PixieTarget` directly)
     then `PixieEvent.FoundTarget`; `None` if nothing resolves to a
     `PixieTarget`.
@@ -55,9 +65,9 @@ project overview, install instructions and CLI usage, see the shipped
     `[self.globals, *globals, image.globals, dhcpzone.globals, target.globals]`
     (image/dhcpzone/target objects are shared across targets and never
     mutated) into a fresh `PixieContext`, attaches a new `Renderer`/`Loader`
-    over `config["templates"]`, and sets `.version`. Raises a plain
-    `Exception` if the target's image or dhcp zone can't be resolved. Fires
-    `PixieEvent.PixieContextForTarget`.
+    over `config["templates"]`, and sets `.version`. Raises
+    `PixieLookupError` naming the target and what was configured if the image
+    or dhcp zone cannot be resolved. Fires `PixieEvent.PixieContextForTarget`.
   - **`.initialize(target) -> PixieContext`** — `make_context` then
     `ctx.pxe_init(self)` (arms every `dhcpzone.dhcpservers` for the target).
     Fires `StartPixieInitialize` / `EndPixieInitialize`.
@@ -252,12 +262,16 @@ project overview, install instructions and CLI usage, see the shipped
 
 ## Logging (`netboot.logging`)
 
-- **`LOGGER`** — the `"NETBOOT"` logger. Importing this module also quiets
-  `urllib3.connectionpool` / `paramiko.transport` to `WARNING` and disables
-  urllib3's insecure-request warning, best-effort. Setting those levels imports
-  nothing, but disabling the warning does `import urllib3` inside a
-  `try/except`, so importing `netboot` imports urllib3 when it is installed —
-  and that warning is disabled **process-wide**, for the host application too.
+- **`LOGGER`** — the `"netboot"` logger, named for the import package so it
+  sits in the ordinary hierarchy (`logging.getLogger("netboot")` reaches it,
+  `netboot.<child>` inherits from it). Importing netboot has **no logging side
+  effects**: it configures nothing and imports no optional dependency.
+- **`quiet_noisy_dependencies(insecure_warnings=False)`** — opt-in: turns
+  `urllib3.connectionpool` / `paramiko.transport` down to `WARNING`, and with
+  `insecure_warnings=True` also disables urllib3's `InsecureRequestWarning`
+  **process-wide** (which is why that is off by default, and why it is a call
+  rather than an import side effect). The `pixie` CLI calls it; an embedding
+  application decides for itself.
 
 ## CLI driver (`netboot.main`)
 
@@ -293,7 +307,18 @@ command against it.
 - Loading the config (`-c/--config`, else `<baseconfig>/pixie.yaml`) requires
   the `config` extra (`pyyaml`); raises `ImportError` with an install hint
   otherwise. `conf["templates"]` always gets the CWD's `templates` dir
-  prepended.
+  prepended, and a scalar `templates:` is accepted as a one-element list.
+  An empty or comment-only file loads as `{}`; a top level that is not a
+  mapping raises `PixieConfigError`.
+- **Config loading is hardened**: the loader runs with `allow_commands=False`
+  and `sandbox=True`, so `{{ ... }}` interpolation in config values renders in
+  jinja2's sandbox and a document cannot run commands. Set
+  `YACONFIGLIB_CONFINE_TO` to also restrict which directories `!include` may
+  read from.
+- **Exit codes**: 0 success, 1 the command reported failure (target not found,
+  ambiguous), 2 a configuration or lookup error (reported as one line; `-v`
+  adds the traceback at DEBUG). A command returning a non-int, non-None value
+  is warned about and treated as success rather than crashing after its work.
 
 ## Built-in commands (`netboot.cmds`)
 

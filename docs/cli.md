@@ -28,7 +28,15 @@ argument matches nothing.
 | `--baseconfig DIR`  | Base config directory to search (default `./config`) |
 | `-l, --load-module M` | Import module(s) before building netboot (config/hook deps) |
 | `--cmdspath PATH` | Extra directories/packages to search for commands |
-| `-v` / `-q` | Increase / decrease log verbosity (from duho's `LoggingArgs`) |
+| `-v` / `-q` | Increase / decrease log verbosity; these move the level of netboot's own `netboot` logger, and `-v` also prints the traceback behind a reported error |
+
+## Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| 0 | the command succeeded |
+| 1 | the command reported failure — target not found, or the query matched several targets |
+| 2 | the configuration or a lookup could not be used: missing or malformed config, unknown image or zone. Reported as a single line; run with `-v` for the traceback |
 
 ## Commands
 
