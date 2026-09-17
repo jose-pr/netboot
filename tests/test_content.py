@@ -197,3 +197,49 @@ def test_repository_joinpath_chains_without_local():
     repo = Repository(address="host", services={"http": "http://host/base"})
     chained = repo.joinpath("a").joinpath("b")
     assert str(chained.services["http"]).endswith("/a/b")
+
+
+@requires_http
+def test_a_host_and_port_address_builds_a_real_authority():
+    # "mirror.example:8080" used to percent-encode the colon into the hostname.
+    repo = Repository(address="mirror.example:8080", services={"http": "/boot"})
+    assert str(repo.service("http")).startswith("http://mirror.example:8080/")
+
+
+@requires_http
+def test_an_ipv6_literal_address_keeps_its_brackets():
+    repo = Repository(address="[2001:db8::1]:8080", services={"http": "/boot"})
+    assert str(repo.service("http")).startswith("http://[2001:db8::1]:8080/")
+
+
+@requires_http
+def test_https_keeps_the_configured_name_so_tls_still_validates(monkeypatch):
+    # Substituting the resolved IP breaks certificate checks and name-based
+    # virtual hosts; other schemes still resolve, for clients without DNS.
+    monkeypatch.setattr(
+        netboot.netutils,
+        "resolve",
+        lambda name, *a, **kw: [netboot.netutils.parse("192.0.2.40")],
+    )
+    repo = Repository(
+        address="mirror.example", services={"https": "/boot", "http": "/boot"}
+    )
+    assert "mirror.example" in str(repo.service("https"))
+    assert "192.0.2.40" in str(repo.service("http"))
+
+
+@requires_http
+def test_a_repo_without_an_address_warns(caplog):
+    import logging
+
+    repo = Repository(address=None, services={"http": "/boot"})
+    with caplog.at_level(logging.WARNING, logger="netboot"):
+        repo.service("http")
+    assert "no address" in caplog.text
+
+
+def test_joinpath_treats_an_absolute_subpath_as_relative():
+    # `repo / "/abs"` used to discard the repository root entirely.
+    repo = Repository(address="10.0.0.1", services={}, local="/srv/tftp")
+    assert "/srv/tftp/abs" in str((repo / "/abs").service(None))
+    assert str((repo / "sub/").service(None)).endswith("/srv/tftp/sub")

@@ -178,8 +178,13 @@ project overview, install instructions and CLI usage, see the shipped
   **`.get(*path, service=None) -> UriPath | None`** — join `path` onto the
   named service's base URI (`service=None` → `.local`, scheme `"file"`);
   `None` if that service isn't defined. **`.service(name) -> UriPath | None`**
-  — the base URI for `name` (host filled in from `.address.try_ip()` for
-  non-local services). `repo[path, service]` is sugar for `.get(path, service=service)`.
+  — the base URI for `name`. For a *relative* service path the authority is
+  filled in from `.address`: resolved to an IP (`try_ip()`) for every scheme
+  except `https`, which keeps the configured name so TLS validation and
+  name-based virtual hosts still work. An `address` of the form `host:port` or
+  `[v6]:port` becomes a real host and port rather than a hostname containing an
+  escaped colon, and a repo with no address warns. A service written as a full
+  URI keeps its own authority untouched. `repo[path, service]` is sugar for `.get(path, service=service)`.
   An `http`/`https` service needs the **`http` extra** (`pip install
   netboot[http]`): pathlib_next reaches those schemes through `requests`, which
   `pathlib_next[uri]` does not install. Without it `.service()`/`.get()` raise

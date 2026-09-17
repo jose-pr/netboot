@@ -82,6 +82,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `Pixie.lookup_dhcpzone` returns `None` instead of raising `AttributeError`
   when the target has no usable IP — the documented MAC-keyed target shape hit
   this on every `initiate` that did not name a `dhcpzone`.
+- Repository URLs are built correctly from an `address` that carries a port:
+  `mirror.example:8080` became a hostname with an escaped colon
+  (`mirror.example%3A8080`) instead of a host and a port. `[2001:db8::1]:8080`
+  works too, and a repo with no address warns instead of silently producing a
+  hostless `http:/path`.
+- An `https` service keeps the configured name rather than substituting the
+  resolved IP, which broke certificate validation and name-based virtual hosts.
+  Other schemes still resolve, since a PXE client often has no DNS yet.
+- `repo / "/sub"` extends the repository root instead of replacing it, and a
+  trailing slash no longer doubles up.
 - Rendered artifacts keep the template's final newline. The Jinja engine dropped
   it while the shell engine kept it, so the same content rendered differently
   depending on the file's suffix, and a kickstart or iPXE script could end

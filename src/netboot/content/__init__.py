@@ -6,6 +6,7 @@ from pathlib_next import Pathname
 from pathlib_next import PosixPathname as RepoPath
 from pathlib_next.uri import Source, UriPath
 
+from ..logging import LOGGER
 from ..utils.config import Namespace as _NS
 from ..utils.net import Host
 
@@ -79,16 +80,25 @@ class Repository(_NS):
         return self.joinpath(key)
 
     def joinpath(self, subpath: str = None):
+        """A copy of this repository with `subpath` appended to every service.
+
+        `subpath` is always relative: `repo / "/abs"` extends the base like
+        `repo / "abs"` does, rather than replacing it -- a leading slash in a
+        config value is a typo, not a request to discard the repository root.
+        """
+        sub = str(subpath).strip("/") if subpath else None
         repo = Repository(address=self.address, services={}, local=self.local)
         for srvc in self.services:
             repo.services[srvc] = (
-                f"{self.services[srvc]}/{subpath}" if subpath else self.services[srvc]
+                f"{str(self.services[srvc]).rstrip('/')}/{sub}"
+                if sub
+                else self.services[srvc]
             )
         if self.local:
-            repo.local = self.local / subpath if subpath else self.local
+            repo.local = self.local / sub if sub else self.local
         else:
             # Keep .local a Pathname (not a raw str) so chained joinpath works.
-            repo.local = RepoPath(subpath) if subpath else None
+            repo.local = RepoPath(sub) if sub else None
         return repo
 
     def get(self, *path: Union[RepoPath, str], service: str = None) -> UriPath:
@@ -101,24 +111,57 @@ class Repository(_NS):
             return None
         return baseuri / rel_path
 
+    def _service_host(self, scheme: str) -> "tuple[str, _ty.Optional[int]]":
+        """The authority for a relative service path: host and optional port.
+
+        TLS is the exception to resolving: a certificate is issued for a name,
+        and a name-based virtual host needs one too, so `https` keeps the
+        address as configured. Other schemes use the resolved IP, because a PXE
+        client often has no working DNS when it fetches its boot files.
+        """
+        configured = str(self.address)
+        text = (
+            configured
+            if scheme == "https" and configured
+            else str(self.address.try_ip())
+        )
+        if not text:
+            LOGGER.warning(
+                "repository has no address, so %s:// URLs are built without a "
+                "host; give the repo an `address`, or write the service as a "
+                "full URI",
+                scheme,
+            )
+            return "", None
+        if text.startswith("["):  # [2001:db8::1]:8080
+            literal, _, rest = text.partition("]")
+            port = rest.lstrip(":")
+            return literal + "]", int(port) if port.isdigit() else None
+        head, sep, tail = text.rpartition(":")
+        if sep and tail.isdigit() and head and ":" not in head:
+            # "mirror.example:8080" is a host and a port, not a host whose name
+            # contains a colon (which percent-encoded into `%3A`).
+            return head, int(tail)
+        return text, None
+
     def service(self, name: str):
         if name is None:
             baseuri = self.local
             name = "file"
-            host = ""
+            host, port = "", None
         else:
             baseuri = self.services.get(name, None)
             if baseuri is None:
                 return None
             _require_scheme_support(name, _scheme_of(baseuri))
-            host = str(self.address.try_ip())
+            host, port = self._service_host(name)
         if baseuri is None:
             return None
         if not isinstance(baseuri, UriPath):
             baseuri = UriPath(baseuri)
         if not baseuri.source:
             baseuri = baseuri.with_source(
-                Source(scheme=name, userinfo=None, host=host, port=None)
+                Source(scheme=name, userinfo=None, host=host, port=port)
             )
 
         return baseuri
