@@ -36,6 +36,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with the likely cause (host_cmds not loaded, or a read-only hosts backend),
   and an existing reservation for the same MAC is refused rather than
   overwritten. Needs `netboot[kea]`.
+- **An ISC dhcpd backend** (`dhcpd://`) over OMAPI, the only way to give dhcpd a
+  reservation without rewriting and reloading its config. Options are rendered
+  into the host's `statements`, which is dhcpd config *source*: text values are
+  quoted with `"` and `\` escaped, a value meant to be an address must look like
+  one, and a newline is refused outright — a value cannot end its statement and
+  start another. The OMAPI secret comes from `keyfile=` or
+  `$PIXIE_DHCPD_OMAPI_KEY`, never from the URI. Needs `netboot[dhcpd]`. Note
+  that a host added over OMAPI does not survive a dhcpd restart by itself: that
+  is dhcpd's design, not netboot forgetting it.
 - Anything that varies per target is refused in a connection string and resolved
   when the target is applied instead: `subnet_id`/`scope` belong to the zone,
   `boot-file-name`/`next-server`/`tftp-server-name` to the image or target. The
