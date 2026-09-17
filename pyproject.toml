@@ -34,11 +34,18 @@ dependencies = [
     # rdtype, and 0.2.1 is the release that auto-selects it ("ptr" for an
     # address literal, "a" otherwise). Don't normalize this back to 0.2.0.
     "netimps>=0.2.1,<0.3",
-    "pathlib_next[uri]>=0.9.0,<0.10",
+    # Above the .0 deliberately, measured 2026-09-17: recursive `!include`
+    # globs (`sub/**/*.yaml`) break on pathlib_next >=0.9.5 unless yaconfiglib
+    # is >=0.12.0, and yaconfiglib 0.12.0 itself requires pathlib-next>=0.9.9.
+    # Declaring the real floor keeps the pair honest instead of leaving pip to
+    # discover it. tests/test_config_discovery.py fails below it.
+    "pathlib_next[uri]>=0.9.9,<0.10",
     # 3.0 is the floor that can actually be imported: 2.x calls
     # markupsafe.soft_unicode, removed in MarkupSafe 2.1, so an unpinned
     # resolve can install a jinja2/markupsafe pair that fails on import.
     "jinja2>=3.0,<4",
+    # Above a bare series base for the same measured reason: with the
+    # pathlib-next this project uses, recursive config discovery needs 0.12.0.
     "yaconfiglib>=0.12.0,<0.13",
 ]
 

@@ -160,6 +160,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   choosing one, and an empty query matches nothing rather than the first entry.
   MAC queries are parsed, so `AA-BB-CC-00-00-01` and `aabb.cc00.0001` now match
   a target keyed `aa:bb:cc:00:00:01`; previously only the colon spelling did.
+- `pathlib_next[uri]` floor raised to `>=0.9.9`. Measured: recursive
+  `!include` globs (`sub/**/*.yaml`) fail on pathlib_next 0.9.5+ unless
+  yaconfiglib is 0.12.0+, and yaconfiglib 0.12.0 itself requires
+  pathlib-next>=0.9.9 — so the old `>=0.9.0` claim described a combination that
+  cannot work. `tests/test_config_discovery.py` now fails below the floor
+  instead of passing quietly.
 - `yaconfiglib` moves to the 0.12 series (`>=0.12.0,<0.13`). The APIs netboot
   uses are unchanged; the previous `<0.12` ceiling made netboot uninstallable
   alongside yaconfiglib 0.12.

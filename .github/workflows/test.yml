@@ -63,3 +63,77 @@ jobs:
 
       - name: Build docs
         run: python -m mkdocs build --strict
+
+  package:
+    name: Built wheel smoke test
+    runs-on: ubuntu-latest
+    # Everything else runs against the checkout (`pythonpath = ["src"]`), so
+    # nothing notices a file that is not packaged or a dependency that is only
+    # present by accident -- which is how a release shipped without `requests`.
+    # This job runs from a directory where the checkout is not importable.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build the distributions
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Install the wheel into a clean environment
+        run: |
+          python -m venv /tmp/wheelenv
+          /tmp/wheelenv/bin/python -m pip install --upgrade pip
+          /tmp/wheelenv/bin/python -m pip install dist/*.whl
+
+      - name: Smoke-test the installed package
+        working-directory: /tmp
+        run: |
+          /tmp/wheelenv/bin/pixie --version
+          /tmp/wheelenv/bin/pixie initiate --help
+          /tmp/wheelenv/bin/python -c "
+          import importlib.resources as res, netboot
+          from netboot import Pixie
+          # The shipped docs must actually be in the package.
+          for name in ('AGENTS.md', 'README.md', 'py.typed'):
+              assert res.files('netboot').joinpath(name).is_file(), name
+          engine = Pixie(
+              images={'debian': {'template_path': []}},
+              dhcpzones={'lan': {'network': '10.0.0.0/24'}},
+              targets={'host1': {'ip': '10.0.0.5', 'image': 'debian'}},
+          )
+          ctx = engine.make_context(engine.lookup_target('host1'))
+          print('rendered from the installed wheel:', ctx.version)
+          "
+
+      - name: An http repo without the extra names the extra
+        working-directory: /tmp
+        run: |
+          /tmp/wheelenv/bin/python -c "
+          from netboot.content import Repository
+          repo = Repository(address='10.0.0.1', services={'http': '/boot'})
+          try:
+              repo.service('http')
+          except ImportError as exc:
+              assert 'netboot[http]' in str(exc), exc
+              print('reported:', exc)
+          else:
+              raise SystemExit('expected an ImportError naming the http extra')
+          "
+
+      - name: The extras install and work from the built wheel
+        working-directory: /tmp
+        run: |
+          # Not --no-index: the extras' own dependencies come from PyPI, only
+          # netboot itself comes from dist/.
+          /tmp/wheelenv/bin/python -m pip install "netboot[config,http]"             --find-links "$GITHUB_WORKSPACE/dist"
+          /tmp/wheelenv/bin/python -c "
+          from netboot.content import Repository
+          repo = Repository(address='10.0.0.1', services={'http': '/boot'})
+          print('http service from the wheel:', repo.service('http'))
+          "
