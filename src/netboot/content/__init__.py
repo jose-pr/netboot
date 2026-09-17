@@ -1,3 +1,4 @@
+import importlib.util as _importlib_util
 import typing as _ty
 from typing import Union
 
@@ -7,6 +8,31 @@ from pathlib_next.uri import Source, UriPath
 
 from ..utils.config import Namespace as _NS
 from ..utils.net import Host
+
+#: Schemes whose pathlib_next handler needs the ``http`` extra (``requests``).
+_HTTP_SCHEMES = ("http", "https")
+
+
+def _scheme_of(value: object) -> str:
+    """The scheme of a configured service URI, or ``""`` for a bare path."""
+    text = str(value)
+    return text.split("://", 1)[0].lower() if "://" in text else ""
+
+
+def _require_scheme_support(*schemes: str) -> None:
+    """Raise an actionable :class:`ImportError` for a scheme we cannot serve.
+
+    pathlib_next reaches http(s) through ``requests``, which neither netboot
+    nor ``pathlib_next[uri]`` installs. Without it the scheme handler dies with
+    a bare ``ModuleNotFoundError`` raised from inside the library, which says
+    nothing about how to fix it.
+    """
+    for scheme in schemes:
+        if scheme in _HTTP_SCHEMES and _importlib_util.find_spec("requests") is None:
+            raise ImportError(
+                f"{scheme}:// repository services require netboot's 'http' extra: "
+                "pip install netboot[http]"
+            )
 
 
 class Resource(_NS):
@@ -75,6 +101,9 @@ class Repository(_NS):
             host = ""
         else:
             baseuri = self.services.get(name, None)
+            if baseuri is None:
+                return None
+            _require_scheme_support(name, _scheme_of(baseuri))
             host = str(self.address.try_ip())
         if baseuri is None:
             return None

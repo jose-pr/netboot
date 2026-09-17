@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -9,12 +9,12 @@ authors = [{ name = "Jose A." }]
 description = "PXE provisioning management: render netboot artifacts and drive DHCP for targets"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -35,23 +35,28 @@ dependencies = [
     # address literal, "a" otherwise). Don't normalize this back to 0.2.0.
     "netimps>=0.2.1,<0.3",
     "pathlib_next[uri]>=0.9.0,<0.10",
-    "jinja2",
-    # Above the .0 deliberately: load_config builds
-    # ConfigLoader(..., recursive=True), and that setting was never forwarded
-    # to glob expansion before 0.11.1 -- a documented silent no-op.
-    "yaconfiglib>=0.11.1,<0.12",
+    # 3.0 is the floor that can actually be imported: 2.x calls
+    # markupsafe.soft_unicode, removed in MarkupSafe 2.1, so an unpinned
+    # resolve can install a jinja2/markupsafe pair that fails on import.
+    "jinja2>=3.0,<4",
+    "yaconfiglib>=0.12.0,<0.13",
 ]
 
 [project.optional-dependencies]
 # Config-file loading for the CLI (YAML with !include).
 config = ["pyyaml"]
+# http/https repository services. pathlib_next's uri scheme handler for
+# http(s) imports `requests` at module import, and nothing else installs it --
+# pathlib_next[uri] does not. Repos served over file/tftp, and rendering in
+# general, need none of it, so this stays an extra rather than a dependency.
+http = ["requests"]
 # The dnspython resolver backend for netimps' resolve(), used to look up
 # hostname targets. netimps >=0.2.0 makes dnspython optional, so this extra is
 # the only thing that installs it: with it, resolution has full record-type and
 # explicit-nameserver support; without it, resolve() still works through
 # netimps' system/nslookup backends (address and reverse records only).
 dns = ["dnspython"]
-dev = ["black", "build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml", "dnspython"]
+dev = ["black", "build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml", "dnspython", "requests"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]
@@ -61,21 +66,25 @@ pixie = "netboot.main:main"
 Homepage = "https://github.com/jose-pr/netboot/"
 Issues = "https://github.com/jose-pr/netboot/issues"
 Repository = "https://github.com/jose-pr/netboot"
+Documentation = "https://jose-pr.github.io/netboot/"
 
 
 # Ship the consumer-facing docs inside the installed package, so they are
 # readable from site-packages via importlib.resources without the repo.
-# src/netboot/AGENTS.md is included automatically by living in the package
-# dir; the repo-root AGENTS.md is development-only and deliberately not
-# shipped.
+# src/netboot/AGENTS.md (the API header) ships automatically by living in the
+# package dir -- force-including it from anywhere else would collide with that
+# copy and fail the wheel build.
 [tool.hatch.build.targets.wheel.force-include]
 "README.md" = "netboot/README.md"
 
 [tool.hatch.build.targets.sdist]
-exclude = ["/.*", "/.agents"]
+# `/.*` covers dotfiles; `*.local.*` does not start with a dot, so a personal
+# override needs its own pattern or it ships.
+exclude = ["/.*", "*.local.*"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/netboot"]
+exclude = ["*.local.*"]
 
 [tool.black]
 # Pinned to the project's minimum supported Python so black never emits syntax

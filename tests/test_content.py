@@ -5,9 +5,23 @@ and host fill-in rules are shipped contract. DNS is monkeypatched throughout --
 nothing here resolves a real name.
 """
 
+import importlib.util
+import types
+
+import pytest
+
 import netboot
+from netboot import content
 from netboot.content import Repository, Resource
 from netboot.utils.net import Host
+
+#: http(s) service URIs go through pathlib_next's http handler, which imports
+#: `requests` -- netboot's `http` extra. Without it those cases are skipped, not
+#: failed, so a `pip install -e .[dev]` tree still runs the rest of the file.
+requires_http = pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="http repository services need the 'http' extra (requests)",
+)
 
 
 def _repo(**kwargs):
@@ -16,6 +30,7 @@ def _repo(**kwargs):
     return Repository(**kwargs)
 
 
+@requires_http
 def test_service_fills_in_the_scheme_and_host_from_the_address():
     uri = _repo().service("http")
     assert str(uri).startswith("http://10.0.0.1/")
@@ -36,17 +51,20 @@ def test_service_returns_none_when_there_is_no_local_path():
     assert _repo(local=None).service(None) is None
 
 
+@requires_http
 def test_get_joins_the_relative_path_onto_the_service_uri():
     assert str(_repo().get("images/vmlinuz", service="http")).endswith(
         "/boot/images/vmlinuz"
     )
 
 
+@requires_http
 def test_get_strips_a_leading_slash_so_the_base_path_survives():
     # Without the lstrip an absolute rel_path would replace "/boot" entirely.
     assert "/boot/vmlinuz" in str(_repo().get("/vmlinuz", service="http"))
 
 
+@requires_http
 def test_get_accepts_multiple_path_segments():
     assert str(_repo().get("images", "vmlinuz", service="http")).endswith(
         "/boot/images/vmlinuz"
@@ -57,6 +75,7 @@ def test_get_returns_none_for_an_unknown_service():
     assert _repo().get("vmlinuz", service="tftp") is None
 
 
+@requires_http
 def test_getitem_is_get_with_the_service_in_the_key():
     repo = _repo()
     assert str(repo["images/vmlinuz", "http"]) == str(
@@ -64,12 +83,14 @@ def test_getitem_is_get_with_the_service_in_the_key():
     )
 
 
+@requires_http
 def test_joinpath_extends_every_service_and_the_local_path():
     repo = _repo(local="/srv/tftp") / "debian"
     assert str(repo.service("http")).endswith("/boot/debian")
     assert "/srv/tftp/debian" in str(repo.service(None))
 
 
+@requires_http
 def test_address_is_resolved_when_it_is_a_hostname(monkeypatch):
     monkeypatch.setattr(
         netboot.netutils,
@@ -98,11 +119,13 @@ def _context_with_resources(tmp_path):
     return ctx
 
 
+@requires_http
 def test_context_resource_resolves_by_id(tmp_path):
     ctx = _context_with_resources(tmp_path)
     assert str(ctx.resource("kernel", service="http")).endswith("/boot/images/vmlinuz")
 
 
+@requires_http
 def test_context_resource_resolves_a_resource_instance(tmp_path):
     ctx = _context_with_resources(tmp_path)
     resource = Resource(path="images/initrd", src="mirror")
@@ -149,3 +172,21 @@ def test_host_try_ip_falls_back_to_the_raw_string(monkeypatch):
 
 def test_host_try_ip_of_an_empty_address_is_empty():
     assert Host().try_ip() == ""
+
+
+def test_http_service_without_requests_names_the_extra(monkeypatch):
+    # pathlib_next's http handler imports `requests` at module import, so
+    # without the extra the user would otherwise get a bare ModuleNotFoundError
+    # raised from inside the library.
+    monkeypatch.setattr(
+        content, "_importlib_util", types.SimpleNamespace(find_spec=lambda name: None)
+    )
+    with pytest.raises(ImportError, match=r"netboot\[http\]"):
+        _repo().service("http")
+
+
+def test_file_services_do_not_need_the_http_extra(monkeypatch):
+    monkeypatch.setattr(
+        content, "_importlib_util", types.SimpleNamespace(find_spec=lambda name: None)
+    )
+    assert str(_repo(local="/srv/tftp").service(None)) == "file:/srv/tftp"
