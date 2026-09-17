@@ -17,6 +17,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   building them from the context. Merge order, later winning: zone defaults, the
   connection query, `image.dhcp_options`, `target.dhcp_options`, the callback,
   the hook.
+- **A dnsmasq backend** (`dnsmasq://`), the first netboot ships. It writes
+  `dhcp-host`/`dhcp-option`/`dhcp-boot` entries through `pathlib_next` paths, so
+  the same configuration serves a local dnsmasq or one reached over `sftp://`
+  (`netboot[ssh]`). `hostsfile`/`optsfile` may be a **directory** (one file per
+  target — preferred, and with `--dhcp-hostsdir`/`--dhcp-optsdir` dnsmasq re-reads
+  them with no signal at all) or a **file**, where netboot edits only its own
+  marked region and never touches a line it did not write. `reload=` runs a
+  command, over ssh when the URI names a host; omitting it is fine for a watched
+  directory and an error for a file, which dnsmasq never re-reads by itself.
 - Anything that varies per target is refused in a connection string and resolved
   when the target is applied instead: `subnet_id`/`scope` belong to the zone,
   `boot-file-name`/`next-server`/`tftp-server-name` to the image or target. The
