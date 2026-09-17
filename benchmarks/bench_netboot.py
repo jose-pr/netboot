@@ -9,7 +9,7 @@ Measures the two operations netboot runs most often per PXE request:
 Run:
 
     python benchmarks/bench_netboot.py --iterations 20000
-    python benchmarks/bench_netboot.py --json-output results/netboot.json
+    python benchmarks/bench_netboot.py --save            # -> benchmarks/results/netboot.json
 
 Each metric reports min/median/max ms-per-call over the sample; compare on the
 median (a single average hides run-to-run noise). Local timings are a sanity
@@ -19,6 +19,7 @@ check only — a release perf claim comes from CI.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import pathlib
 import platform
@@ -63,12 +64,18 @@ def _sample(fn, iterations: int, repeats: int = 7) -> "dict[str, float]":
 
 def run_benchmarks(iterations: int, n_targets: int = 500) -> "dict[str, dict]":
     p = _build_netboot(n_targets)
-    # Worst-case lookup: the last target, forcing a full scan.
     last = f"host{n_targets - 1}"
+    # The id index answers a hostname-keyed query outright; only a query that
+    # is not an id (here the last target's IP) actually scans the table. The
+    # old `lookup_target_last` metric named a scan but measured the dict hit.
+    last_ip = f"10.0.{(n_targets - 1) // 256}.{(n_targets - 1) % 256}"
     ctx = p.make_context(p.lookup_target("host0"))
 
     return {
-        "lookup_target_last": _sample(lambda: p.lookup_target(last), iterations),
+        "lookup_target_by_id": _sample(lambda: p.lookup_target(last), iterations),
+        "lookup_target_scan_by_ip": _sample(
+            lambda: p.lookup_target(last_ip), iterations
+        ),
         "template_names": _sample(lambda: ctx._template_names("boot.j2"), iterations),
     }
 
@@ -91,9 +98,18 @@ def main() -> None:
     parser.add_argument(
         "--json-output",
         type=pathlib.Path,
-        help="Optional path to write the structured JSON report",
+        help="Write the structured JSON report to this path",
+    )
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        help="Write the report to benchmarks/results/netboot.json (tracked, so "
+        "a before/after comparison survives in history)",
     )
     args = parser.parse_args()
+
+    if args.save and args.json_output is None:
+        args.json_output = REPO_ROOT / "benchmarks" / "results" / "netboot.json"
 
     results = run_benchmarks(args.iterations, args.targets)
     report = _report(args.iterations, results)
@@ -106,7 +122,11 @@ def main() -> None:
 
     if args.json_output is not None:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
-        args.json_output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        # Explicit newline: the repo is LF-only, and Path.write_text cannot
+        # pass `newline=` before 3.10, so it would emit CRLF here on Windows.
+        with io.open(args.json_output, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(report, fh, indent=2)
+            fh.write("\n")
         print(f"\nwrote {args.json_output}")
 
 

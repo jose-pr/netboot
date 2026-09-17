@@ -1,0 +1,7 @@
+{# Jinja template: full access to the context object. #}
+network --bootproto=static --ip={{ ctx.target.ip }} --hostname={{ ctx.target.hostname }}
+url --url={{ ctx.repos["mirror"].service("tftp") }}
+rootpw --iscrypted {{ shell_quote("$6$salt$hash") }}
+%packages
+@core
+%end

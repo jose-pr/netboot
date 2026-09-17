@@ -1,0 +1,37 @@
+# A complete, runnable netboot config. See examples/README.md.
+
+globals:
+  domain: example.com
+
+targets:
+  web01:
+    ip: 10.0.0.10
+    image: debian
+  "aa:bb:cc:dd:ee:ff":       # MAC-keyed: no IP, so it names its zone
+    image: debian
+    hostname: db01
+    dhcpzone: lan
+
+images:
+  debian:
+    template_path: [templates/debian]
+    globals:
+      kernel: vmlinuz
+
+dhcpzones:
+  lan:
+    network: 10.0.0.0/24
+    domain: example.com
+    gateway: 10.0.0.1
+    nameservers: [10.0.0.53]
+    search: [example.com]
+    dhcpservers:
+      # Handled by examples/plugins/recording.py, imported with --load-module.
+      - recording://dhcp-host
+
+repos:
+  mirror:
+    address: 10.0.0.2
+    services:
+      tftp: /debian
+    local: /srv/mirror/debian
