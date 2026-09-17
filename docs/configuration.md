@@ -19,6 +19,7 @@ targets:
     image: debian
   "aa:bb:cc:dd:ee:ff":       # a MAC-keyed target
     image: debian
+    dhcpzone: lan            # no ip to match a zone by containment, so name it
 
 # What a target boots. template_path is searched for that image's templates.
 images:
@@ -35,7 +36,11 @@ dhcpzones:
     nameservers: [10.0.0.53]
     search: [example.com]
     dhcpservers:
-      - dnsmasq://dhcp-host        # scheme selects the DhcpServer backend
+      # The scheme selects the DhcpServer backend. netboot ships none, so a
+      # class named `dnsmasq` must be registered first -- see Extending -- and
+      # `--load-module` must import it, or resolving this entry raises
+      # ValueError for the unknown scheme.
+      - dnsmasq://dhcp-host
 
 # Where boot artifacts are fetched / served from.
 repos:
@@ -63,3 +68,8 @@ for a file named by the target's MAC (`aa-bb-cc-...`), hostname, or IP — falli
 back to the bare template name. A `.j2` / `.jinja` / `.jinja2` file is rendered
 with Jinja2; anything else is rendered with the `%`-delimited shell engine, whose
 `%{UPPER_SNAKE}` placeholders come from the flattened context.
+
+Only the braced form is substituted, so a bare `%word` is left alone — a kickstart
+file keeps its `%packages`, `%pre`, `%post` and `%end` sections, and a script keeps
+`date +%Y`. Write `%%` for a literal `%` next to a brace, `%{NAME}` to substitute.
+An unknown `%{NAME}` is an error.

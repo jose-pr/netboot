@@ -11,8 +11,9 @@ project overview, install instructions and CLI usage, see the shipped
 - **`Pixie(hooks=(), **config)`** — the engine. `config` is the merged config
   mapping: `targets`, `images`, `dhcpzones`, `repos` (each a `dict[id, ...]`
   built into the corresponding class via its type hints — `TypeError` from the
-  value class falls back to a no-`_id` constructor call), `globals` (dict,
-  deep-copied), `defaults` (per-collection default mappings), plus any other
+  value class falls back to a no-`_id` constructor call), `globals` (dict;
+  deep-copied at construction, so later edits to the caller's mapping do not
+  reach the engine), `defaults` (per-collection default mappings), plus any other
   annotated `Pixie` attribute. `hooks` is a sequence of callables or
   `"module.func"` import-path strings; resolved once in `__new__`. Every
   config-driven step fires a `PixieEvent` through the hook chain (see below)
@@ -22,14 +23,24 @@ project overview, install instructions and CLI usage, see the shipped
     `dict[str, ...]` of `PixieTarget` / `DhcpZone` / `PixieImage` /
     `Repository`, keyed by config id.
   - **`.globals`** — `dict`, layered into every render context.
-  - **`.hook(event, value=None, **kwargs) -> value`** — run the hook chain for
-    `event`, threading `value` through each `f(event, netboot, value, kwargs)`
-    and returning the (possibly transformed) result.
+  - **`.hook(event, value=None, /, **kwargs) -> value`** — run the hook chain
+    for `event`, threading `value` through each `f(event, netboot, value,
+    kwargs)` and returning the (possibly transformed) result. `value` is
+    **positional-only**: `hook(event, value=x)` does not set it, it passes
+    `x` as a `kwargs` entry named `value` and threads `None` instead. Each
+    hook receives `kwargs` as a plain `dict` (a fourth positional argument,
+    not `**`-expanded) and **must return** the value to pass on — a hook that
+    returns nothing replaces it with `None` for every later hook and for the
+    caller.
   - **`.lookup_target(target: str) -> PixieTarget | None`** — exact id match
-    first, else the first target whose hostname starts with `target`
-    (case-insensitive), or whose MAC or IP equals it. Fires
-    `PixieEvent.LookupTarget` (may substitute a `PixieTarget` directly) then
-    `PixieEvent.FoundTarget`; `None` if nothing resolves to a `PixieTarget`.
+    first, then an exact match on hostname (case-insensitive), MAC or IP
+    across the whole table, and only then a hostname *prefix* match. MAC input
+    is parsed, so colon, hyphen and Cisco-dot spellings all match, and the
+    null MAC matches nothing. Raises `LookupError` when a query matches more
+    than one target rather than picking one; an empty string matches nothing.
+    Fires `PixieEvent.LookupTarget` (may substitute a `PixieTarget` directly)
+    then `PixieEvent.FoundTarget`; `None` if nothing resolves to a
+    `PixieTarget`.
   - **`.lookup_image(name: str, target=None) -> PixieImage`** — the image
     whose `.match(img_name, name)` returns the highest truthy value (default
     `PixieImage.match` is exact-name equality); falls back to an empty dict
@@ -66,11 +77,13 @@ project overview, install instructions and CLI usage, see the shipped
   `dhcpzone`, `globals` (`dict`), `template_path` (`list[str | Path]`).
   Construction fills gaps: a MAC-shaped `_id` with no explicit `mac` is
   adopted as the MAC (else `mac` defaults to the null MAC
-  `00:00:00:00:00:00`); if `ip`/`hostname` are missing, resolves `hostname`
-  via reverse/forward DNS lookup (`netboot.utils.net.resolve`) or infers
-  `hostname`/`ip` from `_id` when it looks like one; `hostname` is
-  lower-cased. Requires the `dns` extra for hostname resolution to actually
-  find an IP (silently yields empty otherwise).
+  `00:00:00:00:00:00`); an `_id` that looks like an IP fills `ip`, otherwise a
+  non-MAC `_id` fills `hostname`; then, if `ip` is still unset and a hostname
+  is known, **exactly one** forward lookup
+  (`netboot.utils.net.resolve`, no reverse lookup) fills it. A name that does
+  not resolve leaves `ip` unset and logs a warning — it is never retried, and
+  never raises. `hostname` is lower-cased. The `dns` extra is optional: without
+  it netimps still resolves through its system/`nslookup` backends.
 
 - **`PixieImage(**kwargs)`** (`content.Resource`) — `template_path`,
   `globals`. **`.match(name: str, check: str)`** — override point for custom
@@ -82,7 +95,11 @@ project overview, install instructions and CLI usage, see the shipped
   `Pixie.make_context`, not constructed directly. Fields: `target`, `image`,
   `dhcpzone`, `repos` (`dict[str, Repository]`), `resources`
   (`dict[str, Resource]`), `generated` (`datetime`, set at construction),
-  `version` (`str`), `templates`, `_renderer` (a `templates.Renderer`).
+  `version` (`str`), `_renderer` (a `templates.Renderer`). **`resources` starts
+  empty**: there is no `resources:` config key, so it is a slot for a hook (or
+  a caller) to fill before rendering — `.resource()` returns `None` until
+  something does. Template search paths are `.searchpaths` (target then image
+  `template_path`), not a `templates` field.
   - **`.render(filename: str, strict=True) -> str | None`** — render a
     template found by name/suffix search (see `templates.Loader` below)
     against this context. `strict=True` (default) re-raises render errors;
@@ -132,15 +149,24 @@ project overview, install instructions and CLI usage, see the shipped
   `None` if that service isn't defined. **`.service(name) -> UriPath | None`**
   — the base URI for `name` (host filled in from `.address.try_ip()` for
   non-local services). `repo[path, service]` is sugar for `.get(path, service=service)`.
+  An `http`/`https` service needs the **`http` extra** (`pip install
+  netboot[http]`): pathlib_next reaches those schemes through `requests`, which
+  `pathlib_next[uri]` does not install. Without it `.service()`/`.get()` raise
+  `ImportError` naming the extra; `file`/`tftp` services and rendering need
+  nothing extra.
 
 ## Templates (`netboot.templates`)
 
 - **`Loader(searchpaths, template_types=(JinjaTemplate, ShellTemplate))`** — a
-  Jinja2 `BaseLoader`. Resolves a template name against
-  `ctx.searchpaths + searchpaths` (context-specific paths first), trying each
-  name `ctx._template_names(...)` yields (MAC, hostname, IP, then the bare
-  suffix — first existing file wins) before falling back to the next search
-  path. A name may carry `k=v;flag:` options before the final `:` (parsed but
+  Jinja2 `BaseLoader`. **Name specificity outranks search-path order**: the
+  loader walks the candidate names `ctx._template_names(...)` yields (MAC,
+  hostname, IP, then the bare name) and, for each one, scans every search path
+  (`ctx.searchpaths` then `searchpaths`) before moving to the next name — so a
+  MAC-named file in the *last* search path beats a bare-named file in the
+  first. Within one directory an exact filename match wins; otherwise a
+  *stem* match does (`boot` matches `boot.j2`), resolved lowest-name-first so
+  the choice never depends on filesystem listing order. Templates are read as
+  UTF-8. A name may carry `k=v;flag:` options before the final `:` (parsed but
   not currently consulted by name selection). Picks the first
   `template_types` entry whose `.can_process(path, source)` is true; raises
   `jinja2.TemplateNotFound` if nothing matches, or a plain `Exception` if a
@@ -152,13 +178,19 @@ project overview, install instructions and CLI usage, see the shipped
   `.can_process(file, template) -> bool`, both no-ops/`False` on the base).
 - **`JinjaTemplate`** (`.j2`/`.jinja`/`.jinja2` suffix) — a real
   `jinja2.Template`; `.render()` additionally injects `shell_quote`, `Path`
-  (`pathlib.Path`) and `Uri` (`pathlib_next.uri.UriPath`) into the render
-  globals.
+  (**`pathlib_next.Path`**, not the stdlib's — it accepts URI paths too) and
+  `Uri` (`pathlib_next.uri.UriPath`) into the render globals. These reach the
+  rendered template only; a `{% import %}`ed macro file does not see them
+  unless imported `with context`.
 - **`ShellTemplate`** (matches any suffix — keep it **last** in
   `template_types`) — `string.Template` with `%`-delimited placeholders;
   `.render()` flattens the context (`utils.flatten`, keys joined with `_`,
   list items by index) into `UPPERCASE` substitution variables (`None` → `""`,
-  `bool` → `"true"`/`"false"`).
+  `bool` → `"true"`/`"false"`). **Only the braced form `%{NAME}` is
+  substituted**: a bare `%word` is literal text, which is what lets kickstart
+  files (`%packages`, `%pre`, `%post`, `%end`) and `date +%Y` render
+  untouched. `%%` yields a literal `%`, and an unknown `%{NAME}` raises
+  `KeyError`.
 
 ## Utils (`netboot.utils`)
 
@@ -169,19 +201,30 @@ project overview, install instructions and CLI usage, see the shipped
   merging field-by-field).
 - **`Host(address: str | Host | None = None)`** — a hostname-or-IP repo
   address. **`.try_ip() -> IPAddress | str`** — resolves to an `IPAddress`
-  (IP literal as-is, hostname via DNS — needs the `dns` extra); falls back to
-  the original string on resolution failure. Equality/hash by `.address`.
+  (an IP literal as-is, a hostname through one forward lookup); falls back to
+  the original string on resolution failure. The `dns` extra is optional —
+  without it netimps resolves through its system/`nslookup` backends.
+  Equality/hash by `.address`.
 - **`flatten(map, _prefix="") -> dict`** — recursively flattens a
   dict/`Namespace`/list into a single-level dict, joining keys with `_`
   (`{"a": {"b": 1}}` → `{"a_b": 1}`) and using list indices as keys.
-- **`shell_quote(text: str | list[str], quote='"') -> list[str]`** — wrap each
-  string in `quote`; always returns a list, even for a single string input.
+- **`shell_quote(text: str | list[str], quote="'") -> str | list[str]`** —
+  quote value(s) so a POSIX shell reads them as literal text. `str` in → `str`
+  out, `list` in → `list` out (element-wise); non-strings are stringified and
+  `None` becomes `''`. The default single-quote form escapes an embedded `'`
+  by closing/escaping/reopening, so nothing inside is special to the shell;
+  `quote='"'` escapes only `"`, `\`, `` ` `` and `$`, leaving the shell's own
+  expansion active — use it only when the template wants that. Any other
+  `quote` raises `ValueError`.
 - **`arr_get(arr, pos, default=None)`** — `arr[pos]` or `default` if out of
   range.
 - **`import_(name: str) -> object`** — import `"pkg.mod.attr"` and return
   `attr` (splits on the last dot).
 - **IP/MAC re-exports** from [`netimps`](https://pypi.org/project/netimps/),
-  available as `netboot.utils.net.*` (or `netboot.netutils`):
+  available as `netboot.utils.net.*`. `netboot.netutils` is the same module
+  bound as an **attribute** of the package (what tests monkeypatch), not an
+  importable path: use `from netboot.utils import net as netutils`, since
+  `import netboot.netutils` raises `ModuleNotFoundError`.
   - `IPAddress`, `IPInterface`, `IPNetwork` — the v4/v6 **union types** you
     annotate with. They are not callable; build values with
     `parse(value, IPNetwork)`.
@@ -211,8 +254,10 @@ project overview, install instructions and CLI usage, see the shipped
 
 - **`LOGGER`** — the `"NETBOOT"` logger. Importing this module also quiets
   `urllib3.connectionpool` / `paramiko.transport` to `WARNING` and disables
-  urllib3's insecure-request warning, best-effort, without importing those
-  libraries itself.
+  urllib3's insecure-request warning, best-effort. Setting those levels imports
+  nothing, but disabling the warning does `import urllib3` inside a
+  `try/except`, so importing `netboot` imports urllib3 when it is installed —
+  and that warning is disabled **process-wide**, for the host application too.
 
 ## CLI driver (`netboot.main`)
 
@@ -255,6 +300,6 @@ command against it.
 - **`initiate <target> [--iscsi]`** — `netboot.lookup_target` then
   `netboot.initialize(target)`. `--iscsi` is accepted but not yet consumed by
   the built-in logic (a hook/plugin extension point). Exit 1 if the target
-  isn't found.
+  isn't found or the query is ambiguous (both logged, not raised).
 - **`complete <target>`** — `netboot.lookup_target` then
-  `netboot.complete(target)`. Exit 1 if the target isn't found.
+  `netboot.complete(target)`. Same exit-1 cases.

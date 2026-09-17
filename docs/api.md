@@ -26,3 +26,27 @@ The engine and its context objects. Rendered from source via
 ::: netboot.dhcp.DhcpZone
 
 ::: netboot.dhcp.DhcpServer
+
+## Content repositories
+
+::: netboot.content.Repository
+
+::: netboot.content.Resource
+
+## Templates
+
+::: netboot.templates.Loader
+
+::: netboot.templates.JinjaTemplate
+
+::: netboot.templates.ShellTemplate
+
+## Utilities
+
+::: netboot.utils.dicts
+
+::: netboot.utils.net.Host
+
+## CLI entry point
+
+::: netboot.main

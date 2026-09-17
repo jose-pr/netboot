@@ -19,6 +19,34 @@ init/complete lifecycle (`StartPixieInitialize` … `EndPixieComplete`). This is
 seam for customising how targets/images/zones are resolved and how the render
 context is assembled.
 
+### The contract
+
+- **Always return.** Every hook is handed the previous hook's return value, and
+  the last return value is what netboot uses. A hook that falls off the end
+  returns `None`, which is then what the engine gets — a lookup hook that
+  forgets to `return value` turns every lookup into "not found".
+- **The signature is positional**, and `kwargs` arrives as a plain `dict` (the
+  fourth argument), not as `**kwargs`.
+- **`netboot` is `None` for `NewPixieObject`**, which fires before the instance
+  exists; `value` there is the class about to be instantiated, and returning a
+  subclass is how you swap in your own.
+- **`value` and `kwargs` differ per event.** `SetPixieProperty` gets a
+  `(name, value)` tuple plus `origin=`/`rawvalue=`; the lookup events get the
+  object found (or the query, for `LookupTarget`) plus `target=`; the lifecycle
+  events get the target, then the built context.
+- **`PixieEvent` is a string enum whose values are prefixed** — the value of
+  `PixieEvent.LookupTarget` is the string `"PixieEvent.LookupTarget"`. Compare
+  against the enum member, not a bare name.
+
+```python
+from netboot import PixieEvent
+
+def only_on_lookup(event, netboot, value, kwargs):
+    if event is not PixieEvent.FoundTarget:
+        return value                      # pass everything else through
+    return value or fallback_target()
+```
+
 ## Custom DHCP backends
 
 `netboot.dhcp.DhcpServer` dispatches on the URI scheme of a zone's `dhcpservers`
@@ -35,8 +63,8 @@ class dnsmasq(DhcpServer):        # handles dnsmasq://...
 ```
 
 Subclassing at any depth is honoured, so a backend may share an intermediate
-base. Import your plugin module before the config builds the zones — pass it via
-`--load-module your.plugin` (or list it under the config's module loading) so the
+base. Import your plugin module before the config builds the zones — pass
+`--load-module your.plugin` (repeat or colon-separate for several) so the
 `DhcpServer` subclass is registered when `dnsmasq://...` is resolved.
 
 An unknown scheme raises a clear `ValueError` rather than silently doing nothing.

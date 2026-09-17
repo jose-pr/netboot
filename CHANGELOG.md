@@ -6,6 +6,134 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `netboot[http]` extra. `http`/`https` repository services reach the network
+  through `requests`, which nothing installed: `pathlib_next[uri]` does not
+  depend on it, so `Repository.service("http")` failed with
+  `ModuleNotFoundError: No module named 'requests'` on any install that did not
+  happen to have it. Install `netboot[http]` for http-served repos; `file` and
+  `tftp` repos, and rendering, need nothing extra. Without the extra those calls
+  now raise `ImportError` naming it instead of failing inside the library.
+
+### Security
+- `shell_quote` now actually quotes. It wrapped values in `"` without escaping
+  anything, so a value containing `` ` ``, `$`, `"` or `;` was expanded or
+  executed by the shell that read the generated script — a password with `$` in
+  it was silently corrupted, and a value taken from an inventory could run
+  commands. It now defaults to POSIX single-quoting (`quote="'"`), escaping an
+  embedded `'` as `'\''`; `quote='"'` escapes `"`, `\`, `` ` `` and `$`, and any
+  other quote character raises `ValueError`. It also returns a `str` for a `str`
+  input instead of always a one-element list, so `{{ shell_quote(v) }}` renders
+  the value rather than `['"v"']`. Templates that relied on indexing the result
+  of a scalar call must drop the `[0]`.
+
+### Fixed
+- Shell-engine templates render kickstart files. The engine substituted both
+  `%{NAME}` and a bare `%name`, and treated an unknown bare one as an error, so
+  any file containing `%packages`, `%pre`, `%post`, `%end` or `date +%Y` failed
+  to render at all. Only the documented braced form `%{NAME}` is substituted
+  now; a bare `%word` is literal text, including one that names a context
+  variable. `%%` still yields a literal `%` and an unknown `%{NAME}` still
+  raises. A template written with bare placeholders must brace them.
+- `Pixie.globals` is really the deep copy the docs promised. The copy made in
+  `__init__` was immediately overwritten by the annotated-attribute loop, so
+  nested values stayed shared with the caller's config dict (mutating
+  `engine.globals["a"]["b"]` changed the caller's mapping) and any global whose
+  key started with `_` was silently dropped. Both are fixed: `_`-prefixed
+  globals are ordinary variable names and are kept.
+- `Pixie.lookup_dhcpzone` returns `None` instead of raising `AttributeError`
+  when the target has no usable IP — the documented MAC-keyed target shape hit
+  this on every `initiate` that did not name a `dhcpzone`.
+- Template selection is deterministic. Within a search directory an exact
+  filename now wins, and several files sharing a stem (`boot` matching
+  `boot.j2`, `boot.sh`, `boot.j2.bak`) resolve lowest-name-first instead of in
+  whatever order the filesystem listed them — a leftover `.bak`/`.orig`/
+  `.rpmnew` copy could previously be rendered instead of the real template.
+- Templates are read as UTF-8 rather than the machine's locale encoding, so the
+  same template tree renders identically on every host (on Windows a non-ASCII
+  template could raise `UnicodeDecodeError` or decode wrongly).
+- An image with no `template_path` renders instead of raising `AttributeError`
+  from `PixieContext.searchpaths`; it now defaults to `[]` as targets already
+  did.
+- A target whose hostname does not resolve no longer hangs the process.
+  `PixieTarget` construction retried the same DNS lookup in an endless loop
+  while the name stayed unresolved; because every target is built at startup,
+  one not-yet-in-DNS entry made every `pixie` command hang and flood the
+  resolver. Resolution is now a single lookup: it fills `ip` on success, and on
+  failure logs a warning and leaves `ip` unset. A malformed hostname is warned
+  about instead of aborting construction.
+
+### Changed
+- `Pixie.lookup_target` matches exactly before it matches by prefix. It
+  previously returned the first target whose hostname *started with* the query,
+  so with targets `node10` and `node1` in that order, `pixie initiate node1`
+  acted on `node10`. Exact id, hostname, MAC and IP matches across the whole
+  table now win; a hostname prefix is the fallback, a query matching more than
+  one target raises `LookupError` (the CLI reports it and exits 1) instead of
+  choosing one, and an empty query matches nothing rather than the first entry.
+  MAC queries are parsed, so `AA-BB-CC-00-00-01` and `aabb.cc00.0001` now match
+  a target keyed `aa:bb:cc:00:00:01`; previously only the colon spelling did.
+- `yaconfiglib` moves to the 0.12 series (`>=0.12.0,<0.13`). The APIs netboot
+  uses are unchanged; the previous `<0.12` ceiling made netboot uninstallable
+  alongside yaconfiglib 0.12.
+- License metadata is PEP 639: `license = "MIT"` plus `license-files`, and the
+  legacy `License :: OSI Approved :: MIT License` classifier is gone (building
+  now needs `hatchling>=1.27`). The wheel carries the licence at
+  `netboot-<version>.dist-info/licenses/LICENSE`.
+- Packaging excludes `*.local.*` from both sdist and wheel. A personal override
+  such as `pixie.local.yaml` or `AGENTS.local.md` previously shipped, because a
+  dotfile pattern does not match a name that has no leading dot.
+- `netboot.utils` no longer re-exports `argparse.Namespace` as
+  `netboot.utils.Namespace`, where it read as netboot's own config base. The
+  config base is `netboot.utils.config.Namespace`, as documented.
+- `PixieContext.templates` is gone. It was an annotation only: nothing ever set
+  it, so reading it raised `AttributeError`. Search paths are
+  `PixieContext.searchpaths`.
+- `jinja2` is now `>=3.0,<4`, previously unpinned. jinja2 2.x imports
+  `markupsafe.soft_unicode`, removed in MarkupSafe 2.1, so an unconstrained
+  resolve could install a pair that raises `ImportError` on `import jinja2`.
+
+### Documentation
+- The shipped API header (`src/netboot/AGENTS.md`) is corrected where it did not
+  match the code: `hook`'s `value` is positional-only and every hook must return
+  a value; `Path` in a Jinja template is `pathlib_next.Path`, not the stdlib's;
+  `netboot.netutils` is an attribute, not an importable module path;
+  `PixieContext.resources` starts empty and is a hook's slot to fill; template
+  search tries each candidate *name* across all search paths (not each path
+  across all names); importing `netboot.logging` does import urllib3 and
+  disables its insecure-request warning process-wide.
+- `docs/cli.md` no longer says `initiate` renders artifacts or that `--iscsi`
+  prepares an iSCSI LUN — both are hook extension points; `--help` said the same
+  and was corrected too. The `--config` row explains that a `.cfg`/`.ini` suffix
+  is parsed as INI, not YAML.
+- `docs/extending.md` documents the hook contract: the positional signature, the
+  `dict` fourth argument, `netboot=None` for `NewPixieObject`, the prefixed
+  `PixieEvent` string values, and that a hook must return the value.
+- `docs/configuration.md` example is runnable as written (the MAC-keyed target
+  names its zone) and says that a `dnsmasq://` backend has to be provided and
+  imported. The shell-template section documents that only `%{NAME}` substitutes.
+- The API Reference page covers the content, template, utility and CLI modules
+  as well as the engine, and renders members that have no docstring; the site
+  gains a Changelog page.
+- README/docs install instructions name `netboot[config]`, which the `pixie`
+  CLI needs to read a config file, and the README's LICENSE links are absolute
+  so they resolve on PyPI.
+- `examples/` holds a complete runnable setup — config, both template engines,
+  and a `DhcpServer` plugin that prints instead of arming real DHCP — and a
+  repo-root `AGENTS.md` covers layout, environments, commands, CI and releasing
+  for contributors. The README gains Development and Releasing sections.
+- `benchmarks/` documents its metrics and schema and keeps results in the
+  tracked `benchmarks/results/`, written by a new `--save` flag, so a
+  before/after comparison survives in history. The metric that claimed to
+  measure a worst-case target scan actually measured an indexed hit; it is now
+  a pair, `lookup_target_by_id` and `lookup_target_scan_by_ip`.
+- CI: the release workflow runs a non-deploying docs gate and dispatches the
+  docs workflow for the tag (a release created with `GITHUB_TOKEN` starts no
+  workflow run, so `release: published` alone never deployed), publishing uses
+  `skip-existing`, the test workflow drops to read-only permissions and also
+  runs on Windows and macOS, and docs redeploy when `src/`, `README.md` or
+  `CHANGELOG.md` change.
+
 ## [0.1.3] - 2026-08-16
 
 Dependency floor raise only — no library or CLI behaviour changes.
@@ -115,6 +243,8 @@ Packaging/CI fixes only — no library or CLI behaviour changes.
   the `pixie` command instead of saying "once published".
 - README library example binds the engine to `pixie` rather than `netboot`,
   which read as the package and left two calls referencing an undefined name.
+
+## [0.1.0] - 2026-07-21
 
 First packaged release: the `netboot` library with the `pixie` command line.
 

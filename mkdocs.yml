@@ -3,6 +3,9 @@ site_description: PXE provisioning management — render netboot artifacts and d
 site_author: jose-pr
 repo_url: https://github.com/jose-pr/netboot/
 repo_name: jose-pr/netboot
+site_url: https://jose-pr.github.io/netboot/
+edit_uri: edit/main/docs/
+docs_dir: docs
 
 theme:
   name: material
@@ -35,6 +38,17 @@ plugins:
           options:
             show_source: true
             show_root_heading: true
+            show_if_no_docstring: true
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            filters: ["!^_"]
+
+markdown_extensions:
+  - admonition
+  - pymdownx.snippets:
+      base_path: ["."]
+  - pymdownx.superfences
 
 nav:
   - Home: index.md
@@ -42,3 +56,4 @@ nav:
   - Configuration: configuration.md
   - Extending: extending.md
   - API Reference: api.md
+  - Changelog: changelog.md

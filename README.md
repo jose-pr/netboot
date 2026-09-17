@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/netboot.svg)](https://pypi.org/project/netboot/)
 [![Python versions](https://img.shields.io/pypi/pyversions/netboot.svg)](https://pypi.org/project/netboot/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jose-pr/netboot/blob/main/LICENSE)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://jose-pr.github.io/netboot/)
 [![CI](https://img.shields.io/github/actions/workflow/status/jose-pr/netboot/test.yml)](https://github.com/jose-pr/netboot/actions/workflows/test.yml)
 
@@ -21,7 +21,8 @@ system and pluggable `DhcpServer` handlers.
 ## Install
 
 ```sh
-pip install netboot            # provides the `pixie` command
+pip install netboot            # the library
+pip install netboot[config]    # ...plus what the `pixie` CLI needs to read a config
 # or, from a checkout:
 pip install .
 ```
@@ -32,6 +33,7 @@ Optional extras:
 | ----- | ------- |
 | `netboot[config]` | YAML config loading for the CLI (`pyyaml`) |
 | `netboot[dns]` | The `dnspython` resolver backend (best coverage; without it hostname targets still resolve via the system/`nslookup` fallbacks) |
+| `netboot[http]` | `http`/`https` repository services (`requests`); `file`/`tftp` repos and rendering need nothing extra |
 | `netboot[docs]`   | Build the documentation site (`mkdocs`) |
 
 Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),
@@ -89,6 +91,33 @@ pixie.complete(target)                   # cleanup once installed
   Import your plugin module via `--load-module` so it is registered before the
   config builds the zones.
 
+A complete runnable setup — config, both template engines and a DHCP plugin —
+is in [`examples/`](https://github.com/jose-pr/netboot/tree/main/examples).
+
+## Development
+
+```sh
+python -m venv .venv/3.14
+.venv/3.14/bin/pip install -e ".[dev,docs,config,http]"   # Scripts/ on Windows
+.venv/3.14/bin/python -m pytest -q -rs                    # the suite
+.venv/3.14/bin/python -m black src tests benchmarks       # formatter
+.venv/3.14/bin/python -m mkdocs build --strict            # docs
+```
+
+Install every extra that has tests — without `http` the repository-service tests
+skip instead of running, which `-rs` makes visible. Develop on the latest Python
+and also run the floor (3.9) before finishing a piece of work. More detail, plus
+the layout and CI notes, in
+[`AGENTS.md`](https://github.com/jose-pr/netboot/blob/main/AGENTS.md).
+
+## Releasing
+
+Tags and `CHANGELOG.md` use SemVer; `pyproject.toml` uses PEP 440. Pre-1.0 the
+minor slot is reserved for breaking the documented API — additions and fixes are
+patches. Pushing a `v*` tag runs test → build → GitHub release → PyPI and then
+deploys the docs for that tag; the release body is scraped from the matching
+`## [x.y.z]` changelog section.
+
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/jose-pr/netboot/blob/main/LICENSE).

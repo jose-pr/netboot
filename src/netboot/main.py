@@ -136,8 +136,8 @@ def _load_config(args: "Pixie_") -> dict:
         merge=ConfigLoaderMergeMethod.Deep,
     )
     # yaconfiglib auto-registers !include/!load on the active loader class during
-    # load(); a manual yaml.add_constructor is redundant (and yaconfiglib >=0.11
-    # warns that it overrides the built-in handler).
+    # load(); a manual yaml.add_constructor is redundant (and since yaconfiglib
+    # 0.10.0 it warns that it overrides the built-in handler).
     conf: dict = loader.load(*configs)
 
     templates: "list" = conf.setdefault("templates", [])

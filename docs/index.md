@@ -19,7 +19,8 @@ system and pluggable `DhcpServer` backends.
 ## Install
 
 ```sh
-pip install netboot            # provides the `pixie` command
+pip install netboot            # the library
+pip install netboot[config]    # ...plus what the `pixie` CLI needs to read a config
 # or, from a checkout:
 pip install .
 ```
@@ -28,6 +29,7 @@ pip install .
 | ----- | ------- |
 | `netboot[config]` | YAML config loading for the CLI (`pyyaml`) |
 | `netboot[dns]` | The `dnspython` resolver backend (best coverage; without it hostname targets still resolve via the system/`nslookup` fallbacks) |
+| `netboot[http]` | `http`/`https` repository services (`requests`); `file`/`tftp` repos and rendering need nothing extra |
 | `netboot[docs]`   | Build this documentation site (`mkdocs`) |
 
 Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),

@@ -6,20 +6,25 @@ discovers commands, layers YAML config, then runs the selected command against a
 single `Pixie` engine built from that config.
 
 ```sh
-# Initiate the PXE process for a target (render artifacts + arm DHCP):
+# Initiate the PXE process for a target (arm DHCP):
 pixie initiate my-host
 
-# Complete it (post-boot cleanup, disarm DHCP):
+# Complete it (disarm DHCP):
 pixie complete my-host
 ```
 
-A target argument is resolved by exact id, or by hostname prefix / MAC / IP.
+A target argument is resolved by exact id first, then by an exact hostname
+(case-insensitive), MAC or IP match anywhere in the table, and only then by a
+hostname prefix. MAC input is parsed, so `aa:bb:cc:00:00:01`,
+`AA-BB-CC-00-00-01` and `aabb.cc00.0001` are the same target. A query matching
+more than one target is refused (exit 1) rather than guessed at, and an empty
+argument matches nothing.
 
 ## Global options
 
 | Option | Purpose |
 | ------ | ------- |
-| `-c, --config PATH` | Explicit config file (yaml/cfg); overrides discovery |
+| `-c, --config PATH` | Explicit config file; overrides discovery. A `.cfg`/`.ini` suffix is read as INI (configparser), so YAML content needs a YAML suffix |
 | `--baseconfig DIR`  | Base config directory to search (default `./config`) |
 | `-l, --load-module M` | Import module(s) before building netboot (config/hook deps) |
 | `--cmdspath PATH` | Extra directories/packages to search for commands |
@@ -29,13 +34,20 @@ A target argument is resolved by exact id, or by hostname prefix / MAC / IP.
 
 ### `initiate <target> [--iscsi]`
 
-Look up the target, build its render context, produce the netboot artifacts and
-arm every DHCP backend in the target's zone. `--iscsi` prepares the target as an
-iSCSI LUN.
+Look up the target, build its render context, and call `add_target` on every
+DHCP backend in the target's zone.
+
+Rendering is **not** something `initiate` does on its own: the built-in command
+arms DHCP, and artifacts are produced by whatever renders `ctx.render(...)` —
+a hook on `PixieEvent.EndPixieInitialize`, a `DhcpServer` backend, or your own
+command. `--iscsi` is likewise a flag for such a hook to read: the built-in
+logic accepts it and does nothing with it.
 
 ### `complete <target>`
 
-Run post-boot cleanup for the target and disarm its DHCP backends.
+Look up the target, rebuild its context, and call `remove_target` on every DHCP
+backend in its zone. Post-boot cleanup beyond that is a hook's job
+(`PixieEvent.EndPixieComplete`).
 
 ## Adding your own commands
 
