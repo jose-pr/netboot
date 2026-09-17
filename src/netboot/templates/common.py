@@ -1,6 +1,20 @@
 from typing import TYPE_CHECKING
 
+from jinja2 import DebugUndefined, StrictUndefined, Undefined
 from jinja2 import Environment as Renderer
+
+#: How a template variable that has no value is rendered. The same word means
+#: the same thing in both engines, which is the point of the setting: the shell
+#: engine always raised while Jinja silently produced an empty string, so the
+#: behaviour depended on a file's suffix.
+UNDEFINED_MODES = ("strict", "lenient", "debug")
+
+#: `templates_undefined` -> the jinja2 class implementing it.
+JINJA_UNDEFINED = {
+    "strict": StrictUndefined,  # raise, naming the variable
+    "lenient": Undefined,  # render as an empty string
+    "debug": DebugUndefined,  # leave `{{ name }}` in the output
+}
 from pathlib_next import Path, UriPath
 
 if TYPE_CHECKING:

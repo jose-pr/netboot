@@ -24,6 +24,14 @@ class _Basic(_BasicTemplate):
     """
 
 
+class _Blanks(dict):
+    """A mapping whose missing keys render as empty strings, with a warning."""
+
+    def __missing__(self, key):
+        LOGGER.warning("shell template: %%{%s} has no value; rendering empty", key)
+        return ""
+
+
 class ShellTemplate(Template):
     """The fallback engine: `%{UPPER_SNAKE}` placeholders from the context.
 
@@ -59,7 +67,17 @@ class ShellTemplate(Template):
                     v,
                 )
             _upper[key] = v
-        return self._template.substitute(_upper)
+
+        mode = getattr(self, "_undefined_", "strict")
+        if mode == "strict":
+            # `substitute` raises KeyError naming the placeholder.
+            return self._template.substitute(_upper)
+        if mode == "debug":
+            # Leave `%{NAME}` in the output so the gap is visible in the file.
+            return self._template.safe_substitute(_upper)
+        # lenient: an unknown placeholder renders as an empty string, which is
+        # what the Jinja engine has always done.
+        return self._template.substitute(_Blanks(_upper))
 
     @classmethod
     def can_process(cls, file: Path, template: str) -> bool:

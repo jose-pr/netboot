@@ -288,3 +288,62 @@ def test_an_absolute_template_path_is_used_as_given(tmp_path):
     p = netboot.Pixie(**config)
     ctx = p.make_context(p.lookup_target("host1"))
     assert ctx.render("boot.j2") == "from=elsewhere"
+
+
+def _netboot_with_undefined(templates_dir, mode):
+    config = {
+        "templates": [templates_dir],
+        "images": {"debian": {"template_path": []}},
+        "dhcpzones": {"lan": {"network": "10.0.0.0/24"}},
+        "targets": {
+            "host1": {"hostname": "host1", "ip": "10.0.0.5", "image": "debian"}
+        },
+    }
+    if mode is not None:
+        config["templates_undefined"] = mode
+    engine = netboot.Pixie(**config)
+    return engine.make_context(engine.lookup_target("host1"))
+
+
+def test_undefined_is_strict_by_default(templates_dir):
+    from jinja2 import UndefinedError
+
+    (templates_dir / "typo.j2").write_text("kernel={{ ctx.image.kernl }}")
+    ctx = _netboot_with_undefined(templates_dir, None)
+    # A typo used to ship a boot artifact with a blank where a path belongs.
+    with pytest.raises(UndefinedError):
+        ctx.render("typo.j2")
+
+
+def test_lenient_renders_an_undefined_variable_empty(templates_dir):
+    (templates_dir / "typo.j2").write_text("kernel={{ ctx.image.kernl }}")
+    ctx = _netboot_with_undefined(templates_dir, "lenient")
+    assert ctx.render("typo.j2") == "kernel="
+
+
+def test_debug_leaves_the_placeholder_visible(templates_dir):
+    (templates_dir / "typo.j2").write_text("kernel={{ missing }}")
+    ctx = _netboot_with_undefined(templates_dir, "debug")
+    assert ctx.render("typo.j2") == "kernel={{ missing }}"
+
+
+@pytest.mark.parametrize(
+    "mode, expected",
+    [("lenient", "X="), ("debug", "X=%{NOSUCHVAR}")],
+)
+def test_the_shell_engine_follows_the_same_switch(templates_dir, mode, expected):
+    (templates_dir / "u.sh").write_text("X=%{NOSUCHVAR}")
+    ctx = _netboot_with_undefined(templates_dir, mode)
+    assert ctx.render("u.sh") == expected
+
+
+def test_the_shell_engine_is_strict_by_default(templates_dir):
+    (templates_dir / "u.sh").write_text("X=%{NOSUCHVAR}")
+    ctx = _netboot_with_undefined(templates_dir, "strict")
+    with pytest.raises(KeyError):
+        ctx.render("u.sh")
+
+
+def test_an_unknown_mode_is_reported(templates_dir):
+    with pytest.raises(netboot.PixieConfigError, match="templates_undefined"):
+        _netboot_with_undefined(templates_dir, "sloppy")

@@ -20,6 +20,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `tftp` repos, and rendering, need nothing extra. Without the extra those calls
   now raise `ImportError` naming it instead of failing inside the library.
 
+### Changed
+- **A template variable with no value now raises by default.** The two engines
+  disagreed: the shell engine raised while Jinja rendered an empty string, so a
+  typo in a `.j2` file shipped a boot artifact with a blank where a kernel path
+  belonged, and the behaviour depended on the file's suffix. The new top-level
+  config key `templates_undefined` decides, and means the same in both engines:
+  `strict` (default) raises naming the variable, `lenient` renders an empty
+  string with a warning — the old Jinja behaviour — and `debug` leaves the
+  placeholder in the output. Set `templates_undefined: lenient` to keep
+  templates that relied on blanks working.
+
 ### Security
 - Config loading is hardened: the loader runs with `allow_commands=False` and
   `sandbox=True`, so `{{ ... }}` interpolation in a config value renders in

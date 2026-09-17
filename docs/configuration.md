@@ -70,6 +70,23 @@ replace the roots, and the roots are always searched last:
 A repository's `src`/`path` on an image address its *artifacts* (kernel,
 initrd), never its templates.
 
+## Undefined template variables
+
+`templates_undefined` is a top-level config key choosing what happens when a
+template names a variable that has no value. It means the same thing in both
+engines — before it existed, the shell engine raised while Jinja quietly
+rendered an empty string, so the behaviour depended on a file's suffix.
+
+| Value | Behaviour |
+| ----- | --------- |
+| `strict` (default) | Raise, naming the variable. A typo fails the run instead of shipping a boot artifact with a blank where a kernel path belongs. |
+| `lenient` | Render an empty string, and log a warning. This is what Jinja templates did before. |
+| `debug` | Leave the placeholder (`{{ name }}` / `%{NAME}`) in the output, so the gap is visible in the rendered file. |
+
+```yaml
+templates_undefined: lenient   # keep the pre-0.2 Jinja behaviour
+```
+
 ## Interpolation, includes and trust
 
 Config values may use `{{ ... }}` interpolation, evaluated while the config

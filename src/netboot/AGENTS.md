@@ -39,6 +39,12 @@ is the same object. `netboot.netutils` remains an alias for
     `dict[str, ...]` of `PixieTarget` / `DhcpZone` / `PixieImage` /
     `Repository`, keyed by config id.
   - **`.globals`** — `dict`, layered into every render context.
+  - **`.templates_undefined`** — `"strict"` (default), `"lenient"` or
+    `"debug"`, from the config key of the same name: what a template variable
+    with no value does. `strict` raises naming it, `lenient` renders an empty
+    string with a warning, `debug` leaves the placeholder in the output. It
+    means the same in both engines; an unknown value raises
+    `PixieConfigError` when a context is built.
   - **`.hook(event, value=None, /, **kwargs) -> value`** — run the hook chain
     for `event`, threading `value` through each `f(event, netboot, value,
     kwargs)` and returning the (possibly transformed) result. `value` is
@@ -223,8 +229,10 @@ is the same object. `netboot.netutils` remains an alias for
   `template_types` entry whose `.can_process(path, source)` is true; raises
   `jinja2.TemplateNotFound` if nothing matches, or a plain `Exception` if a
   matching type has no usable engine.
+- **`UNDEFINED_MODES`** / **`JINJA_UNDEFINED`** (`netboot.templates`) — the
+  three mode names and the `jinja2` undefined class each maps to.
 - **`Renderer`** — alias for `jinja2.Environment`; `make_context` builds it
-  with `keep_trailing_newline=True`, so a rendered artifact keeps the
+  with the configured `undefined=` class and `keep_trailing_newline=True`, so a rendered artifact keeps the
   template's final newline (the shell engine always did). One is created per
   `PixieContext` (never share one across contexts — `globals["ctx"]` is
   mutated per render).
@@ -251,8 +259,9 @@ is the same object. `netboot.netutils` remains an alias for
   `bool` → `"true"`/`"false"`). **Only the braced form `%{NAME}` is
   substituted**: a bare `%word` is literal text, which is what lets kickstart
   files (`%packages`, `%pre`, `%post`, `%end`) and `date +%Y` render
-  untouched. `%%` yields a literal `%`, and an unknown `%{NAME}` raises
-  `KeyError`.
+  untouched. `%%` yields a literal `%`. An unknown `%{NAME}` follows
+  `templates_undefined`: `KeyError` under `strict` (the default), an empty
+  string under `lenient`, and the untouched placeholder under `debug`.
 
 ## Utils (`netboot.utils`)
 

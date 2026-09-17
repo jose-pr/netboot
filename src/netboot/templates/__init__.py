@@ -4,7 +4,7 @@ from jinja2 import TemplateNotFound
 from pathlib_next import Path, PosixPathname
 
 from ..utils.misc import parse_path
-from .common import Renderer, Template
+from .common import JINJA_UNDEFINED, UNDEFINED_MODES, Renderer, Template
 from .jinja import JinjaTemplate, _Jinja2Template
 from .shell import ShellTemplate
 
@@ -50,11 +50,15 @@ class Loader(_JinjaLoader):
         self,
         searchpaths: list,
         template_types: list[Type[Template]] = [JinjaTemplate, ShellTemplate],
+        undefined: str = "strict",
     ) -> None:
         self.searchpaths = [
             path if isinstance(path, Path) else parse_path(path) for path in searchpaths
         ]
         self.template_types = template_types
+        #: Passed to every non-Jinja template built here; the Jinja engine gets
+        #: its own class through the `Renderer`.
+        self.undefined = undefined
         super().__init__()
 
     def get_source(
@@ -189,6 +193,7 @@ class Loader(_JinjaLoader):
                     template = t(source)
                     template._globals_ = globals
                     template._uptodate_ = uptodate
+                    template._undefined_ = self.undefined
 
                 template.loader = self
                 return template

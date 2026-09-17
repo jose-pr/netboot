@@ -20,7 +20,7 @@ from ._version import __version__
 from .content import Repository, Resource
 from .dhcp import DhcpZone
 from .logging import LOGGER
-from .templates import Loader, Renderer
+from .templates import JINJA_UNDEFINED, UNDEFINED_MODES, Loader, Renderer
 from .utils import IPAddress, MACAddress, T
 from .utils import net as netutils
 from .utils.misc import import_
@@ -344,6 +344,11 @@ class Pixie:
     images: "dict[str, PixieImage]"
     repos: "dict[str,Repository]"
     globals: dict[str, object]
+    #: What a template variable with no value does: "strict" raises naming it,
+    #: "lenient" renders an empty string, "debug" leaves the placeholder in the
+    #: output. Set from the config key of the same name; it means the same in
+    #: both template engines.
+    templates_undefined: str = "strict"
     _ctxcls: "type[PixieContext]" = PixieContext
     VERSION = __version__
     _config: dict
@@ -659,8 +664,15 @@ class Pixie:
         ctx = mergeObjects(self._ctxcls, ctx, *_globals)
 
         ctx: PixieContext
+        undefined = self.templates_undefined
+        if undefined not in UNDEFINED_MODES:
+            raise PixieConfigError(
+                f"templates_undefined must be one of {', '.join(UNDEFINED_MODES)}, "
+                f"not {undefined!r}"
+            )
         ctx._renderer = Renderer(
-            loader=Loader(self._config.get("templates", [])),
+            loader=Loader(self._config.get("templates", []), undefined=undefined),
+            undefined=JINJA_UNDEFINED[undefined],
             # Boot artifacts are line-oriented files: a kickstart or iPXE
             # script whose last line lost its newline is a different file. The
             # shell engine already kept it, so the two engines disagreed.
