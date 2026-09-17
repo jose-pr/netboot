@@ -54,6 +54,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   overridable per zone. No value is interpolated into the script: parameters
   travel as a JSON payload PowerShell parses, so a target name or option value
   cannot become a statement.
+- New extras, each carrying exactly one backend's dependency: `netboot[kea]`,
+  `netboot[dhcpd]`, `netboot[winrm]`, and `netboot[ssh]` for dnsmasq over
+  `sftp://`. A local dnsmasq and `windhcp://` over ssh need none. Verified on a
+  clean wheel install: importing `netboot.dhcp` loads no backend dependency,
+  those two backends construct, and the other two raise `ImportError` naming
+  their extra.
 - Anything that varies per target is refused in a connection string and resolved
   when the target is applied instead: `subnet_id`/`scope` belong to the zone,
   `boot-file-name`/`next-server`/`tftp-server-name` to the image or target. The

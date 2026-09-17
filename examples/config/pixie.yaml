@@ -17,6 +17,11 @@ images:
     template_path: [debian]        # relative: searched inside the template root
     globals:
       kernel: vmlinuz
+    # What this image tells DHCP clients to boot. Merged into the options every
+    # backend sends; see docs/configuration.md.
+    dhcp_options:
+      boot-file-name: pxelinux.0
+      next-server: 10.0.0.2
 
 dhcpzones:
   lan:
@@ -26,8 +31,13 @@ dhcpzones:
     nameservers: [10.0.0.53]
     search: [example.com]
     dhcpservers:
-      # Handled by examples/plugins/recording.py, imported with --load-module.
+      # Handled by examples/plugins/recording.py, imported with --load-module,
+      # so this example runs with no DHCP server at all.
       - recording://dhcp-host
+      # A real one looks like this -- swap it in when you have a dnsmasq. The
+      # query carries the options the server hands the client; the boot file
+      # comes from the image below, because it varies per target.
+      # - dnsmasq:///?hostsfile=/etc/dnsmasq.d/netboot.d/&router=10.0.0.1
 
 repos:
   mirror:

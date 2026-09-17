@@ -188,6 +188,39 @@ is the same object. `netboot.netutils` remains an alias for
   **`.get_local_server(servers, default)`** — first `server` contained in
   `.network`, else `default`.
 
+## DHCP backends (`netboot.dhcp.*`)
+
+Four ship, each imported only when a config names its scheme — so importing
+`netboot.dhcp` pulls in none of their dependencies. Every one takes its client
+options from the URI query (see below) and translates them.
+
+- **`dnsmasq://[host]/?hostsfile=&optsfile=&reload=&pidfile=`**
+  (`netboot.dhcp.dnsmasq`) — writes `dhcp-host`/`dhcp-option`/`dhcp-boot`
+  entries. Paths may carry their own scheme; a bare path is local when the URI
+  has no host and `sftp://<host>/<path>` when it does (`netboot[ssh]`). A
+  **directory** gets one file per target; a **file** gets a marked region netboot
+  owns. `reload=` runs a command, over ssh when the URI names a host — omit it
+  for a `--dhcp-hostsdir`, which dnsmasq re-reads by itself; a plain file
+  without it raises.
+- **`kea://`, `keas://`** (`netboot.dhcp.kea`, `netboot[kea]`) —
+  `reservation-add`/`reservation-del` through the control agent. `?service=`
+  selects `dhcp4`/`dhcp6`. Needs the **host_cmds** hook and a writable hosts
+  backend; `result: 2` is reported with that cause. `subnet-id` comes from the
+  zone (`subnet_id`) or a matched `config-get`.
+- **`dhcpd://host:7911/?keyname=&keyfile=`** (`netboot.dhcp.dhcpd`,
+  `netboot[dhcpd]`) — an OMAPI host object whose `statements` carry the options,
+  escaped. Secret from `keyfile=` or `$PIXIE_DHCPD_OMAPI_KEY`. A host added this
+  way does **not** survive a dhcpd restart by itself.
+- **`windhcp://[user@]host/?transport=ssh|winrm&server=&auth=&port=&ssl=`**
+  (`netboot.dhcp.windhcp`) — the `DhcpServer` PowerShell cmdlets over the system
+  `ssh` client (default, no dependency) or WinRM (`netboot[winrm]`, password
+  from `$PIXIE_WINDHCP_PASSWORD`). `server=` becomes `-ComputerName`. Parameters
+  travel as a JSON payload, never interpolated into the script. The scope is the
+  zone's network address, overridable with `scope` **on the zone**.
+
+Each raises `PixieLookupError` for a target with no MAC — every one of these
+servers identifies a reservation by it.
+
 ## DHCP options (`netboot.dhcp.options`)
 
 - **`GENERIC_OPTIONS`** — the option names netboot models and every backend

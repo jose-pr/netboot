@@ -62,6 +62,13 @@ class dnsmasq(DhcpServer):        # handles dnsmasq://...
         ...                       # disarm it
 ```
 
+netboot ships four backends — `netboot.dhcp.dnsmasq`, `.kea`, `.dhcpd` and
+`.windhcp` — and they are the worked examples: one writes files (locally or over
+`sftp://`), one speaks a REST API, one a binary protocol, and one runs
+PowerShell over ssh or WinRM. A backend gets its client options from
+`self.options_for(ctx)` and translates them; see the configuration guide for
+what an operator writes.
+
 Subclassing at any depth is honoured, so a backend may share an intermediate
 base. Import your plugin module before the config builds the zones — pass
 `--load-module your.plugin` (repeat or colon-separate for several) so the

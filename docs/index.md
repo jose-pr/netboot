@@ -30,6 +30,10 @@ pip install .
 | `netboot[config]` | YAML config loading for the CLI (`pyyaml`) |
 | `netboot[dns]` | The `dnspython` resolver backend (best coverage; without it hostname targets still resolve via the system/`nslookup` fallbacks) |
 | `netboot[http]` | `http`/`https` repository services (`requests`); `file`/`tftp` repos and rendering need nothing extra |
+| `netboot[kea]` | The `kea://` DHCP backend (`requests`) |
+| `netboot[dhcpd]` | The `dhcpd://` DHCP backend over OMAPI (`pypureomapi`) |
+| `netboot[winrm]` | `windhcp://` over WinRM (`pywinrm`); over ssh it needs nothing |
+| `netboot[ssh]` | `dnsmasq://` with remote `sftp://` paths (`pathlib_next[sftp]`) |
 | `netboot[docs]`   | Build this documentation site (`mkdocs`) |
 
 Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),

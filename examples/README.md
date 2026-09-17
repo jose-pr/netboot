@@ -48,6 +48,11 @@ Expected output for `initiate web01`: the backend line, then the rendered
   renders it: `%{UPPER_SNAKE}` placeholders from the flattened context, and a
   bare `%` left alone (which is what lets a kickstart's `%packages` through).
   `install.ks.j2` is Jinja, with `ctx`, `shell_quote`, `Path` and `Uri` in scope.
+- **A real DHCP backend.** `config/pixie.yaml` carries a commented
+  `dnsmasq://` entry beside the recording stub: uncomment it (and drop the stub)
+  to write real reservation files. The image's `dhcp_options` — the boot file and
+  its server — reach whichever backend you use, because they belong to the image
+  rather than to the connection.
 - **Repo URLs.** `ctx.repos["mirror"].service("tftp")` builds
   `tftp://10.0.0.2/debian` from the repo's address and service path. An
   `http`/`https` service would additionally need `pip install netboot[http]`.

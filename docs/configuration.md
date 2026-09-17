@@ -36,11 +36,9 @@ dhcpzones:
     nameservers: [10.0.0.53]
     search: [example.com]
     dhcpservers:
-      # The scheme selects the DhcpServer backend. netboot ships none, so a
-      # class named `dnsmasq` must be registered first -- see Extending -- and
-      # `--load-module` must import it, or resolving this entry raises
-      # ValueError for the unknown scheme.
-      - dnsmasq://dhcp-host
+      # The scheme selects the backend; the query carries what the server
+      # should tell the client. See "DHCP servers and options" below.
+      - dnsmasq:///?hostsfile=/etc/dnsmasq.d/netboot.d/&router=10.0.0.1
 
 # Where boot artifacts are fetched / served from.
 repos:
@@ -49,6 +47,67 @@ repos:
     services:
       http: http://mirror.example.com/debian
     local: /srv/mirror/debian
+```
+
+## DHCP servers and options
+
+Each entry under a zone's `dhcpservers` is a URI. Its **scheme** picks the
+backend; its **query string** carries that backend's connection settings and the
+DHCP options the server should give the client.
+
+| Scheme | Server | How it applies a reservation | Needs |
+| ------ | ------ | ---------------------------- | ----- |
+| `dnsmasq://` | dnsmasq | writes `dhcp-host`/`dhcp-option` files, local or over `sftp://` | nothing locally; `netboot[ssh]` for remote paths |
+| `kea://`, `keas://` | ISC Kea | `reservation-add` / `reservation-del` via the control agent | `netboot[kea]` |
+| `dhcpd://` | ISC dhcpd | an OMAPI host object | `netboot[dhcpd]` |
+| `windhcp://` | Windows DHCP | its own PowerShell cmdlets over ssh or WinRM | nothing over ssh; `netboot[winrm]` for WinRM |
+
+Each has one thing that is easy to get wrong:
+
+- **dnsmasq** re-reads `--dhcp-hostsfile`/`--dhcp-optsfile` only on SIGHUP, and
+  never re-reads its main config — but `--dhcp-hostsdir`/`--dhcp-optsdir` pick up
+  changed files by themselves, which is why a directory needs no `reload=` and a
+  plain file does.
+- **Kea** needs the `host_cmds` hook loaded *and* a writable hosts backend; a
+  file-only Kea loads the hook and still refuses.
+- **dhcpd** hosts added over OMAPI do not survive a restart by themselves — that
+  is dhcpd's design.
+- **Windows** needs the `DhcpServer` module on the host PowerShell runs on, and
+  an account with DHCP-administrator rights.
+
+### Options
+
+Anything in the query that is not a connection setting is a client option:
+`router`, `domain-name-servers`, `domain-name`, `domain-search`, `ntp-servers`,
+`subnet-mask`, `broadcast-address`, `lease-time`, `vendor-class-identifier`, or
+`option-<n>` for anything netboot does not model. Repeat a key for a list.
+`raw.<backend>=` passes backend-native text through untranslated.
+
+Options are merged in this order, later winning:
+
+1. what the zone already knows (`gateway` → `router`, `nameservers`, `domain`…);
+2. the server URI's query;
+3. `images.<id>.dhcp_options`;
+4. `targets.<id>.dhcp_options`;
+5. an `options_builder=my.module.function` — `fn(ctx, options) -> options`;
+6. any hook on `PixieEvent.BuildDhcpOptions`.
+
+**Some things belong to the target, not the connection**, and netboot refuses
+them in a URI with a message saying where they go: `subnet_id` and `scope` on the
+**zone**, `boot-file-name`, `next-server`, `tftp-server-name` and `host-name` on
+the **image** or **target**. A boot file pinned to a connection would hand every
+target on that server the same one.
+
+```yaml
+dhcpzones:
+  lan:
+    network: 10.0.0.0/24
+    subnet_id: 44                      # kea; windhcp uses `scope`
+    dhcpservers:
+      - kea://10.0.0.1:8000/?domain-name-servers=10.0.0.53
+images:
+  debian:
+    dhcp_options: {boot-file-name: pxelinux.0, next-server: 10.0.0.2}
 ```
 
 ## Where templates are looked for

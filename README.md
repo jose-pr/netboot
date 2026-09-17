@@ -34,6 +34,10 @@ Optional extras:
 | `netboot[config]` | YAML config loading for the CLI (`pyyaml`) |
 | `netboot[dns]` | The `dnspython` resolver backend (best coverage; without it hostname targets still resolve via the system/`nslookup` fallbacks) |
 | `netboot[http]` | `http`/`https` repository services (`requests`); `file`/`tftp` repos and rendering need nothing extra |
+| `netboot[kea]` | The `kea://` DHCP backend (`requests`) |
+| `netboot[dhcpd]` | The `dhcpd://` DHCP backend over OMAPI (`pypureomapi`) |
+| `netboot[winrm]` | `windhcp://` over WinRM (`pywinrm`); over ssh it needs nothing |
+| `netboot[ssh]` | `dnsmasq://` with remote `sftp://` paths (`pathlib_next[sftp]`) |
 | `netboot[docs]`   | Build the documentation site (`mkdocs`) |
 
 Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),
@@ -86,10 +90,12 @@ pixie.complete(target)                   # cleanup once installed
   `Pixie(...)`. Each hook `f(event, netboot, value, kwargs) -> value` is called for
   every `PixieEvent` and may transform the value flowing through it — used to
   customise lookup, context construction and the init/complete lifecycle.
-- **DHCP backends.** Subclass `netboot.dhcp.DhcpServer`; the lowercased class name
-  is the URI scheme it handles (`class dnsmasq(DhcpServer)` → `dnsmasq://...`).
-  Import your plugin module via `--load-module` so it is registered before the
-  config builds the zones.
+- **DHCP backends.** netboot ships four — `dnsmasq://`, `kea://`, `dhcpd://` and
+  `windhcp://` (Windows, over ssh or WinRM) — each imported only when a config
+  names its scheme. Write your own by subclassing `netboot.dhcp.DhcpServer`: the
+  lowercased class name is the URI scheme it handles, and `--load-module`
+  registers it before the config builds the zones. What the server should tell
+  the client rides in the URI query; see the configuration guide.
 
 A complete runnable setup — config, both template engines and a DHCP plugin —
 is in [`examples/`](https://github.com/jose-pr/netboot/tree/main/examples).

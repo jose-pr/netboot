@@ -57,13 +57,34 @@ config = ["pyyaml"]
 # pathlib_next[uri] does not. Repos served over file/tftp, and rendering in
 # general, need none of it, so this stays an extra rather than a dependency.
 http = ["requests"]
+# DHCP backends. Each is imported only when a config names its scheme, so a
+# netboot install carries none of these unless it asks for them. dnsmasq needs
+# nothing for a local server, and windhcp nothing over its default ssh
+# transport (it uses the system ssh client).
+kea = ["requests"]                       # kea:// control agent
+dhcpd = ["pypureomapi"]                  # dhcpd:// OMAPI
+winrm = ["pywinrm"]                      # windhcp://...?transport=winrm
+ssh = ["pathlib_next[sftp]"]             # dnsmasq:// over sftp:// paths
 # The dnspython resolver backend for netimps' resolve(), used to look up
 # hostname targets. netimps >=0.2.0 makes dnspython optional, so this extra is
 # the only thing that installs it: with it, resolution has full record-type and
 # explicit-nameserver support; without it, resolve() still works through
 # netimps' system/nslookup backends (address and reverse records only).
 dns = ["dnspython"]
-dev = ["black", "build", "hatchling", "pytest", "pytest-cov", "twine", "pyyaml", "dnspython", "requests"]
+dev = [
+    "black",
+    "build",
+    "hatchling",
+    "pytest",
+    "pytest-cov",
+    "twine",
+    "pyyaml",
+    "dnspython",
+    "requests",
+    # Backend dependencies, so their tests run rather than skip.
+    "pypureomapi",
+    "pywinrm",
+]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]
