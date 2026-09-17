@@ -45,6 +45,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `$PIXIE_DHCPD_OMAPI_KEY`, never from the URI. Needs `netboot[dhcpd]`. Note
   that a host added over OMAPI does not survive a dhcpd restart by itself: that
   is dhcpd's design, not netboot forgetting it.
+- **A Windows DHCP Server backend** (`windhcp://`), driving the `DhcpServer`
+  PowerShell module over **ssh** (the default, no dependency — it uses the system
+  `ssh` client, so your config, keys, agent and jump hosts apply) or **WinRM**
+  (`netboot[winrm]`). The transport host and the DHCP server are separate:
+  `server=` becomes `-ComputerName` when the cmdlets should act elsewhere. The
+  scope is the zone's network address, resolved when the target is applied and
+  overridable per zone. No value is interpolated into the script: parameters
+  travel as a JSON payload PowerShell parses, so a target name or option value
+  cannot become a statement.
 - Anything that varies per target is refused in a connection string and resolved
   when the target is applied instead: `subnet_id`/`scope` belong to the zone,
   `boot-file-name`/`next-server`/`tftp-server-name` to the image or target. The
