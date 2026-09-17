@@ -24,6 +24,10 @@ _SHIPPED = {
     "windhcp": "netboot[winrm] for WinRM (ssh needs nothing)",
 }
 
+#: Scheme -> the module that defines it, when they differ (`keas://` is the
+#: same backend as `kea://`, over https).
+_ALIASES = {"keas": "kea"}
+
 
 def _load_backend(scheme: "str|None") -> None:
     """Import the shipped backend for `scheme`, if there is one.
@@ -35,10 +39,11 @@ def _load_backend(scheme: "str|None") -> None:
     """
     if not scheme or not scheme.isidentifier():
         return
+    module = _ALIASES.get(scheme, scheme)
     try:
-        _importlib.import_module(f"{__name__}.{scheme}")
+        _importlib.import_module(f"{__name__}.{module}")
     except ModuleNotFoundError as exc:
-        if exc.name != f"{__name__}.{scheme}":
+        if exc.name != f"{__name__}.{module}":
             raise  # the backend imported, one of *its* imports is missing
 
 

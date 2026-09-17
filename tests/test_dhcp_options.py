@@ -244,10 +244,22 @@ def test_the_hook_sees_the_options_and_can_change_them():
     assert options["ntp-servers"] == "10.0.0.123"
 
 
-def test_an_unknown_scheme_names_the_extra_for_a_shipped_backend(caplog):
-    with caplog.at_level(logging.DEBUG, logger="netboot"):
-        with pytest.raises(ValueError, match=r"netboot\[kea\]"):
-            DhcpServer("kea://10.0.0.1:8000")
+def test_an_unknown_scheme_says_how_to_provide_one():
+    with pytest.raises(ValueError, match="--load-module"):
+        DhcpServer("nosuchscheme://host")
+
+
+def test_a_shipped_scheme_that_is_not_built_yet_names_its_extra():
+    # Self-adjusting: as each backend lands, it drops out of this check by
+    # constructing successfully instead.
+    from netboot.dhcp import _SHIPPED, _load_backend
+
+    for scheme, hint in _SHIPPED.items():
+        _load_backend(scheme)
+        if any(c.__name__ == scheme for c in DhcpServer.__subclasses__()):
+            continue
+        with pytest.raises(ValueError, match="install"):
+            DhcpServer(f"{scheme}://host/")
 
 
 def test_dhcp_options_copy_keeps_raw():

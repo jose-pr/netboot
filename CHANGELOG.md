@@ -26,6 +26,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   marked region and never touches a line it did not write. `reload=` runs a
   command, over ssh when the URI names a host; omitting it is fine for a watched
   directory and an error for a file, which dnsmasq never re-reads by itself.
+- **A Kea backend** (`kea://`, `keas://` for https). It sends `reservation-add`
+  and `reservation-del` to the control agent, mapping `boot-file-name`,
+  `next-server` and `host-name` onto reservation *fields* and everything else
+  onto `option-data`. The `subnet-id` comes from the zone (`subnet_id:`) or is
+  discovered once by matching the zone's network against `config-get`; when
+  neither works netboot refuses rather than guessing, because a reservation in
+  the wrong subnet silently never matches. A `result: 2` from Kea is reported
+  with the likely cause (host_cmds not loaded, or a read-only hosts backend),
+  and an existing reservation for the same MAC is refused rather than
+  overwritten. Needs `netboot[kea]`.
 - Anything that varies per target is refused in a connection string and resolved
   when the target is applied instead: `subnet_id`/`scope` belong to the zone,
   `boot-file-name`/`next-server`/`tftp-server-name` to the image or target. The
