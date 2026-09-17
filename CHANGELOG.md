@@ -12,6 +12,12 @@ netboot ships DHCP backends. Additive: nothing documented changed behaviour,
 and a config that named no `dhcpservers` scheme netboot implements works as
 before.
 
+### Fixed
+- A repository `address` of the form `host:port` no longer sends the whole
+  string to DNS. The port is split off first, so `mirror.example:8080`
+  resolves `mirror.example` — the old lookup could only fail, and did so at
+  different speeds on different machines.
+
 ### Added
 - `netboot.dhcp` is a package, and DHCP backends carry **client options**. A
   `dhcpservers` entry is still a plain URI string; its query string now holds the

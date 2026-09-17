@@ -14,6 +14,20 @@ from ..utils.net import Host
 _HTTP_SCHEMES = ("http", "https")
 
 
+def _split_port(text: str) -> "tuple[str, _ty.Optional[int]]":
+    """Split `host:port`, `[v6]:port` or a bare host into its two parts."""
+    if not text:
+        return "", None
+    if text.startswith("["):  # [2001:db8::1]:8080
+        literal, _, rest = text.partition("]")
+        port = rest.lstrip(":")
+        return literal + "]", int(port) if port.isdigit() else None
+    head, sep, tail = text.rpartition(":")
+    if sep and tail.isdigit() and head and ":" not in head:
+        return head, int(tail)
+    return text, None
+
+
 def _scheme_of(value: object) -> str:
     """The scheme of a configured service URI, or ``""`` for a bare path."""
     text = str(value)
@@ -124,18 +138,18 @@ class Repository(_NS):
     def _service_host(self, scheme: str) -> "tuple[str, _ty.Optional[int]]":
         """The authority for a relative service path: host and optional port.
 
-        TLS is the exception to resolving: a certificate is issued for a name,
-        and a name-based virtual host needs one too, so `https` keeps the
+        The port is split off **before** anything is resolved: an address like
+        `mirror.example:8080` is a host and a port, and asking DNS for the whole
+        string is a lookup that can only fail (slowly, and differently on every
+        machine).
+
+        TLS is the exception to resolving at all: a certificate is issued for a
+        name, and a name-based virtual host needs one too, so `https` keeps the
         address as configured. Other schemes use the resolved IP, because a PXE
         client often has no working DNS when it fetches its boot files.
         """
-        configured = str(self.address)
-        text = (
-            configured
-            if scheme == "https" and configured
-            else str(self.address.try_ip())
-        )
-        if not text:
+        host, port = _split_port(str(self.address))
+        if not host:
             LOGGER.warning(
                 "repository has no address, so %s:// URLs are built without a "
                 "host; give the repo an `address`, or write the service as a "
@@ -143,16 +157,9 @@ class Repository(_NS):
                 scheme,
             )
             return "", None
-        if text.startswith("["):  # [2001:db8::1]:8080
-            literal, _, rest = text.partition("]")
-            port = rest.lstrip(":")
-            return literal + "]", int(port) if port.isdigit() else None
-        head, sep, tail = text.rpartition(":")
-        if sep and tail.isdigit() and head and ":" not in head:
-            # "mirror.example:8080" is a host and a port, not a host whose name
-            # contains a colon (which percent-encoded into `%3A`).
-            return head, int(tail)
-        return text, None
+        if scheme == "https":
+            return host, port
+        return str(Host(host).try_ip()), port
 
     def service(self, name: str):
         """The base URI for a service name, `None` for `.local` when unset.

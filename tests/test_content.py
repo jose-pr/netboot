@@ -200,14 +200,18 @@ def test_repository_joinpath_chains_without_local():
 
 
 @requires_http
-def test_a_host_and_port_address_builds_a_real_authority():
-    # "mirror.example:8080" used to percent-encode the colon into the hostname.
+def test_a_host_and_port_address_builds_a_real_authority(monkeypatch):
+    # "mirror.example:8080" used to percent-encode the colon into the hostname,
+    # and the whole string was handed to DNS -- a lookup that can only fail, and
+    # does so at different speeds on different machines. Nothing here resolves.
+    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
     repo = Repository(address="mirror.example:8080", services={"http": "/boot"})
     assert str(repo.service("http")).startswith("http://mirror.example:8080/")
 
 
 @requires_http
-def test_an_ipv6_literal_address_keeps_its_brackets():
+def test_an_ipv6_literal_address_keeps_its_brackets(monkeypatch):
+    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
     repo = Repository(address="[2001:db8::1]:8080", services={"http": "/boot"})
     assert str(repo.service("http")).startswith("http://[2001:db8::1]:8080/")
 

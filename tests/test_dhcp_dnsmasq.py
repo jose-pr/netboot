@@ -147,7 +147,11 @@ def test_a_remote_reload_runs_over_ssh(tmp_path, engine_factory, monkeypatch):
         text = str(value)
         prefix = "sftp://admin@dhcp01"
         if text.startswith(prefix):
-            return real_parse_path(text[len(prefix) :].lstrip("/"))
+            # Keep the leading separator: stripping it made the path relative to
+            # the working directory, which wrote the reservation into the
+            # checkout on POSIX and passed by luck on Windows (where the
+            # remainder starts with a drive letter).
+            return real_parse_path(text[len(prefix) :])
         return real_parse_path(text)
 
     monkeypatch.setattr("netboot.dhcp.dnsmasq.parse_path", fake_parse_path)
@@ -159,9 +163,6 @@ def test_a_remote_reload_runs_over_ssh(tmp_path, engine_factory, monkeypatch):
         "netboot.dhcp.dnsmasq._subprocess.run",
         lambda argv, **kw: recorded.append(argv),
     )
-    # No leading slash before the drive: the stub strips the sftp prefix and
-    # what remains must still be an absolute local path, or the test writes a
-    # `c/Users/...` tree into the repository.
     uri = (
         "dnsmasq://admin@dhcp01/?hostsfile="
         f"{hosts.as_posix()}/&optsfile={opts.as_posix()}/"
