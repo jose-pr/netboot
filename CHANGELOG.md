@@ -73,6 +73,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of turning it into `None`, and `get_local_server` accepts the strings
   config actually holds rather than raising on them. Two plugins claiming one
   URI scheme now log a warning naming both.
+- A `Pixie` subclass's annotated attribute keeps its class default when the
+  config does not mention it (it was overwritten with `None`), and an
+  `Optional[...]` annotation no longer crashes construction — its origin is not
+  a constructor, and on 3.9 it is not even a class.
+- The `_id` retry when building a config object only catches "this class takes
+  no `_id`"; any other `TypeError` from the value class propagates instead of
+  being hidden behind a second construction attempt.
 - `Pixie.globals` is really the deep copy the docs promised. The copy made in
   `__init__` was immediately overwritten by the annotated-attribute loop, so
   nested values stayed shared with the caller's config dict (mutating

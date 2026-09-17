@@ -228,3 +228,23 @@ def test_underscore_prefixed_globals_are_kept():
     # `_internal` is just a variable name.
     engine = netboot.Pixie(globals={"_internal": 1, "plain": 2})
     assert engine.globals == {"_internal": 1, "plain": 2}
+
+
+def test_a_subclass_attribute_keeps_its_class_default():
+    class _WithDefault(netboot.Pixie):
+        label: str = "default-label"
+
+    engine = _WithDefault(targets={}, images={}, dhcpzones={})
+    # An annotated attribute the config does not mention used to be set to None.
+    assert engine.label == "default-label"
+
+
+def test_an_optional_annotation_does_not_crash_construction():
+    import typing
+
+    class _WithOptional(netboot.Pixie):
+        note: typing.Optional[str] = None
+
+    engine = _WithOptional(note="hello", targets={}, images={}, dhcpzones={})
+    # `Optional[str]` is not callable; coercion must skip it rather than raise.
+    assert engine.note == "hello"

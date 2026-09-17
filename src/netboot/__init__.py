@@ -84,7 +84,10 @@ class PixieConfigError(PixieError, ValueError):
 class PixieTarget(Namespace, OpaqueMerge):
     _id: str
     hostname: str
-    ip: IPAddress
+    #: An `IPAddress` once known, but `""` while it is not: a MAC-keyed target
+    #: whose hostname did not resolve has no address, and callers test it for
+    #: truthiness rather than assuming one.
+    ip: "Union[IPAddress, str]"
     mac: MACAddress
     image: str
     dhcpzone: str
@@ -172,11 +175,8 @@ class PixieContext(Namespace):
     _renderer: Renderer
 
     def __init__(self, **kwargs) -> None:
-        self.dhcp_server = None
         self.generated = datetime.datetime.now()
         super().__init__(**kwargs)
-
-    def init(self, netboot: "Pixie"): ...
 
     def resource(self, name: Union[str, Resource], service: str = None):
         if isinstance(name, Resource):
@@ -318,7 +318,7 @@ class Pixie:
     images: "dict[str, PixieImage]"
     repos: "dict[str,Repository]"
     globals: dict[str, object]
-    _ctxcls: PixieContext = PixieContext
+    _ctxcls: "type[PixieContext]" = PixieContext
     VERSION = __version__
     _config: dict
     _hooks: list[_PixieHook] = []
@@ -375,7 +375,9 @@ class Pixie:
                 # which in globals are ordinary variable names rather than the
                 # collection ids that rule is meant for.
                 _value = netboot.globals
-            elif issubclass(origin, dict):
+            # `isinstance(origin, type)` first: a union annotation's origin is
+            # not a class at all on 3.9, and `issubclass` raises on it.
+            elif isinstance(origin, type) and issubclass(origin, dict):
                 value: dict[str] = value or {}
                 _keycls, _valcls = _ty.get_args(hint)
                 _value = {}
@@ -404,15 +406,30 @@ class Pixie:
                             val = _val
                         try:
                             return _valcls(_id=_id, **val)
-                        except TypeError:
-                            # _valcls doesn't accept an _id kwarg; build without.
+                        except TypeError as exc:
+                            # Only "this class takes no _id" justifies a retry;
+                            # any other TypeError is the value class's own and
+                            # must not be hidden behind a second construction.
+                            if "_id" not in str(exc):
+                                raise
                             return _valcls(**val)
 
                 for uid, val in value.items():
                     if not str(uid).startswith("_"):
                         _value[_keycls(uid)] = _valctr(uid, val)
+            elif value is None:
+                # Leave a class-level default in place instead of overwriting
+                # it with None just because the config does not mention it.
+                _value = getattr(netboot, prop, None)
             else:
-                _value = hint(value) if value is not None else None
+                # Coerce through the annotation when it is a real constructor.
+                # `Optional[str]` is not one: under PEP 604 its origin is
+                # `types.UnionType`, which passes `isinstance(..., type)` and
+                # then refuses to be called.
+                try:
+                    _value = origin(value) if isinstance(origin, type) else value
+                except TypeError:
+                    _value = value
             prop, value = netboot.hook(
                 PixieEvent.SetPixieProperty,
                 (prop, _value),
@@ -462,7 +479,7 @@ class Pixie:
             )
         return matches[0] if matches else None
 
-    def lookup_target(self, target: str) -> PixieTarget:
+    def lookup_target(self, target: str) -> "PixieTarget|None":
         target: Union[str, PixieTarget] = self.hook(PixieEvent.LookupTarget, target)
         if isinstance(target, str):
             _target = self._match_target(target)
@@ -474,7 +491,7 @@ class Pixie:
             target = None
         return target
 
-    def lookup_image(self, name: str, target: PixieTarget = None) -> PixieImage:
+    def lookup_image(self, name: str, target: PixieTarget = None) -> "PixieImage|dict":
         """The best-matching image, or a falsy `{}` when none matches.
 
         `match` may return a bool or a comparable score; anything falsy --
@@ -492,7 +509,7 @@ class Pixie:
                 best_score, best_image = score, image
         return self.hook(PixieEvent.FoundTargetImage, best_image, target=target)
 
-    def lookup_dhcpzone(self, name: str, target: PixieTarget = None) -> DhcpZone:
+    def lookup_dhcpzone(self, name: str, target: PixieTarget = None) -> "DhcpZone|None":
         if not name and target:
             if target.dhcpzone:
                 name = target.dhcpzone
