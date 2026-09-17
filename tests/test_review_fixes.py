@@ -107,3 +107,19 @@ def test_valctr_typeerror_only_not_bare_except():
     # than being swallowed by a bare except and retried without _id.
     with pytest.raises(ValueError):
         _BoomPixie(things={"x": {}})
+
+
+def test_engine_globals_are_isolated_from_the_caller_config():
+    # The deepcopy in __init__ was overwritten by the annotated-attribute loop,
+    # so nested globals stayed shared with the caller's config dict.
+    config = {"globals": {"nested": {"k": "v"}}, "targets": {}, "images": {}}
+    engine = netboot.Pixie(**config)
+    engine.globals["nested"]["k"] = "changed"
+    assert config["globals"]["nested"]["k"] == "v"
+
+
+def test_underscore_prefixed_globals_are_kept():
+    # `_`-prefixed keys are skipped for collections (ids), but a global named
+    # `_internal` is just a variable name.
+    engine = netboot.Pixie(globals={"_internal": 1, "plain": 2})
+    assert engine.globals == {"_internal": 1, "plain": 2}

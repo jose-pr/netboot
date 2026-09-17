@@ -73,22 +73,34 @@ class PixieTarget(Namespace, OpaqueMerge):
                 self.mac = self._NULL_MAC
         if not isinstance(self.mac, MACAddress):
             self.mac = MACAddress(self.mac)
-        resolve = not self.ip or not self.hostname
-        while resolve:
-            resolve = False
-            not_mac = not MACAddress._VALID_MAC.match(self._id)
-            id_is_ip = netutils.is_valid(self._id, netutils.IPAddress)
-            if not self.ip and self.hostname:
+        # Fill in whatever the id itself tells us, then resolve at most once.
+        # This is deliberately not a loop: `resolve()` answers [] for a name
+        # that does not resolve, so retrying asks the same question forever --
+        # and every target is built at startup, so one unresolvable entry used
+        # to hang every command.
+        id_str = str(getattr(self, "_id", "") or "")
+        id_is_mac = bool(MACAddress._VALID_MAC.match(id_str))
+        id_is_ip = netutils.is_valid(id_str, netutils.IPAddress)
+        if not self.ip and id_is_ip:
+            self.ip = id_str
+        if not self.hostname and not id_is_mac and not id_is_ip:
+            self.hostname = id_str
+        if not self.ip and self.hostname:
+            try:
                 _resolved = netutils.resolve(self.hostname)
-                if _resolved:
-                    self.ip = _resolved[0]
-                resolve = True
-            if not self.ip and id_is_ip:
-                self.ip = self._id
-                resolve = True
-            if not self.hostname and not_mac and not id_is_ip:
-                self.hostname = self._id
-                resolve = True
+            except ValueError as exc:  # malformed name: not worth killing the run
+                _resolved = None
+                LOGGER.warning(
+                    "target %s: %r is not resolvable: %s", id_str, self.hostname, exc
+                )
+            if _resolved:
+                self.ip = _resolved[0]
+            elif _resolved is not None:
+                LOGGER.warning(
+                    "target %s: hostname %r did not resolve; its ip stays unset",
+                    id_str,
+                    self.hostname,
+                )
         if self.ip:
             self.ip = netutils.try_parse(self.ip, netutils.IPAddress)
         self.hostname = self.hostname.lower()
@@ -97,6 +109,12 @@ class PixieTarget(Namespace, OpaqueMerge):
 class PixieImage(Resource):
     template_path: list["Path"]
     globals: dict
+
+    def __init__(self, **kwargs) -> None:
+        # `searchpaths` reads this on every render, so an image that simply
+        # does not declare one must still have the empty list.
+        kwargs.setdefault("template_path", [])
+        super().__init__(**kwargs)
 
     def match(self, name: str, check: str):
         return name == check
@@ -110,7 +128,6 @@ class PixieContext(Namespace):
     generated: datetime.datetime
     resources: dict[str, Resource]
     version: str
-    templates: list[Union[str, Path]]
     _renderer: Renderer
 
     def __init__(self, **kwargs) -> None:
@@ -268,7 +285,13 @@ class Pixie:
             origin = _ty.get_origin(hint) or hint
             value = config.get(prop)
             prop_defaults = defaults.get(prop)
-            if issubclass(origin, dict):
+            if prop == "globals":
+                # Keep the deep copy made above -- rebuilding it here would
+                # undo the isolation, and would drop `_`-prefixed entries,
+                # which in globals are ordinary variable names rather than the
+                # collection ids that rule is meant for.
+                _value = netboot.globals
+            elif issubclass(origin, dict):
                 value: dict[str] = value or {}
                 _keycls, _valcls = _ty.get_args(hint)
                 _value = {}
@@ -303,22 +326,50 @@ class Pixie:
 
         netboot.hook(PixieEvent.PixieInitiated)
 
+    def _match_target(self, query: str) -> "PixieTarget|None":
+        """Find the target a user means by id, hostname, MAC or IP.
+
+        An exact match anywhere in the table beats a prefix match, and an
+        ambiguous query raises instead of picking whichever entry comes first:
+        guessing here arms PXE on a machine nobody asked for. MAC input is
+        parsed, so colon, hyphen and Cisco-dot spellings all match.
+        """
+        if not query:
+            return None
+        exact = self.targets.get(query, None)
+        if exact is not None:
+            return exact
+
+        lower = query.lower()
+        mac = netutils.try_parse(query, MACAddress)
+        if mac is not None and str(mac) == PixieTarget._NULL_MAC:
+            mac = None  # the "unset" MAC must not match every MAC-less target
+        ip = netutils.try_parse(query, netutils.IPAddress)
+        matches = [
+            candidate
+            for candidate in self.targets.values()
+            if candidate.hostname.lower() == lower
+            or (mac is not None and candidate.mac == mac)
+            or (ip is not None and candidate.ip == ip)
+        ]
+        if not matches:
+            matches = [
+                candidate
+                for candidate in self.targets.values()
+                if candidate.hostname and candidate.hostname.lower().startswith(lower)
+            ]
+        if len(matches) > 1:
+            raise LookupError(
+                f"ambiguous target {query!r}: matches "
+                f"{sorted(str(candidate._id) for candidate in matches)}"
+            )
+        return matches[0] if matches else None
+
     def lookup_target(self, target: str) -> PixieTarget:
         target: Union[str, PixieTarget] = self.hook(PixieEvent.LookupTarget, target)
         if isinstance(target, str):
-            lower: str = target.lower()
-            _target = self.targets.get(target, None)
-            if _target is None:
-                for _target in self.targets.values():
-                    if (
-                        _target.hostname.lower().startswith(lower)
-                        or _target.mac.as_str() == lower
-                        or str(_target.ip) == lower
-                    ):
-                        target = _target
-                        break
-
-            else:
+            _target = self._match_target(target)
+            if _target is not None:
                 target = _target
 
         target = self.hook(PixieEvent.FoundTarget, target)
@@ -339,9 +390,12 @@ class Pixie:
         if not name and target:
             if target.dhcpzone:
                 name = target.dhcpzone
-            else:
+            elif target.ip:
+                # Containment needs a real address: a MAC-keyed target whose
+                # hostname never resolved has `ip == ""`, and `"" in network`
+                # raises AttributeError rather than returning False.
                 for zone_id, zone in self.dhcpzones.items():
-                    if target.ip in zone.network:
+                    if zone.network and target.ip in zone.network:
                         name = zone_id
                         target.dhcpzone = zone_id
                         break

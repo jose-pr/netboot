@@ -6,6 +6,8 @@ selection keeps the *highest* comparable `match` return and falls back to `{}`
 result back onto the target.
 """
 
+import pytest
+
 import netboot
 
 
@@ -116,3 +118,88 @@ def test_lookup_dhcpzone_prefers_the_targets_own_zone_over_containment():
 def test_lookup_dhcpzone_returns_none_for_an_unknown_name():
     p = _netboot_two_zones()
     assert p.lookup_dhcpzone("nosuchzone") is None
+
+
+def _netboot_with_targets(targets):
+    return netboot.Pixie(
+        images={"debian": {"template_path": []}},
+        dhcpzones={"lan": {"network": "10.0.0.0/24"}},
+        targets=targets,
+    )
+
+
+_TWO_HOSTS = {
+    "aa:bb:cc:00:00:10": {"hostname": "node10", "ip": "10.0.0.10", "image": "debian"},
+    "aa:bb:cc:00:00:01": {"hostname": "node1", "ip": "10.0.0.1", "image": "debian"},
+}
+
+
+def test_exact_hostname_beats_an_earlier_prefix_match():
+    # Regression: "node1" used to return node10 -- the first prefix hit won,
+    # so initiate armed PXE on a machine nobody asked for.
+    engine = _netboot_with_targets(_TWO_HOSTS)
+    assert engine.lookup_target("node1").hostname == "node1"
+    assert engine.lookup_target("node10").hostname == "node10"
+
+
+def test_a_unique_prefix_still_matches():
+    engine = _netboot_with_targets(_TWO_HOSTS)
+    assert engine.lookup_target("node1").hostname == "node1"
+    engine = _netboot_with_targets(
+        {"aa:bb:cc:00:00:10": {"hostname": "node10", "image": "debian"}}
+    )
+    assert engine.lookup_target("nod").hostname == "node10"
+
+
+def test_an_ambiguous_prefix_raises_instead_of_guessing():
+    engine = _netboot_with_targets(
+        {
+            "aa:bb:cc:00:00:10": {"hostname": "node10", "image": "debian"},
+            "aa:bb:cc:00:00:11": {"hostname": "node11", "image": "debian"},
+        }
+    )
+    with pytest.raises(LookupError, match="ambiguous"):
+        engine.lookup_target("node1")
+
+
+def test_empty_query_matches_nothing():
+    # An unset shell variable must not silently select the first target.
+    assert _netboot_with_targets(_TWO_HOSTS).lookup_target("") is None
+
+
+@pytest.mark.parametrize(
+    "spelling", ["aa:bb:cc:00:00:01", "AA-BB-CC-00-00-01", "aabb.cc00.0001"]
+)
+def test_mac_is_matched_in_every_spelling(spelling):
+    assert _netboot_with_targets(_TWO_HOSTS).lookup_target(spelling).hostname == "node1"
+
+
+def test_ip_is_matched():
+    assert (
+        _netboot_with_targets(_TWO_HOSTS).lookup_target("10.0.0.10").hostname
+        == "node10"
+    )
+
+
+def test_mac_less_targets_are_not_all_matched_by_the_null_mac():
+    engine = _netboot_with_targets(
+        {
+            "host1": {"hostname": "host1", "ip": "10.0.0.5", "image": "debian"},
+            "host2": {"hostname": "host2", "ip": "10.0.0.6", "image": "debian"},
+        }
+    )
+    assert engine.lookup_target("00:00:00:00:00:00") is None
+
+
+def test_zone_lookup_without_an_ip_returns_none_instead_of_raising(monkeypatch):
+    # A MAC-keyed target whose hostname never resolved has ip == "", and
+    # `"" in network` used to raise AttributeError from ipaddress.
+    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
+    p = netboot.Pixie(
+        images={"debian": {}},
+        dhcpzones={"lan": {"network": "10.0.0.0/24"}},
+        targets={"aa:bb:cc:00:00:09": {"image": "debian"}},
+    )
+    target = p.lookup_target("aa:bb:cc:00:00:09")
+    assert not target.ip
+    assert p.lookup_dhcpzone("", target) is None
