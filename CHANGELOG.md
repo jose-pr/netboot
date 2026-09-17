@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-17
+
+netboot ships DHCP backends. Additive: nothing documented changed behaviour,
+and a config that named no `dhcpservers` scheme netboot implements works as
+before.
+
 ### Added
 - `netboot.dhcp` is a package, and DHCP backends carry **client options**. A
   `dhcpservers` entry is still a plain URI string; its query string now holds the
@@ -508,7 +514,8 @@ First packaged release: the `netboot` library with the `pixie` command line.
   config value construction no longer swallows non-`TypeError` errors; repo
   `joinpath` keeps `.local` a path so chained joins work.
 
-[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/jose-pr/netboot/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jose-pr/netboot/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/jose-pr/netboot/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jose-pr/netboot/compare/v0.1.1...v0.1.2
