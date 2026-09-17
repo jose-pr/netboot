@@ -107,6 +107,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Other schemes still resolve, since a PXE client often has no DNS yet.
 - `repo / "/sub"` extends the repository root instead of replacing it, and a
   trailing slash no longer doubles up.
+- A relative `template_path` is resolved inside the template roots
+  (`config["templates"]`, `./templates` by default) rather than against the
+  process's working directory, so a config means the same thing whichever
+  directory `pixie` runs from. An image's or target's `template_path` still
+  *extends* the roots, which are searched last; absolute paths and URIs are used
+  as given. A config that wrote `template_path: [templates/debian]` to reach
+  `./templates/debian` should now write `[debian]`.
 - Rendered artifacts keep the template's final newline. The Jinja engine dropped
   it while the shell engine kept it, so the same content rendered differently
   depending on the file's suffix, and a kickstart or iPXE script could end

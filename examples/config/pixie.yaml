@@ -14,7 +14,7 @@ targets:
 
 images:
   debian:
-    template_path: [templates/debian]
+    template_path: [debian]        # relative: searched inside the template root
     globals:
       kernel: vmlinuz
 

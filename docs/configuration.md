@@ -24,7 +24,7 @@ targets:
 # What a target boots. template_path is searched for that image's templates.
 images:
   debian:
-    template_path: [templates/debian]
+    template_path: [debian]        # relative: searched inside the template root
     globals:
       kernel: vmlinuz
 
@@ -50,6 +50,25 @@ repos:
       http: http://mirror.example.com/debian
     local: /srv/mirror/debian
 ```
+
+## Where templates are looked for
+
+`templates` is the list of **template roots** — the CWD's `templates` directory
+is always prepended, so `./templates` is the default root and a config that
+names none still works.
+
+An image's or target's `template_path` **extends** the search path; it does not
+replace the roots, and the roots are always searched last:
+
+- a **relative** entry is resolved inside each root, so `template_path: [debian]`
+  means `./templates/debian`. A config therefore means the same thing whichever
+  directory `pixie` runs from — it used to be resolved against the process's
+  working directory, which is not where the config lives;
+- an **absolute** path or a **URI** (`/srv/tftp/tpl`, `http://boot/tpl`) is used
+  as given.
+
+A repository's `src`/`path` on an image address its *artifacts* (kernel,
+initrd), never its templates.
 
 ## Interpolation, includes and trust
 

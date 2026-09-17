@@ -104,7 +104,9 @@ project overview, install instructions and CLI usage, see the shipped
   it netimps still resolves through its system/`nslookup` backends.
 
 - **`PixieImage(**kwargs)`** (`content.Resource`) — `template_path`,
-  `globals`. **`.match(name: str, check: str)`** — override point for custom
+  `globals`, plus `Resource`'s `src`/`path`, which address the image's
+  **artifacts** in a repository (kernel, initrd) and play no part in template
+  lookup. **`.match(name: str, check: str)`** — override point for custom
   image-selection logic; default is `name == check`. Returning a comparable
   (e.g. `int`) instead of a bare bool lets `Pixie.lookup_image` prefer the
   best of several matches.
@@ -128,9 +130,12 @@ project overview, install instructions and CLI usage, see the shipped
     or resource can't be found.
   - **`.resource_repo(name: str) -> Repository | None`** — the `Repository`
     backing resource `name`.
-  - **`.searchpaths -> list[Path]`** — `target.template_path + image.template_path`,
-    consulted (before the engine-wide `config["templates"]`) when resolving a
-    template name.
+  - **`.searchpaths -> list[Path]`** — `target.template_path +
+    image.template_path`. These **extend** the engine-wide template roots
+    (`config["templates"]`, `./templates` by default) and are consulted before
+    them. A *relative* entry is resolved inside each root
+    (`template_path: [debian]` -> `<root>/debian`), so it does not depend on the
+    process's working directory; an absolute path or a URI is used as given.
   - **`.pxe_init(netboot) -> Self`** / **`.pxe_complete(netboot) -> Self`** —
     arm/disarm every `dhcpzone.dhcpservers` for this context; called by
     `Pixie.initialize`/`.complete`, not usually invoked directly. `pxe_init`

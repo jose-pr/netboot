@@ -252,3 +252,39 @@ def test_a_template_name_cannot_escape_the_search_paths(templates_dir):
     ctx = p.make_context(p.lookup_target("host1"))
     with pytest.raises(TemplateNotFound):
         ctx.render("../../../etc/passwd")
+
+
+def test_a_relative_template_path_resolves_inside_the_template_root(tmp_path):
+    # `template_path: [debian]` means <template root>/debian, not
+    # <cwd>/debian: the config must mean the same thing from any directory.
+    root = tmp_path / "templates"
+    (root / "debian").mkdir(parents=True)
+    (root / "debian" / "boot.j2").write_text("img={{ ctx.image._id }}")
+    config = {
+        "templates": [root],
+        "images": {"debian": {"template_path": ["debian"]}},
+        "dhcpzones": {"lan": {"network": "10.0.0.0/24"}},
+        "targets": {
+            "host1": {"hostname": "host1", "ip": "10.0.0.5", "image": "debian"}
+        },
+    }
+    p = netboot.Pixie(**config)
+    ctx = p.make_context(p.lookup_target("host1"))
+    assert ctx.render("boot.j2") == "img=debian"
+
+
+def test_an_absolute_template_path_is_used_as_given(tmp_path):
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "boot.j2").write_text("from=elsewhere")
+    config = {
+        "templates": [tmp_path / "templates"],
+        "images": {"debian": {"template_path": [str(outside.resolve())]}},
+        "dhcpzones": {"lan": {"network": "10.0.0.0/24"}},
+        "targets": {
+            "host1": {"hostname": "host1", "ip": "10.0.0.5", "image": "debian"}
+        },
+    }
+    p = netboot.Pixie(**config)
+    ctx = p.make_context(p.lookup_target("host1"))
+    assert ctx.render("boot.j2") == "from=elsewhere"

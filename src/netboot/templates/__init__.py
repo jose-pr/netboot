@@ -14,8 +14,38 @@ if TYPE_CHECKING:
 
 from jinja2.loaders import BaseLoader as _JinjaLoader
 
+#: Where a relative template path is looked for when the config names no
+#: template root of its own.
+DEFAULT_TEMPLATE_DIR = "templates"
+
+
+def _is_anchored(path: Path) -> bool:
+    """Does this path carry its own root (so no template dir applies)?
+
+    A URI is anchored by its authority; a local path by a drive or a leading
+    separator. `LocalPath("/srv/tftp").is_absolute()` is False on Windows -- no
+    drive -- but a rooted path is still not something to look for *inside* a
+    template directory.
+    """
+    if getattr(path, "source", None):
+        return True
+    try:
+        if path.is_absolute():
+            return True
+    except (AttributeError, NotImplementedError):  # pragma: no cover
+        return True
+    return str(path).startswith(("/", "\\"))
+
 
 class Loader(_JinjaLoader):
+    """Resolves template names against the configured template roots.
+
+    `searchpaths` are the roots (`config["templates"]`, `./templates` by
+    default). A *relative* per-target or per-image `template_path` is resolved
+    inside each root rather than against the process's working directory, so a
+    config means the same thing whichever directory `pixie` was run from.
+    """
+
     def __init__(
         self,
         searchpaths: list,
@@ -63,10 +93,17 @@ class Loader(_JinjaLoader):
         # A `http://...` entry in `templates` or in an image's
         # `template_path` is a URI, not a directory named "http:" under the
         # CWD -- which is what `Path(".") / str(path)` used to make of it.
-        searchpaths: list[Path] = [
-            path if isinstance(path, Path) else parse_path(str(path))
-            for path in [*((ctx.searchpaths if ctx else None) or []), *self.searchpaths]
-        ]
+        roots: list[Path] = self.searchpaths or [parse_path(DEFAULT_TEMPLATE_DIR)]
+        searchpaths: list[Path] = []
+        for path in (ctx.searchpaths if ctx else None) or []:
+            path = path if isinstance(path, Path) else parse_path(str(path))
+            if _is_anchored(path):
+                searchpaths.append(path)
+            else:
+                # `template_path: [debian]` means `<template root>/debian`,
+                # for every configured root.
+                searchpaths.extend(root / str(path) for root in roots)
+        searchpaths.extend(roots)
 
         # Without a context there is no target to name candidates after, but a
         # plain name must still resolve: `Loader` is usable on its own.
