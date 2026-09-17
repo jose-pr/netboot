@@ -62,22 +62,38 @@ class Loader(_JinjaLoader):
                     searchpath = searchpath / parent
                 if not searchpath.exists():
                     continue
-                for path in searchpath.iterdir():
-                    if path.name == filename or path.stem == filename:
-                        contents = path.read_text()
-                        mtime = path.stat().st_mtime
+                # An exact filename always wins; among stem matches
+                # (`boot` -> `boot.j2`, `boot.sh`, `boot.j2.bak`) take the
+                # first by name, so the result does not depend on the order
+                # the filesystem happens to hand back.
+                path = None
+                for entry in searchpath.iterdir():
+                    if entry.name == filename:
+                        path = entry
+                        break
+                    if entry.stem == filename and (
+                        path is None or entry.name < path.name
+                    ):
+                        path = entry
+                if path is None:
+                    continue
 
-                        def uptodate() -> bool:
-                            try:
-                                return path.stat().st_mtime == mtime
-                            except OSError:
-                                return False
+                # Templates are UTF-8, not whatever the machine's locale says:
+                # the same tree must render identically on every host.
+                contents = path.read_text(encoding="utf-8")
+                mtime = path.stat().st_mtime
 
-                        try:
-                            fspath = path.__fspath__()
-                        except NotImplementedError:
-                            fspath = "/".join(path.segments)
-                        return contents, fspath, uptodate
+                def uptodate(path=path, mtime=mtime) -> bool:
+                    try:
+                        return path.stat().st_mtime == mtime
+                    except OSError:
+                        return False
+
+                try:
+                    fspath = path.__fspath__()
+                except NotImplementedError:
+                    fspath = "/".join(path.segments)
+                return contents, fspath, uptodate
         raise TemplateNotFound(template)
 
     def load(

@@ -1,6 +1,11 @@
 from argparse import Namespace
 from typing import Mapping, TypeVar
 
+#: Explicit, so `from .dicts import *` (in `netboot.utils`) does not re-export
+#: `argparse.Namespace` under a name consumers would read as netboot's own
+#: config `Namespace` (which lives in `netboot.utils.config`).
+__all__ = ["T", "flatten", "arr_get", "shell_quote"]
+
 T = TypeVar("T")
 
 
@@ -39,11 +44,31 @@ def arr_get(arr: list, pos: int, default=None):
         return default
 
 
-def shell_quote(text: "str|list[str]", quote='"'):
-    is_arr = isinstance(text, list)
-    if not is_arr:
-        text = [text]
-    result: list[str] = []
-    for t in text:
-        result.append(f"{quote}{t}{quote}")
-    return result
+def shell_quote(text: "str|list[str]", quote="'"):
+    """Quote value(s) so a POSIX shell reads them as literal text.
+
+    A `str` in gives a `str` out (so ``{{ shell_quote(v) }}`` renders the value,
+    not a Python list); a list in gives a list out, quoted element-wise. Values
+    that are not strings are stringified first, and ``None`` becomes an empty
+    quoted string.
+
+    ``quote="'"`` (the default) is the safe form: nothing inside single quotes
+    is special to the shell, and an embedded ``'`` is closed, escaped and
+    reopened. ``quote='"'`` keeps the shell's own expansion rules, so only the
+    characters that would end the string or start an expansion (``"``, ``\\``,
+    ``` ` ```, ``$``) are escaped -- use it only when the template *wants*
+    expansion inside the value.
+    """
+    if quote not in ("'", '"'):
+        raise ValueError(f"shell_quote: quote must be ' or \", not {quote!r}")
+
+    def _one(value) -> str:
+        value = "" if value is None else str(value)
+        if quote == "'":
+            return "'" + value.replace("'", "'\\''") + "'"
+        escaped = "".join("\\" + char if char in '"\\`$' else char for char in value)
+        return '"' + escaped + '"'
+
+    if isinstance(text, (list, tuple)):
+        return [_one(item) for item in text]
+    return _one(text)

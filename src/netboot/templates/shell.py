@@ -1,11 +1,26 @@
 from string import Template as _BasicTemplate
 
+from pathlib_next import Path
+
 from ..utils import flatten
-from .common import *
+from .common import Template
 
 
 class _Basic(_BasicTemplate):
     delimiter = "%"
+    #: Braced form only. `string.Template` would also accept a bare `%name`
+    #: and, worse, treat an unknown one as *invalid* and raise -- which made
+    #: every kickstart file (`%packages`, `%pre`, `%post`) unrenderable. The
+    #: `named` and `invalid` groups are kept (the class requires them) but can
+    #: never match, so a bare `%` is ordinary text.
+    pattern = r"""
+    %(?:
+      (?P<escaped>%)                        |
+      (?P<named>(?!))                       |
+      {(?P<braced>[_a-z][_a-z0-9]*)}        |
+      (?P<invalid>(?!))
+    )
+    """
 
 
 class ShellTemplate(Template):
