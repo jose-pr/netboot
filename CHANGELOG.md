@@ -48,6 +48,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now; a bare `%word` is literal text, including one that names a context
   variable. `%%` still yields a literal `%` and an unknown `%{NAME}` still
   raises. A template written with bare placeholders must brace them.
+- Arming DHCP is all or nothing. `pxe_init` stopped at the first backend that
+  raised, leaving the target armed on the earlier ones — it could boot an
+  installer from one server while another handed out its normal lease. The
+  already-armed backends are now rolled back before the error propagates.
+  `pxe_complete` takes the opposite approach: every backend is disarmed even if
+  one fails, and the first error is raised afterwards, instead of leaving the
+  rest armed.
+- `Pixie.complete` no longer needs the target's image to exist. Retiring an
+  image from the config used to make the machines that used it impossible to
+  clean up, because building the context failed before DHCP could be disarmed.
+- A global named `target`, `image`, `dhcpzone`, `repos` or `resources` no longer
+  replaces the render context's own field of that name; it is dropped with a
+  warning.
+- A zone is chosen by longest prefix, not declaration order: with `10.0.0.0/16`
+  and `10.0.0.5/24` both configured, a host in the /24 now gets the /24.
+- A `None` config entry (`targets: {host1:}` — valid YAML meaning "all
+  defaults") no longer crashes with `AttributeError`, and an entry that is
+  neither a mapping nor an object raises `PixieConfigError` naming it.
+- `lookup_image` treats any falsy `match` result as "no match": a `match`
+  override returning `None` used to crash the sort.
+- `DhcpZone` no longer normalises the caller's lists in place (they may be
+  shared through a config merge), drops an unparseable nameserver with a warning
+  instead of turning it into `None`, and `get_local_server` accepts the strings
+  config actually holds rather than raising on them. Two plugins claiming one
+  URI scheme now log a warning naming both.
 - `Pixie.globals` is really the deep copy the docs promised. The copy made in
   `__init__` was immediately overwritten by the annotated-attribute loop, so
   nested values stayed shared with the caller's config dict (mutating

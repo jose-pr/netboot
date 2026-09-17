@@ -20,7 +20,9 @@ project overview, install instructions and CLI usage, see the shipped
 - **`Pixie(hooks=(), **config)`** — the engine. `config` is the merged config
   mapping: `targets`, `images`, `dhcpzones`, `repos` (each a `dict[id, ...]`
   built into the corresponding class via its type hints — `TypeError` from the
-  value class falls back to a no-`_id` constructor call), `globals` (dict;
+  value class falls back to a no-`_id` constructor call; a `None` entry
+  (`targets: {host1:}` in YAML) means "all defaults", and an entry that is
+  neither a mapping nor an object raises `PixieConfigError`), `globals` (dict;
   deep-copied at construction, so later edits to the caller's mapping do not
   reach the engine), `defaults` (per-collection default mappings), plus any other
   annotated `Pixie` attribute. `hooks` is a sequence of callables or
@@ -57,17 +59,23 @@ project overview, install instructions and CLI usage, see the shipped
     if nothing matches (**not** `None` — check truthiness carefully). Fires
     `PixieEvent.FoundTargetImage`.
   - **`.lookup_dhcpzone(name: str, target=None) -> DhcpZone | None`** — by id;
-    if `name` is empty and `target` is given, uses `target.dhcpzone` or finds
-    the zone whose `.network` contains `target.ip` (and caches the id back
-    onto `target.dhcpzone`). Fires `PixieEvent.FoundTargetDhcpzone`.
-  - **`.make_context(target, globals: list[dict] = None) -> PixieContext`** —
-    resolves image + dhcp zone for `target`, merges
+    if `name` is empty and `target` is given, uses `target.dhcpzone`, else the
+    **most specific** zone whose `.network` contains `target.ip` (longest
+    prefix, so declaration order does not decide it) and caches that id back
+    onto `target.dhcpzone`. A target with no usable IP yields `None` rather
+    than raising. Fires `PixieEvent.FoundTargetDhcpzone`.
+  - **`.make_context(target, globals: list[dict] = None, require_image=True)
+    -> PixieContext`** — resolves image + dhcp zone for `target`, merges
     `[self.globals, *globals, image.globals, dhcpzone.globals, target.globals]`
     (image/dhcpzone/target objects are shared across targets and never
     mutated) into a fresh `PixieContext`, attaches a new `Renderer`/`Loader`
-    over `config["templates"]`, and sets `.version`. Raises
-    `PixieLookupError` naming the target and what was configured if the image
-    or dhcp zone cannot be resolved. Fires `PixieEvent.PixieContextForTarget`.
+    over `config["templates"]`, and sets `.version`. Globals named `target`,
+    `image`, `dhcpzone`, `repos` or `resources` are **dropped with a warning**:
+    they would replace the context's own fields. Raises `PixieLookupError`
+    naming the target and what was configured if the image or dhcp zone cannot
+    be resolved; `require_image=False` (what `.complete` uses) substitutes an
+    empty `PixieImage` instead, so a machine can still be cleaned up after its
+    image is retired from the config. Fires `PixieEvent.PixieContextForTarget`.
   - **`.initialize(target) -> PixieContext`** — `make_context` then
     `ctx.pxe_init(self)` (arms every `dhcpzone.dhcpservers` for the target).
     Fires `StartPixieInitialize` / `EndPixieInitialize`.
@@ -125,7 +133,12 @@ project overview, install instructions and CLI usage, see the shipped
     template name.
   - **`.pxe_init(netboot) -> Self`** / **`.pxe_complete(netboot) -> Self`** —
     arm/disarm every `dhcpzone.dhcpservers` for this context; called by
-    `Pixie.initialize`/`.complete`, not usually invoked directly.
+    `Pixie.initialize`/`.complete`, not usually invoked directly. `pxe_init`
+    is **all or nothing**: if a backend raises, the ones already armed are
+    rolled back before the error propagates, so a target is never left armed
+    on some servers and not others. `pxe_complete` is the opposite — every
+    backend is tried even if one fails, and the first error is raised
+    afterwards, because stopping early would leave the rest armed.
 
 ## DHCP (`netboot.dhcp`)
 
@@ -137,6 +150,13 @@ project overview, install instructions and CLI usage, see the shipped
   via CLI `--load-module`). `.uri` holds the original URI.
   - **`.add_target(ctx: PixieContext)`** / **`.remove_target(ctx)`** — no-ops
     on the base class; a backend overrides these to actually arm/disarm.
+  When two registered subclasses claim the same scheme, the most recently
+  defined one wins and a warning names both — silently picking one makes the
+  other plugin look broken. **`.get_local_server(servers, default)`** accepts
+  the strings config and globals actually hold as well as parsed addresses,
+  skips anything unparseable with a warning, and returns `default` when no
+  server lies inside the zone's network.
+
 - **`DhcpZone(**kwargs)`** (`Namespace` + `OpaqueMerge`) — `network`
   (`IPNetwork`), `gateway` (`IPAddress | None`), `domain` (`str | None`),
   `search` (`list[str]`), `nameservers` (`list[IPAddress]`), `globals`,

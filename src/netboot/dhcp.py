@@ -4,6 +4,7 @@ from argparse import Namespace
 from .utils import net as netutils
 from yaconfiglib import OpaqueMerge
 
+from .logging import LOGGER
 from .utils.net import IPAddress, IPInterface, IPNetwork
 
 if _ty.TYPE_CHECKING:
@@ -38,9 +39,21 @@ class DhcpServer:
         if cls is DhcpServer:
             parsed = urlparse(uri)
             scheme = parsed.scheme or cls.DEFAULT_SCHEME
-            for sub in _iter_subclasses(cls):
-                if sub.__name__.lower() == scheme:
-                    return object.__new__(sub)
+            handlers = [
+                sub for sub in _iter_subclasses(cls) if sub.__name__.lower() == scheme
+            ]
+            if len(handlers) > 1:
+                # Two plugins claiming one scheme is a configuration problem,
+                # and picking one silently makes it look like the other plugin
+                # is broken.
+                LOGGER.warning(
+                    "scheme %r is claimed by %s; using %s",
+                    scheme,
+                    ", ".join(f"{h.__module__}.{h.__qualname__}" for h in handlers),
+                    handlers[-1].__module__,
+                )
+            if handlers:
+                return object.__new__(handlers[-1])
             raise ValueError(
                 f"No DhcpServer backend registered for scheme {scheme!r} "
                 f"(uri={uri!r}); import a plugin module providing it via --load-module"
@@ -71,9 +84,20 @@ class DhcpZone(Namespace, OpaqueMerge):
         return self.nameservers[0] if self.nameservers else ""
 
     def get_local_server(self, servers: "list[IPAddress]", default: IPAddress):
+        """The first server that lives inside this zone's network, else `default`.
+
+        Accepts the strings config and globals actually hold, not just parsed
+        addresses: `"10.0.0.5" in network` would otherwise raise.
+        """
+        if isinstance(servers, (str, bytes)) or not isinstance(servers, (list, tuple)):
+            servers = [servers]
         for server in servers:
-            if server in self.network:
-                return server
+            address = netutils.try_parse(server, IPAddress)
+            if address is None:
+                LOGGER.warning("ignoring unparseable server address %r", server)
+                continue
+            if self.network and address in self.network:
+                return address
         return default
 
     def __init__(self, **kwargs) -> None:
@@ -112,11 +136,26 @@ class DhcpZone(Namespace, OpaqueMerge):
             value = getattr(self, prop, None)
             if not value:
                 setattr(self, prop, [])
-            elif not isinstance(value, list):
-                setattr(self, prop, [value])
-            vals = getattr(self, prop)
-            for i, val in enumerate(vals):
-                vals[i] = ctr(val)
+                continue
+            # Copy rather than normalise in place: the list may be the caller's
+            # config object, shared with other zones through a merge.
+            values = list(value) if isinstance(value, (list, tuple)) else [value]
+            converted = []
+            for val in values:
+                new = ctr(val)
+                if new is None:
+                    # try_parse says "not an address"; dropping it silently
+                    # would hand DHCP clients a zone with fewer nameservers
+                    # than the operator wrote.
+                    LOGGER.warning(
+                        "zone %s: ignoring %s entry %r, which is not an address",
+                        kwargs.get("_id", "<unnamed>"),
+                        prop,
+                        val,
+                    )
+                    continue
+                converted.append(new)
+            setattr(self, prop, converted)
 
         for prop in ["gateway", "domain"]:
             if not getattr(self, prop, None):

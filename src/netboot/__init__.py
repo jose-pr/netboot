@@ -174,13 +174,51 @@ class PixieContext(Namespace):
         return self.repos.get(resource.src)
 
     def pxe_init(self, config: "Pixie"):
+        """Arm every DHCP backend for this target, all or nothing.
+
+        A target armed on two of three backends is worse than one armed on
+        none: it may boot into an installer from one server while another
+        hands out its normal lease. So a failure rolls the already-armed
+        backends back before re-raising.
+        """
+        armed = []
         for dhcpserver in self.dhcpzone.dhcpservers:
-            dhcpserver.add_target(self)
+            try:
+                dhcpserver.add_target(self)
+            except Exception:
+                for done in reversed(armed):
+                    try:
+                        done.remove_target(self)
+                    except Exception:  # keep unwinding; report the first cause
+                        LOGGER.exception(
+                            "rollback failed for %s on %s",
+                            self.target._id,
+                            getattr(done, "uri", done),
+                        )
+                raise
+            armed.append(dhcpserver)
         return self
 
     def pxe_complete(self, config: "Pixie"):
+        """Disarm every DHCP backend, continuing past a failure.
+
+        Cleanup is the opposite case from arming: stopping at the first error
+        would leave the remaining backends armed, so every backend is tried and
+        the first error is raised once they have all had their turn.
+        """
+        first_error = None
         for dhcpserver in self.dhcpzone.dhcpservers:
-            dhcpserver.remove_target(self)
+            try:
+                dhcpserver.remove_target(self)
+            except Exception as exc:
+                LOGGER.exception(
+                    "could not disarm %s on %s",
+                    self.target._id,
+                    getattr(dhcpserver, "uri", dhcpserver),
+                )
+                first_error = first_error or exc
+        if first_error is not None:
+            raise first_error
         return self
 
     def _template_names(self, suffix: Union[list[str], str], **options) -> list[str]:
@@ -317,7 +355,20 @@ class Pixie:
                 else:
 
                     def _valctr(_id, val):
-                        val = val if isinstance(val, Mapping) else val.__dict__
+                        # `targets: {host1:}` is valid YAML and means None; it
+                        # is also the natural way to write "this entry, all
+                        # defaults", so treat it as an empty mapping instead of
+                        # failing on `None.__dict__`.
+                        if val is None:
+                            val = {}
+                        elif not isinstance(val, Mapping):
+                            fields = getattr(val, "__dict__", None)
+                            if fields is None:
+                                raise PixieConfigError(
+                                    f"{prop}.{_id}: expected a mapping, got "
+                                    f"{type(val).__name__} ({val!r})"
+                                )
+                            val = fields
                         if prop_defaults:
                             _val = deepcopy(prop_defaults)
                             _val.update(val)
@@ -395,13 +446,22 @@ class Pixie:
         return target
 
     def lookup_image(self, name: str, target: PixieTarget = None) -> PixieImage:
-        imgs: list[tuple[int, PixieImage]] = [(-1, {})]
+        """The best-matching image, or a falsy `{}` when none matches.
+
+        `match` may return a bool or a comparable score; anything falsy --
+        `False`, `None`, `0`, an empty `re.Match`-less result -- means "not
+        this one". Scores are compared against each other, so a `match`
+        returning a non-comparable type raises rather than silently ordering
+        by chance.
+        """
+        best_score, best_image = None, {}
         for img_name, image in self.images.items():
-            check = image.match(img_name, name)
-            if check != False:
-                imgs.append((check, image))
-        imgs.sort(key=lambda x: x[0])
-        return self.hook(PixieEvent.FoundTargetImage, imgs.pop()[1], target=target)
+            score = image.match(img_name, name)
+            if not score:
+                continue
+            if best_score is None or score > best_score:
+                best_score, best_image = score, image
+        return self.hook(PixieEvent.FoundTargetImage, best_image, target=target)
 
     def lookup_dhcpzone(self, name: str, target: PixieTarget = None) -> DhcpZone:
         if not name and target:
@@ -411,19 +471,43 @@ class Pixie:
                 # Containment needs a real address: a MAC-keyed target whose
                 # hostname never resolved has `ip == ""`, and `"" in network`
                 # raises AttributeError rather than returning False.
-                for zone_id, zone in self.dhcpzones.items():
-                    if zone.network and target.ip in zone.network:
-                        name = zone_id
-                        target.dhcpzone = zone_id
-                        break
+                # The most specific containing zone wins: with 10.0.0.0/16 and
+                # 10.0.5.0/24 configured, a host in the /24 belongs to the /24
+                # whichever order the zones happen to be declared in.
+                containing = [
+                    (zone.network.prefixlen, zone_id)
+                    for zone_id, zone in self.dhcpzones.items()
+                    if zone.network and target.ip in zone.network
+                ]
+                if containing:
+                    name = max(containing)[1]
+                    target.dhcpzone = name
         zone = self.dhcpzones.get(name, None)
         return self.hook(PixieEvent.FoundTargetDhcpzone, zone, target=target)
 
+    #: Context fields a global must never replace: they are the context.
+    _RESERVED_CONTEXT_KEYS = frozenset(
+        {"image", "dhcpzone", "target", "repos", "resources"}
+    )
+
     def make_context(
-        self, target: "PixieTarget", globals: list[dict] = None
+        self,
+        target: "PixieTarget",
+        globals: list[dict] = None,
+        require_image: bool = True,
     ) -> PixieContext:
         image = self.lookup_image(target.image, target)
-        if not image:
+        if not image and not require_image:
+            # `complete` only needs the zone, to disarm DHCP. Refusing to clean
+            # up a machine because its image was retired from the config leaves
+            # it armed forever.
+            LOGGER.warning(
+                "target %s: image %r is not configured; continuing without it",
+                target._id,
+                target.image,
+            )
+            image = PixieImage(_id=target.image or "")
+        elif not image:
             known = ", ".join(sorted(str(i) for i in self.images)) or "none configured"
             raise PixieLookupError(
                 f"target {target._id!r} wants image {target.image!r}, which no "
@@ -461,6 +545,7 @@ class Pixie:
             g = getattr(ctx[k], "globals", None)
             if g:
                 _globals.append(g)
+        _globals = [self._without_reserved_keys(g) for g in _globals]
 
         ctx = mergeObjects(self._ctxcls, ctx, *_globals)
 
@@ -468,6 +553,24 @@ class Pixie:
         ctx._renderer = Renderer(loader=Loader(self._config.get("templates", [])))
         ctx.version = f"netboot-v{self.VERSION}"
         return self.hook(PixieEvent.PixieContextForTarget, ctx, target=target)
+
+    def _without_reserved_keys(self, values: dict) -> dict:
+        """Drop globals that would overwrite the context's own fields.
+
+        A global named `target` or `image` would replace the engine object the
+        templates are rendered against -- silently, and only for the targets
+        whose globals happen to carry that name.
+        """
+        if not isinstance(values, Mapping):
+            return values
+        clashes = self._RESERVED_CONTEXT_KEYS.intersection(values)
+        if not clashes:
+            return values
+        LOGGER.warning(
+            "ignoring global(s) %s: those names are the render context's own fields",
+            ", ".join(sorted(clashes)),
+        )
+        return {k: v for k, v in values.items() if k not in clashes}
 
     def initialize(self, target: "PixieTarget"):
         target = self.hook(PixieEvent.StartPixieInitialize, target)
@@ -477,6 +580,6 @@ class Pixie:
 
     def complete(self, target: "PixieTarget"):
         target = self.hook(PixieEvent.StartPixieComplete, target)
-        ctx = self.make_context(target)
+        ctx = self.make_context(target, require_image=False)
         ctx = ctx.pxe_complete(self)
         return self.hook(PixieEvent.EndPixieComplete, ctx)
