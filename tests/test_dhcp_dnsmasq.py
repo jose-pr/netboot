@@ -159,9 +159,12 @@ def test_a_remote_reload_runs_over_ssh(tmp_path, engine_factory, monkeypatch):
         "netboot.dhcp.dnsmasq._subprocess.run",
         lambda argv, **kw: recorded.append(argv),
     )
+    # No leading slash before the drive: the stub strips the sftp prefix and
+    # what remains must still be an absolute local path, or the test writes a
+    # `c/Users/...` tree into the repository.
     uri = (
-        "dnsmasq://admin@dhcp01/?hostsfile=/"
-        f"{hosts.as_posix()}/&optsfile=/{opts.as_posix()}/"
+        "dnsmasq://admin@dhcp01/?hostsfile="
+        f"{hosts.as_posix()}/&optsfile={opts.as_posix()}/"
         "&reload=systemctl+reload+dnsmasq"
     )
     engine = engine_factory(uri)
