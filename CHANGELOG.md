@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Dependencies move to their new series: `netimps>=0.3.1,<0.4` and
+  `yaconfiglib>=0.13.0,<0.14`. The old ceilings made netboot uninstallable
+  beside either release. netimps 0.3.0 is skipped on purpose: it raised from
+  `resolve()` when no resolver was reachable, which would have failed every
+  command at startup, and 0.3.1 answers `[]` again. netboot uses none of the
+  yaconfiglib APIs 0.13.0 removed.
+- **`MACAddress` no longer equals a `str`** (netimps 0.3.0, re-exported as
+  `netboot.utils.net.MACAddress`). `target.mac == "aa:bb:cc:dd:ee:ff"` is now
+  `False` — in a plugin, a hook or a Jinja template alike. Compare with
+  `MACAddress.try_parse(text) == target.mac`. In exchange a MAC is found in a
+  set or dict whichever spelling built it. netboot's own target lookup already
+  compared parsed MACs and is unaffected. A MAC that mixes separators
+  (`00-11:22-33:44-55`) is now rejected, and `aa.bb.cc.dd.ee.ff` is accepted.
+- `resolve()` keeps trying backends after an empty answer, so a hostname
+  target known only to the hosts file or NSS now gets its IP on Windows and
+  macOS. A name that exists nowhere costs two or three lookups instead of one.
+
 ## [0.2.1] - 2026-09-17
 
 netboot ships DHCP backends. Additive: nothing documented changed behaviour,

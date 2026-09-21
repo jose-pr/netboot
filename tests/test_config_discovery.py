@@ -90,3 +90,22 @@ def test_resolve_auto_selects_the_record_type():
         "netimps.resolve no longer defaults rdtype to None (auto-select); "
         "Host.try_ip relies on that, netimps >= 0.2.1"
     )
+
+
+def test_resolve_is_not_strict_by_default():
+    """Guards `netimps>=0.3.1`: a resolver outage answers `[]`, not a raise.
+
+    0.3.0 raised `ResolutionError` from `resolve()` when no backend could even
+    ask; 0.3.1 made that opt-in with `strict=True`. `PixieTarget` handles `[]`
+    with a warning, but a raise would escape its construction -- and every
+    target is built at startup, so one outage would fail every command.
+    """
+    strict = inspect.signature(netutils.resolve).parameters.get("strict")
+    assert strict is not None, (
+        "netimps.resolve has no strict parameter: an unreachable resolver "
+        "raises instead of answering [] (netimps >= 0.3.1)"
+    )
+    assert strict.default is False, (
+        "netimps.resolve is strict by default; PixieTarget relies on [] for "
+        "an unreachable resolver (netimps >= 0.3.1)"
+    )

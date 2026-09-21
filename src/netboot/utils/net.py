@@ -3,8 +3,8 @@
 The IP/MAC machinery used to live in an in-tree copy of an earlier version of
 that library. It has since been published, gaining fixes this copy never had --
 real prefix lengths and MTU in interface enumeration, DNS errors that surface
-instead of being swallowed, and a ``ping`` that behaves the same on every
-platform -- so the copy is gone.
+instead of being swallowed, and a ``ping`` that speaks each platform's own
+flags -- so the copy is gone.
 
 This module re-exports netimps under netboot's own name rather than wrapping
 it: the point of adopting a library is to use its vocabulary. Only

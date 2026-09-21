@@ -110,9 +110,10 @@ is the same object. `netboot.netutils` remains an alias for
   non-MAC `_id` fills `hostname`; then, if `ip` is still unset and a hostname
   is known, **exactly one** forward lookup
   (`netboot.utils.net.resolve`, no reverse lookup) fills it. A name that does
-  not resolve leaves `ip` unset and logs a warning — it is never retried, and
-  never raises. `hostname` is lower-cased. The `dns` extra is optional: without
-  it netimps still resolves through its system/`nslookup` backends.
+  not resolve — including when no resolver is reachable at all — leaves `ip`
+  unset and logs a warning; it is never retried, and never raises. `hostname`
+  is lower-cased. The `dns` extra is optional: without it netimps still
+  resolves through its system/`nslookup` backends.
 
 - **`PixieImage(**kwargs)`** (`content.Resource`) — `template_path`,
   `globals`, plus `Resource`'s `src`/`path`, which address the image's
@@ -337,7 +338,8 @@ servers identifies a reservation by it.
 - **`Host(address: str | Host | None = None)`** — a hostname-or-IP repo
   address. **`.try_ip() -> IPAddress | str`** — resolves to an `IPAddress`
   (an IP literal as-is, a hostname through one forward lookup); falls back to
-  the original string on resolution failure. The `dns` extra is optional —
+  the original string on resolution failure, an unreachable resolver
+  included. The `dns` extra is optional —
   without it netimps resolves through its system/`nslookup` backends.
   Equality/hash by `.address`.
 - **`flatten(map, _prefix="") -> dict`** — recursively flattens a
@@ -368,13 +370,18 @@ servers identifies a reservation by it.
   - `parse(value, type, **kw)` raises on bad input; `try_parse(value, type)`
     returns `None` instead; `is_valid(value, type)` returns a bool. Networks
     parse non-strict, so `"10.0.0.5/24"` normalises rather than raising.
-  - `MACAddress` — colon/hyphen/Cisco-dot/bare text, `int` or `bytes`;
-    `.as_str(sep)`, `.packed`, `.oui`, hashable and ordered.
+  - `MACAddress` — colon/hyphen/per-octet-dot/Cisco-dot/bare text (one
+    separator per address), `int` or `bytes`; `.as_str(sep)`, `.packed`,
+    `.oui`, hashable and ordered. It equals only another `MACAddress`, never a
+    `str` — compare text with `MACAddress.try_parse(text) == mac`.
   - `resolve(query, rdtype=None)` → a list of **native** records (`A`/`AAAA`
     are `IPv4Address`/`IPv6Address`, not strings); `[]` on a genuine lookup
     failure, but a malformed query or unknown record type raises `ValueError`
     rather than looking like "no such record". `rdtype=None` auto-selects:
-    `"ptr"` when `query` is an address literal, `"a"` otherwise.
+    `"ptr"` when `query` is an address literal, `"a"` otherwise. Backends are
+    tried until one answers non-empty, so hosts-file and NSS-only names
+    resolve too. An unreachable resolver also answers `[]`; netimps'
+    `strict=True` raises `netimps.ResolutionError` instead.
   - `ping(dst)` → a `PingResult` that is truthy on success and also carries
     `.rtt_ms`/`.ttl`.
   - `get_interfaces()` / `iter_addresses()` — real adapter enumeration with

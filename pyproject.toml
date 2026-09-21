@@ -30,10 +30,12 @@ classifiers = [
 ]
 dependencies = [
     "duho>=0.5.0,<0.6",
-    # Above the .0 deliberately: netboot calls netimps' resolve() with no
-    # rdtype, and 0.2.1 is the release that auto-selects it ("ptr" for an
-    # address literal, "a" otherwise). Don't normalize this back to 0.2.0.
-    "netimps>=0.2.1,<0.3",
+    # Above the .0 deliberately: 0.3.0 made resolve() raise ResolutionError
+    # when no backend could even ask (a resolver outage), and 0.3.1 restored
+    # [] as the default (strict=False). PixieTarget and Host.try_ip rely on
+    # that: every target is built at startup, so a raise would fail every
+    # command. Don't normalize this back to 0.3.0.
+    "netimps>=0.3.1,<0.4",
     # Above the .0 deliberately, measured 2026-09-17: recursive `!include`
     # globs (`sub/**/*.yaml`) break on pathlib_next >=0.9.5 unless yaconfiglib
     # is >=0.12.0, and yaconfiglib 0.12.0 itself requires pathlib-next>=0.9.9.
@@ -44,9 +46,7 @@ dependencies = [
     # markupsafe.soft_unicode, removed in MarkupSafe 2.1, so an unpinned
     # resolve can install a jinja2/markupsafe pair that fails on import.
     "jinja2>=3.0,<4",
-    # Above a bare series base for the same measured reason: with the
-    # pathlib-next this project uses, recursive config discovery needs 0.12.0.
-    "yaconfiglib>=0.12.0,<0.13",
+    "yaconfiglib>=0.13.0,<0.14",
 ]
 
 [project.optional-dependencies]
