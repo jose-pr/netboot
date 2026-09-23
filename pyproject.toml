@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "netboot"
-version = "0.2.2"
+version = "0.2.3"
 authors = [{ name = "Jose A." }]
 description = "PXE provisioning management: render netboot artifacts and drive DHCP for targets"
 readme = "README.md"

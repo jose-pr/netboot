@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-23
+
 ### Fixed
 - One DHCP server being offline no longer fails `pixie initiate` or
   `pixie complete`. Arming is meant to be best effort, but since 0.2.0 it
@@ -552,7 +554,8 @@ First packaged release: the `netboot` library with the `pixie` command line.
   config value construction no longer swallows non-`TypeError` errors; repo
   `joinpath` keeps `.local` a path so chained joins work.
 
-[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/jose-pr/netboot/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jose-pr/netboot/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jose-pr/netboot/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jose-pr/netboot/compare/v0.1.3...v0.2.0
