@@ -7,6 +7,7 @@ whole implementation.
 
 import datetime
 import enum as _enum
+import logging
 import typing as _ty
 from argparse import Namespace
 from copy import deepcopy
@@ -199,51 +200,49 @@ class PixieContext(Namespace):
         return self.repos.get(resource.src)
 
     def pxe_init(self, config: "Pixie"):
-        """Arm every DHCP backend for this target, all or nothing.
+        """Arm every DHCP backend for this target, succeeding if any one does.
 
-        A target armed on two of three backends is worse than one armed on
-        none: it may boot into an installer from one server while another
-        hands out its normal lease. So a failure rolls the already-armed
-        backends back before re-raising.
+        Every backend is tried. A backend that fails is logged as a warning and
+        skipped, so one server being offline does not block the others; the
+        first error is raised only when no backend could be armed.
         """
-        armed = []
+        first_error = None
+        armed = 0
         for dhcpserver in self.dhcpzone.dhcpservers:
             try:
                 dhcpserver.add_target(self)
-            except Exception:
-                for done in reversed(armed):
-                    try:
-                        done.remove_target(self)
-                    except Exception:  # keep unwinding; report the first cause
-                        LOGGER.exception(
-                            "rollback failed for %s on %s",
-                            self.target._id,
-                            getattr(done, "uri", done),
-                        )
-                raise
-            armed.append(dhcpserver)
+            except Exception as exc:
+                LOGGER.warning(
+                    "could not arm %s on %s: %s",
+                    self.target._id,
+                    getattr(dhcpserver, "uri", dhcpserver),
+                    exc,
+                    exc_info=LOGGER.isEnabledFor(logging.DEBUG),
+                )
+                first_error = first_error or exc
+            else:
+                armed += 1
+        if first_error is not None and not armed:
+            raise first_error
         return self
 
     def pxe_complete(self, config: "Pixie"):
-        """Disarm every DHCP backend, continuing past a failure.
+        """Disarm every DHCP backend; a failure is a warning, never an error.
 
-        Cleanup is the opposite case from arming: stopping at the first error
-        would leave the remaining backends armed, so every backend is tried and
-        the first error is raised once they have all had their turn.
+        Every backend is tried, and one that fails is logged and skipped, so
+        the rest are still disarmed.
         """
-        first_error = None
         for dhcpserver in self.dhcpzone.dhcpservers:
             try:
                 dhcpserver.remove_target(self)
             except Exception as exc:
-                LOGGER.exception(
-                    "could not disarm %s on %s",
+                LOGGER.warning(
+                    "could not disarm %s on %s: %s",
                     self.target._id,
                     getattr(dhcpserver, "uri", dhcpserver),
+                    exc,
+                    exc_info=LOGGER.isEnabledFor(logging.DEBUG),
                 )
-                first_error = first_error or exc
-        if first_error is not None:
-            raise first_error
         return self
 
     def _template_names(self, suffix: Union[list[str], str], **options) -> list[str]:
@@ -706,7 +705,7 @@ class Pixie:
     def initialize(self, target: "PixieTarget"):
         """Arm DHCP for `target` and return its context.
 
-        All or nothing: a backend that fails rolls back the ones already armed.
+        A backend that fails is a warning; it raises only if none could be armed.
         """
         target = self.hook(PixieEvent.StartPixieInitialize, target)
         ctx = self.make_context(target)
@@ -716,7 +715,7 @@ class Pixie:
     def complete(self, target: "PixieTarget"):
         """Disarm DHCP for `target` and return its context.
 
-        Every backend is tried even if one fails; the first error is raised after.
+        Every backend is tried; one that fails is logged as a warning.
         """
         target = self.hook(PixieEvent.StartPixieComplete, target)
         ctx = self.make_context(target, require_image=False)

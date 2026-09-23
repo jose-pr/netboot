@@ -150,12 +150,12 @@ is the same object. `netboot.netutils` remains an alias for
     process's working directory; an absolute path or a URI is used as given.
   - **`.pxe_init(netboot) -> Self`** / **`.pxe_complete(netboot) -> Self`** —
     arm/disarm every `dhcpzone.dhcpservers` for this context; called by
-    `Pixie.initialize`/`.complete`, not usually invoked directly. `pxe_init`
-    is **all or nothing**: if a backend raises, the ones already armed are
-    rolled back before the error propagates, so a target is never left armed
-    on some servers and not others. `pxe_complete` is the opposite — every
-    backend is tried even if one fails, and the first error is raised
-    afterwards, because stopping early would leave the rest armed.
+    `Pixie.initialize`/`.complete`, not usually invoked directly. Both try
+    every backend. `pxe_init` logs a backend that raises as a **warning** and
+    carries on; it raises (the first error) only when **no** backend could be
+    armed, and nothing is rolled back, so a target may end up armed on some
+    servers and not others. `pxe_complete` never raises for a backend: each
+    failure is logged as a warning and the rest are still disarmed.
 
 ## DHCP (`netboot.dhcp`)
 

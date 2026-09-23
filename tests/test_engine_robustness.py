@@ -1,7 +1,7 @@
 """Engine behaviour under partly-broken input and partly-failing backends.
 
 Each case here is a crash or a silent wrong answer the 2026-09-17 review
-reproduced: a half-armed target, a retired image blocking cleanup, a global
+reproduced: an offline DHCP server, a retired image blocking cleanup, a global
 that replaced the render context, a zone chosen by declaration order.
 """
 
@@ -61,28 +61,39 @@ class rollback(_Recorder):  # scheme `rollback://`
     pass
 
 
-def test_a_failing_backend_rolls_back_the_ones_already_armed():
+def test_arming_survives_a_failing_backend_with_a_warning(caplog):
     engine = _engine()
     zone = engine.dhcpzones["lan"]
-    zone.dhcpservers[1].fail_on = "add"
-    with pytest.raises(RuntimeError):
+    zone.dhcpservers[0].fail_on = "add"
+    with caplog.at_level(logging.WARNING, logger="netboot"):
         engine.initialize(engine.lookup_target("host1"))
-    # b failed, so a must not be left armed.
-    assert _Recorder.calls == [
-        ("arm", "rollback://a"),
-        ("arm", "rollback://b"),
-        ("disarm", "rollback://a"),
-    ]
+    # a is offline; b is still armed and nothing is rolled back.
+    assert _Recorder.calls == [("arm", "rollback://a"), ("arm", "rollback://b")]
+    assert "could not arm host1 on rollback://a" in caplog.text
 
 
-def test_disarm_continues_past_a_failure_then_raises():
+def test_arming_raises_when_every_backend_fails():
     engine = _engine()
-    zone = engine.dhcpzones["lan"]
-    zone.dhcpservers[0].fail_on = "remove"
-    with pytest.raises(RuntimeError):
+    for server in engine.dhcpzones["lan"].dhcpservers:
+        server.fail_on = "add"
+    with pytest.raises(RuntimeError, match="rollback://a refused to arm"):
+        engine.initialize(engine.lookup_target("host1"))
+    assert _Recorder.calls == [("arm", "rollback://a"), ("arm", "rollback://b")]
+
+
+def test_disarm_failures_are_warnings(caplog):
+    engine = _engine()
+    for server in engine.dhcpzones["lan"].dhcpservers:
+        server.fail_on = "remove"
+    with caplog.at_level(logging.WARNING, logger="netboot"):
         engine.complete(engine.lookup_target("host1"))
-    # The second backend is still disarmed despite the first failing.
-    assert ("disarm", "rollback://b") in _Recorder.calls
+    # Every backend is tried, and none of the failures is raised.
+    assert _Recorder.calls == [
+        ("disarm", "rollback://a"),
+        ("disarm", "rollback://b"),
+    ]
+    assert "could not disarm host1 on rollback://a" in caplog.text
+    assert "could not disarm host1 on rollback://b" in caplog.text
 
 
 def test_complete_works_when_the_image_is_no_longer_configured(caplog):

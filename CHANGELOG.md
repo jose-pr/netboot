@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- One DHCP server being offline no longer fails `pixie initiate` or
+  `pixie complete`. Arming is meant to be best effort, but since 0.2.0 it
+  stopped at the first failing server and rolled the others back. `initiate`
+  now tries every server in the zone, logs each failure as a warning, and fails
+  only when no server could be armed. `complete` logs a failing server as a
+  warning and still exits 0, so read the log if you need to know every server
+  was disarmed.
+
 ## [0.2.2] - 2026-09-21
 
 netboot moves to netimps 0.3.1 and yaconfiglib 0.13. If a plugin, hook or
