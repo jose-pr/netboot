@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- `duho` floor moves to `>=0.6.0,<0.7` (pre-1.0 minor, documented API break).
+  None of that break reaches netboot: `app()`'s renamed internal dispatch
+  dest, the stricter `--loglevel`, the `PATHSEP` env var rename to
+  `<PREFIX>PATHSEP`, and RunPath ordering are all surfaces netboot's CLI does
+  not touch, so nothing changes besides the pin.
+
 ## [0.2.3] - 2026-09-23
 
 ### Fixed
