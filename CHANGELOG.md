@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-09-28
+
 ### Changed
 - `duho` floor moves to `>=0.6.0,<0.7` (pre-1.0 minor, documented API break).
   None of that break reaches netboot: `app()`'s renamed internal dispatch
@@ -561,7 +563,8 @@ First packaged release: the `netboot` library with the `pixie` command line.
   config value construction no longer swallows non-`TypeError` errors; repo
   `joinpath` keeps `.local` a path so chained joins work.
 
-[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/jose-pr/netboot/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/jose-pr/netboot/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jose-pr/netboot/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jose-pr/netboot/compare/v0.2.0...v0.2.1
