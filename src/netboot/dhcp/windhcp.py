@@ -80,7 +80,12 @@ PASSWORD_ENV_VAR = "PIXIE_WINDHCP_PASSWORD"
 #: may have nothing to delete, so cleanup can re-run.
 _NETSH_BODY = [
     "foreach ($c in $p.Commands) {",
-    "  $out = & netsh @($c.Args) 2>&1 | Out-String",
+    # `@a` on a *variable* is splatting, one argument per element. `@($c.Args)`
+    # is an array subexpression -- it passes the whole array as one argument,
+    # which netsh then sees as a single space-filled token. Measured by running
+    # the generated script with a shim in place of netsh.
+    "  $a = @($c.Args)",
+    "  $out = & netsh @a 2>&1 | Out-String",
     "  Write-Verbose $out",
     "  if ($LASTEXITCODE -ne 0 -and -not $c.Ignore) {",
     "    throw \"netsh $($c.Args -join ' ') failed ($LASTEXITCODE): $out\"",
@@ -156,7 +161,7 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             " -Value $o.Value @common",
             "}",
         ]
-        body.extend(self.options.raw_for("windhcp"))
+        body.extend(_script_lines(self.extras(netboot, "add")))
         self.run(payload, body)
 
     def remove_target(self, netboot: "_ty.Any"):
@@ -180,6 +185,7 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             " -ClientId $p.ClientId @common",
             "}",
         ]
+        body.extend(_script_lines(self.extras(netboot, "remove")))
         self.run(payload, body)
 
     # -- method=netsh ------------------------------------------------------
@@ -236,8 +242,13 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                     "Ignore": False,
                 }
             )
+        extra_commands, extra_lines = _split_extras(self.extras(netboot, "add"))
+        # A netsh command from `extras()` runs after the reservation and its
+        # options, which is the order a conditional needs: the thing it
+        # overrides has to exist first.
+        commands.extend(extra_commands)
         body = list(_NETSH_BODY)
-        body.extend(self.options.raw_for("windhcp"))
+        body.extend(extra_lines)
         return self.run({"Commands": commands}, body)
 
     def _remove_target_netsh(self, netboot: "_ty.Any"):
@@ -257,7 +268,11 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                 "Ignore": True,
             }
         ]
-        return self.run({"Commands": commands}, list(_NETSH_BODY))
+        extra_commands, extra_lines = _split_extras(self.extras(netboot, "remove"))
+        commands.extend(extra_commands)
+        body = list(_NETSH_BODY)
+        body.extend(extra_lines)
+        return self.run({"Commands": commands}, body)
 
     # -- running PowerShell ------------------------------------------------
 
@@ -323,6 +338,58 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                 f"{_text(result.std_err) or _text(result.std_out)}"
             )
         return _text(result.std_out)
+
+
+def _split_extras(extras: "list") -> "tuple[list[dict], list[str]]":
+    """Sort `extras()` output into netsh commands and PowerShell lines.
+
+    A mapping is a netsh command (`{"Args": [...], "Ignore": False}`); `Args` may
+    be a list or a single string that is split on whitespace, because a config
+    `raw.windhcp.add=dhcp server scope ... add ...` has nowhere to put a list.
+    Anything else is a PowerShell line, which is valid under either method --
+    netsh mode is still PowerShell, it just calls netsh.
+    """
+    commands: "list[dict]" = []
+    lines: "list[str]" = []
+    for extra in extras:
+        if isinstance(extra, dict):
+            args = extra.get("Args", [])
+            if isinstance(args, str):
+                args = args.split()
+            commands.append(
+                {"Args": [str(a) for a in args], "Ignore": bool(extra.get("Ignore"))}
+            )
+        else:
+            lines.append(str(extra))
+    return commands, lines
+
+
+def _script_lines(extras: "list") -> "list[str]":
+    """`extras()` output as PowerShell lines, for the cmdlet method.
+
+    A netsh command reaching the cmdlet path is turned into the `netsh` call it
+    describes rather than dropped: an override that knows netsh is still usable
+    when the method is `powershell`, and silently ignoring it would be worse.
+    """
+    lines: "list[str]" = []
+    commands, plain = _split_extras(extras)
+    for command in commands:
+        rendered = " ".join(_ps_quote(arg) for arg in command["Args"])
+        if command["Ignore"]:
+            lines.append(f"& netsh {rendered} 2>&1 | Out-Null")
+        else:
+            lines.append(f"$out = & netsh {rendered} 2>&1 | Out-String")
+            lines.append(
+                'if ($LASTEXITCODE -ne 0) { throw "netsh failed '
+                f'($LASTEXITCODE): $out" }}'
+            )
+    lines.extend(plain)
+    return lines
+
+
+def _ps_quote(value: str) -> str:
+    """A PowerShell single-quoted literal. Only for arguments netboot builds."""
+    return "'" + str(value).replace("'", "''") + "'"
 
 
 def _text(value) -> str:

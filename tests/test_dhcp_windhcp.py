@@ -374,7 +374,8 @@ def test_netsh_arguments_are_passed_as_an_array_not_a_command_line(stub):
         }
     )
     server.add_target(_ctx(engine))
-    assert "& netsh @($c.Args)" in ran[0]
+    # `@a` on a variable splats; `@($c.Args)` would pass one array argument.
+    assert "$a = @($c.Args)" in ran[0] and "& netsh @a" in ran[0]
     # Nothing is spliced into the script: the only quote-bearing text is JSON.
     assert "$LASTEXITCODE" in ran[0]
 
