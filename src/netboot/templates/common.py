@@ -33,6 +33,69 @@ class TemplateEngineError(Exception):
 #: catch-all. `EXT = None` means the same thing.
 ANY_SUFFIX = "*"
 
+#: `PRIORITY` for an ordinary engine that claims its own suffixes.
+DEFAULT_PRIORITY = 0
+#: `PRIORITY` for a last-resort catch-all, which every other engine must get a
+#: look in before: `CopyTemplate` uses it.
+FALLBACK_PRIORITY = -100
+
+#: Engines a `Loader` considers when it is not given an explicit list, in
+#: registration order; `Loader` sorts them by `PRIORITY`. Mutate through
+#: `register_template_type` / `unregister_template_type` rather than directly.
+TEMPLATE_TYPES: list = []
+
+
+def register_template_type(cls=None, *, priority: Optional[int] = None):
+    """Add an engine to the default `template_types`, and return it.
+
+    Usable bare or as a decorator, with an optional `priority` override for an
+    engine whose class you do not own:
+
+    ```python
+    @register_template_type                 # or: (priority=10)
+    class MakoTemplate(Template):           # your engine; netboot ships none
+        EXT = ".mako"                       # for mako
+    ```
+
+    Registration order does **not** decide what wins -- `PRIORITY` does -- so a
+    plugin loaded after the shipped engines is still consulted before the
+    catch-all `CopyTemplate`, which is the whole point of the two living apart.
+    Registering the same class twice is a no-op, so importing a plugin module
+    twice does not double it.
+    """
+
+    def _register(cls):
+        if priority is not None:
+            cls.PRIORITY = priority
+        if cls not in TEMPLATE_TYPES:
+            TEMPLATE_TYPES.append(cls)
+        return cls
+
+    return _register if cls is None else _register(cls)
+
+
+def unregister_template_type(cls) -> bool:
+    """Drop an engine from the default `template_types`; True if it was there."""
+    if cls in TEMPLATE_TYPES:
+        TEMPLATE_TYPES.remove(cls)
+        return True
+    return False
+
+
+def by_priority(template_types: Iterable) -> Tuple:
+    """`template_types` ordered highest `PRIORITY` first.
+
+    A stable sort, so engines of equal priority keep the order they were given
+    -- an explicit `template_types` list still means what it says, and only a
+    different priority moves anything.
+    """
+    return tuple(
+        sorted(
+            template_types,
+            key=lambda t: -int(getattr(t, "PRIORITY", DEFAULT_PRIORITY)),
+        )
+    )
+
 
 def template_extensions(cls) -> Optional[Tuple[str, ...]]:
     """The suffixes `cls` claims, or `None` for "any suffix".
@@ -73,6 +136,11 @@ class Template:
     #: Suffixes this engine renders. `()` claims nothing, `None` (or `"*"`)
     #: claims everything -- see `template_extensions`.
     EXT: ClassVar[Union[None, str, Tuple[str, ...]]] = ()
+    #: Engines are consulted **highest first**, so an engine that claims a
+    #: suffix outranks a catch-all without anyone having to order a list:
+    #: `DEFAULT_PRIORITY` (0) for a normal engine, `FALLBACK_PRIORITY` (-100)
+    #: for a last resort. Equal priorities keep the order they were given in.
+    PRIORITY: ClassVar[int] = DEFAULT_PRIORITY
     #: True to be constructed from the file's raw `bytes` rather than decoded
     #: text, and to return `bytes` from `render()`. The loader only decodes for
     #: engines that say they need text, so a file that is not UTF-8 at all can

@@ -3,6 +3,7 @@ from pathlib_next import Path, UriPath
 
 from ..utils import shell_quote
 from .common import (  # noqa: F401 - Renderer/Template re-exported for callers
+    DEFAULT_PRIORITY,
     Renderer,
     Template,
     can_process_suffix,
@@ -16,8 +17,11 @@ class JinjaTemplate(_Jinja2Template):
     already covered -- a suffix is the last one only).
     """
 
-    #: Not inherited from `Template`: a jinja2 template cannot share our base.
+    #: Not inherited from `Template`: a jinja2 template cannot share our base,
+    #: so the contract's attributes are spelled out here.
     EXT = (".j2", ".jinja", ".jinja2")
+    PRIORITY = DEFAULT_PRIORITY
+    BINARY = False
 
     def render(self, **globals):
         """Render with netboot's extra globals (`shell_quote`, `Path`, `Uri`).

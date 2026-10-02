@@ -5,16 +5,30 @@ from pathlib_next import Path, PosixPathname
 
 from ..utils.misc import parse_path
 from .common import (
+    ANY_SUFFIX,
+    DEFAULT_PRIORITY,
+    FALLBACK_PRIORITY,
     JINJA_UNDEFINED,
+    TEMPLATE_TYPES,
     UNDEFINED_MODES,
     Renderer,
     Template,
     TemplateEngineError,
+    by_priority,
+    register_template_type,
     template_extensions,
+    unregister_template_type,
 )
-from .jinja import JinjaTemplate, _Jinja2Template
 from .copy import CopyTemplate
+from .jinja import JinjaTemplate, _Jinja2Template
 from .shell import ShellTemplate
+
+# The shipped engines, in the order they are consulted when priorities tie.
+# `CopyTemplate` carries `FALLBACK_PRIORITY`, so it is last whatever a plugin
+# registers afterwards.
+for _engine in (JinjaTemplate, ShellTemplate, CopyTemplate):
+    register_template_type(_engine)
+del _engine
 
 if TYPE_CHECKING:
     from . import Template
@@ -52,22 +66,28 @@ class Loader(_JinjaLoader):
     default). A *relative* per-target or per-image `template_path` is resolved
     inside each root rather than against the process's working directory, so a
     config means the same thing whichever directory `pixie` was run from.
+
+    `template_types` defaults to every **registered** engine
+    (`register_template_type`), so a plugin loaded with `--load-module` is
+    picked up without the caller rebuilding the list. Either way the engines are
+    ordered by `PRIORITY`, highest first, which is what keeps the catch-all
+    `CopyTemplate` behind an engine that claims a suffix.
     """
 
     def __init__(
         self,
         searchpaths: list,
-        template_types: list[Type[Template]] = [
-            JinjaTemplate,
-            ShellTemplate,
-            CopyTemplate,
-        ],
+        template_types: Union[list, Tuple, None] = None,
         undefined: str = "strict",
     ) -> None:
         self.searchpaths = [
             path if isinstance(path, Path) else parse_path(path) for path in searchpaths
         ]
-        self.template_types = template_types
+        #: Resolved once, at construction: a Loader built for one run must not
+        #: change engines underneath it if something imports a plugin later.
+        self.template_types = by_priority(
+            TEMPLATE_TYPES if template_types is None else template_types
+        )
         #: Passed to every non-Jinja template built here; the Jinja engine gets
         #: its own class through the `Renderer`.
         self.undefined = undefined

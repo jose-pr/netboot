@@ -274,12 +274,15 @@ servers identifies a reservation by it.
 
 ## Templates (`netboot.templates`)
 
-- **`Loader(searchpaths, template_types=(JinjaTemplate, ShellTemplate,
-  CopyTemplate))`** — a
+- **`Loader(searchpaths, template_types=None, undefined="strict")`** — a
   Jinja2 `BaseLoader`. Search-path entries are parsed the same way as config
   paths, so a `http://...` entry stays a URI instead of becoming a directory
   named `http:`. Without a `ctx` in the environment globals the loader still
   resolves a plain name (it just has no target to name candidates after).
+  `template_types=None` means **every registered engine** (`TEMPLATE_TYPES`),
+  and either way the list is ordered by `PRIORITY` (highest first, stable within
+  a priority) and **snapshotted at construction** -- importing a plugin later
+  never changes a Loader already built.
   **Name specificity outranks search-path order**: the
   loader walks the candidate names `ctx._template_names(...)` yields (MAC,
   hostname, IP, then the bare name — an unset IP and the null MAC are skipped,
@@ -313,7 +316,8 @@ servers identifies a reservation by it.
   `.can_process(file, template) -> bool`, which matches the suffixes in the
   class attribute **`EXT`** -- `()` on the base, so it claims nothing -- plus
   **`BINARY`** (`False`; `True` to be constructed from the file's raw bytes and
-  to return bytes)),
+  to return bytes) and **`PRIORITY`** (`DEFAULT_PRIORITY`; higher is consulted
+  first)),
   plus **`.is_up_to_date`** — a property that calls the loader's freshness
   check, so an edited shell template is reloaded rather than served from cache
   forever.
@@ -359,6 +363,17 @@ servers identifies a reservation by it.
   such a file. If the source still holds `%{NAME}` placeholders it logs a
   **warning** naming the `.shtpl` rename, since a silent copy of what used to be
   a shell template is the one way the fallback can ship the wrong file.
+- **`register_template_type(cls=None, *, priority=None)`** /
+  **`unregister_template_type(cls) -> bool`** / **`TEMPLATE_TYPES`** /
+  **`by_priority(types) -> tuple`** -- the engine registry. `register...` works
+  bare or as a decorator, returns the class, is idempotent, and `priority=` sets
+  `PRIORITY` on a class you do not own. **Priority, not registration order,
+  decides**: a plugin is registered after the shipped engines, so ordering by
+  registration would put every plugin behind the catch-all. Constants:
+  **`DEFAULT_PRIORITY`** (0, an ordinary engine -- already enough to outrank the
+  copy engine) and **`FALLBACK_PRIORITY`** (-100, `CopyTemplate`); above 0 takes
+  a suffix off a shipped engine. `TEMPLATE_TYPES` is the live list, mutated only
+  through those two functions.
 - **`TemplateEngineError`** / **`template_extensions(cls)`** / **`ANY_SUFFIX`**
   (`netboot.templates`) — the no-engine error, the `EXT` normaliser (returns a
   lowercase tuple of suffixes, or `None` for "any"), and the `"*"` spelling of

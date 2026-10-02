@@ -1,7 +1,12 @@
 from pathlib_next import Path
 
 from ..logging import LOGGER
-from .common import Template, can_process_suffix, template_extensions
+from .common import (
+    FALLBACK_PRIORITY,
+    Template,
+    can_process_suffix,
+    template_extensions,
+)
 from .shell import ShellTemplate
 
 
@@ -42,6 +47,9 @@ class CopyTemplate(Template):
 
     #: `None` claims every suffix -- see `template_extensions`.
     EXT = None
+    #: Last resort: every other engine, including one a plugin registers after
+    #: this one, is consulted first.
+    PRIORITY = FALLBACK_PRIORITY
     #: Hand this engine the raw bytes, not decoded text.
     BINARY = True
 
