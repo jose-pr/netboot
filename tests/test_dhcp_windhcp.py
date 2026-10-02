@@ -228,3 +228,179 @@ def test_a_target_without_a_mac_is_named(stub, monkeypatch):
     )
     with pytest.raises(netboot.PixieLookupError, match="nomac"):
         server.add_target(_ctx(engine, "nomac"))
+
+
+# -- method=netsh -----------------------------------------------------------
+
+
+def _commands(script: str) -> "list[list[str]]":
+    """The netsh argument lists the script would run, in order."""
+    return [c["Args"] for c in _payload(script)["Commands"]]
+
+
+def test_the_default_method_is_the_powershell_cmdlets(stub):
+    server, ran = stub()
+    assert server.method == "powershell"
+    engine = _engine()
+    server.add_target(_ctx(engine))
+    assert "Add-DhcpServerv4Reservation" in ran[0]
+    assert "netsh" not in ran[0]
+
+
+def test_an_unknown_method_is_refused():
+    with pytest.raises(netboot.PixieConfigError, match="method must be"):
+        DhcpServer("windhcp://dhcp01/?method=wmic")
+
+
+def test_netsh_adds_the_reservation_then_its_options(stub):
+    server, ran = stub("windhcp://admin@dhcp01/?method=netsh")
+    engine = _engine(
+        images={
+            "debian": {
+                "template_path": [],
+                "dhcp_options": {"boot-file-name": "pxelinux.0", "lease-time": 600},
+            }
+        }
+    )
+    server.add_target(_ctx(engine))
+    commands = _commands(ran[0])
+    # The reservation first -- an option on a reservation that does not exist
+    # yet is an error, so order is part of the contract.
+    assert commands[0] == [
+        "dhcp",
+        "server",
+        "scope",
+        "10.0.0.0",
+        "add",
+        "reservedip",
+        "10.0.0.10",
+        "aabbccddeeff",  # netsh wants bare hex, not the cmdlets' hyphens
+        "web01",
+        "netboot",
+        "BOTH",
+    ]
+    rest = {tuple(c[4:]) for c in commands[1:]}
+    assert (
+        "set",
+        "reservedoptionvalue",
+        "10.0.0.10",
+        "3",
+        "IPADDRESS",
+        "10.0.0.1",
+    ) in rest
+    assert (
+        "set",
+        "reservedoptionvalue",
+        "10.0.0.10",
+        "67",
+        "STRING",
+        "pxelinux.0",
+    ) in rest
+    assert ("set", "reservedoptionvalue", "10.0.0.10", "51", "DWORD", "600") in rest
+
+
+def test_netsh_passes_a_multi_valued_option_as_separate_arguments(stub):
+    # Regression: the cmdlets take one comma-joined string, netsh takes one
+    # argument per value. Joining for both sent "a,b" as a single address.
+    server, ran = stub("windhcp://dhcp01/?method=netsh")
+    engine = _engine(
+        dhcpzones={
+            "lan": {
+                "network": "10.0.0.0/24",
+                "nameservers": ["10.0.0.53", "10.0.0.54"],
+            }
+        }
+    )
+    server.add_target(_ctx(engine))
+    dns = [c for c in _commands(ran[0]) if "6" in c and "IPADDRESS" in c][0]
+    assert dns[-2:] == ["10.0.0.53", "10.0.0.54"]
+
+
+def test_the_cmdlets_still_get_one_joined_value(stub):
+    server, ran = stub("windhcp://dhcp01/")
+    engine = _engine(
+        dhcpzones={
+            "lan": {
+                "network": "10.0.0.0/24",
+                "nameservers": ["10.0.0.53", "10.0.0.54"],
+            }
+        }
+    )
+    server.add_target(_ctx(engine))
+    options = {o["Id"]: o["Value"] for o in _payload(ran[0])["Options"]}
+    assert options[6] == "10.0.0.53,10.0.0.54"
+
+
+def test_netsh_addresses_a_remote_server_unc_style(stub):
+    server, ran = stub("windhcp://dhcp01/?method=netsh&server=dhcp02")
+    server.add_target(_ctx(_engine()))
+    assert _commands(ran[0])[0][:3] == ["dhcp", "server", "\\\\dhcp02"]
+
+
+def test_a_server_already_written_unc_style_is_not_doubled(stub):
+    server, ran = stub("windhcp://dhcp01/?method=netsh&server=" + "%5C%5Cdhcp02")
+    assert server.server == "\\\\dhcp02"
+    server.add_target(_ctx(_engine()))
+    assert _commands(ran[0])[0][2] == "\\\\dhcp02"
+
+
+def test_netsh_removal_tolerates_a_missing_reservation(stub):
+    server, ran = stub("windhcp://dhcp01/?method=netsh")
+    server.remove_target(_ctx(_engine()))
+    payload = _payload(ran[0])
+    assert payload["Commands"][0]["Args"][4:] == [
+        "delete",
+        "reservedip",
+        "10.0.0.10",
+        "aabbccddeeff",
+    ]
+    # Cleanup re-runs, so deleting nothing is success.
+    assert payload["Commands"][0]["Ignore"] is True
+
+
+def test_netsh_arguments_are_passed_as_an_array_not_a_command_line(stub):
+    # The whole reason netsh is driven from PowerShell: an argument stays an
+    # array element, so no value can become syntax.
+    server, ran = stub("windhcp://dhcp01/?method=netsh")
+    engine = _engine(
+        targets={
+            "web01": {
+                "hostname": "web01",
+                "ip": "10.0.0.10",
+                "mac": "aa:bb:cc:dd:ee:ff",
+                "image": "debian",
+                "globals": {},
+            }
+        }
+    )
+    server.add_target(_ctx(engine))
+    assert "& netsh @($c.Args)" in ran[0]
+    # Nothing is spliced into the script: the only quote-bearing text is JSON.
+    assert "$LASTEXITCODE" in ran[0]
+
+
+def test_a_hostile_value_stays_inside_the_json_payload(stub):
+    server, ran = stub("windhcp://dhcp01/?method=netsh")
+    engine = _engine(
+        targets={
+            "web01'; Remove-Item C:\\ -Recurse #": {
+                "hostname": "web01",
+                "ip": "10.0.0.10",
+                "mac": "aa:bb:cc:dd:ee:ff",
+                "image": "debian",
+            }
+        }
+    )
+    server.add_target(_ctx(engine, "web01'; Remove-Item C:\\ -Recurse #"))
+    script = ran[0]
+    # It survives as data, exactly as given, and never as script text.
+    assert _commands(script)[0][-3] == "web01'; Remove-Item C:\\ -Recurse #"
+    assert "Remove-Item C:\\ -Recurse #'" not in script.split("ConvertFrom-Json")[0]
+
+
+def test_netsh_keeps_the_raw_escape_hatch(stub):
+    server, ran = stub(
+        "windhcp://dhcp01/?method=netsh&raw.windhcp=Write-Output+'extra'"
+    )
+    server.add_target(_ctx(_engine()))
+    assert "Write-Output 'extra'" in ran[0]

@@ -1,15 +1,29 @@
-"""Windows DHCP Server backend: its own cmdlets, over ssh or WinRM.
+"""Windows DHCP Server backend: its cmdlets or netsh, over ssh or WinRM.
 
-Windows DHCP has no line protocol to speak, so netboot runs the `DhcpServer`
-PowerShell module where the operator already has access. The transport and the
-DHCP server are therefore separate: PowerShell runs on the URI's host, and the
-cmdlets act on `server=` (`-ComputerName`) when that differs.
+Windows DHCP has no line protocol to speak, so netboot drives the server's own
+tooling where the operator already has access. Two independent choices:
+
+- **`transport=`** -- how we get a shell: `ssh` (the system client) or `winrm`.
+- **`method=`** -- what we run there: `powershell` (the `DhcpServer` module's
+  cmdlets, the default) or `netsh` (`netsh dhcp server ...`), for a host where
+  the DHCP Server PowerShell module is not installed -- a Server Core box
+  without the RSAT feature, or an older release.
+
+The transport and the DHCP server stay separate either way: the shell runs on the
+URI's host, and the commands act on `server=` (`-ComputerName`, or netsh's
+`\\server`) when that differs.
 
 **No value is ever interpolated into the script.** The parameters travel as a
 JSON payload that PowerShell parses, with one escaping rule applied once (a
 single-quoted PowerShell string escapes `'` by doubling it). Values arrive as
 data, not as source — which is the lesson `shell_quote` and the dhcpd
 `statements` fragment each taught this code base the hard way.
+
+That holds for `method=netsh` too, and it is why netsh is invoked *from*
+PowerShell rather than from a command line: each netsh argument stays an element
+of a JSON array and is passed through `&  netsh @args`, so no quoting rule has to
+hold for a value. PowerShell is present on every Windows that has netsh, so this
+costs nothing and removes the whole command-line quoting question.
 """
 
 from __future__ import annotations
@@ -37,8 +51,42 @@ _OPTION_IDS = {
     "vendor-class-identifier": 60,
 }
 
+#: Windows DHCP option id -> the data type `netsh ... set reservedoptionvalue`
+#: wants. The cmdlets infer this from the option definition; netsh does not, and
+#: gets it wrong silently if told `STRING` for an address. Anything not listed
+#: (including a raw `option-NN`) is passed as STRING, which is what an unknown
+#: vendor option almost always is.
+_OPTION_TYPES = {
+    1: "IPADDRESS",  # subnet mask
+    3: "IPADDRESS",  # router
+    6: "IPADDRESS",  # domain name servers
+    15: "STRING",  # domain name
+    28: "IPADDRESS",  # broadcast address
+    42: "IPADDRESS",  # ntp servers
+    51: "DWORD",  # lease time
+    60: "STRING",  # vendor class identifier
+    66: "STRING",  # tftp server name
+    67: "STRING",  # boot file name
+}
+
 #: Where a WinRM password is read from. Never the URI.
 PASSWORD_ENV_VAR = "PIXIE_WINDHCP_PASSWORD"
+
+#: Runs each `Commands` entry as `netsh <args...>`. The arguments stay array
+#: elements -- never a string PowerShell re-parses -- so a value cannot become
+#: syntax. netsh's own text goes to the log; its **exit code** is what decides,
+#: because the success line ("Command completed successfully.") is localised and
+#: matching it would break on a non-English host. `Ignore` is for a delete that
+#: may have nothing to delete, so cleanup can re-run.
+_NETSH_BODY = [
+    "foreach ($c in $p.Commands) {",
+    "  $out = & netsh @($c.Args) 2>&1 | Out-String",
+    "  Write-Verbose $out",
+    "  if ($LASTEXITCODE -ne 0 -and -not $c.Ignore) {",
+    "    throw \"netsh $($c.Args -join ' ') failed ($LASTEXITCODE): $out\"",
+    "  }",
+    "}",
+]
 
 _SCRIPT = """$ErrorActionPreference = 'Stop'
 $p = ConvertFrom-Json '{payload}'
@@ -48,13 +96,13 @@ ConvertTo-Json @{{ ok = $true }}
 
 
 class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
-    """`windhcp://[user@]host/?transport=ssh|winrm&server=<dhcp server>`
+    """`windhcp://[user@]host/?transport=ssh|winrm&method=powershell|netsh&server=<dhcp server>`
 
     Every other query key is a client option. The scope comes from the zone
     when the target is applied, not from here.
     """
 
-    SETTINGS = frozenset({"transport", "server", "auth", "port", "ssl"})
+    SETTINGS = frozenset({"transport", "method", "server", "auth", "port", "ssl"})
 
     def __init__(self, uri: str):
         super().__init__(uri)
@@ -68,6 +116,11 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             raise PixieConfigError(
                 f"windhcp: transport must be ssh or winrm, not {self.transport!r}"
             )
+        self.method = str(self.settings.get("method", "powershell")).lower()
+        if self.method not in ("powershell", "netsh"):
+            raise PixieConfigError(
+                f"windhcp: method must be powershell or netsh, not {self.method!r}"
+            )
         self.server = self.settings.get("server") or ""
         self.auth = self.settings.get("auth", "ntlm")
         self.port = int(
@@ -78,6 +131,8 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
     # -- the DhcpServer contract ------------------------------------------
 
     def add_target(self, netboot: "_ty.Any"):
+        if self.method == "netsh":
+            return self._add_target_netsh(netboot)
         target = netboot.target
         options = self.options_for(netboot)
         payload = {
@@ -87,7 +142,7 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             "Name": str(target._id),
             "ComputerName": self.server,
             "Options": [
-                {"Id": option_id, "Value": value}
+                {"Id": option_id, "Value": _value(value)}
                 for option_id, value in _option_ids(options)
             ],
         }
@@ -105,6 +160,8 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         self.run(payload, body)
 
     def remove_target(self, netboot: "_ty.Any"):
+        if self.method == "netsh":
+            return self._remove_target_netsh(netboot)
         target = netboot.target
         payload = {
             "ScopeId": str(_scope(netboot)),
@@ -124,6 +181,83 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             "}",
         ]
         self.run(payload, body)
+
+    # -- method=netsh ------------------------------------------------------
+
+    def _netsh_scope(self, scope: str) -> "list[str]":
+        """The `dhcp server [\\host] scope <scope>` prefix every command shares."""
+        prefix = ["dhcp", "server"]
+        if self.server:
+            # netsh addresses a remote server as a UNC-style name; it accepts an
+            # address too, which is why this is not validated as a hostname.
+            prefix.append(
+                self.server if self.server.startswith("\\\\") else f"\\\\{self.server}"
+            )
+        prefix += ["scope", scope]
+        return prefix
+
+    def _add_target_netsh(self, netboot: "_ty.Any"):
+        target = netboot.target
+        options = self.options_for(netboot)
+        scope = str(_scope(netboot))
+        base = self._netsh_scope(scope)
+        commands = [
+            {
+                # `add reservedip <ip> <mac> [name] [comment] [BOTH|DHCP|BOOTP]`.
+                # BOTH matches the cmdlets' default, so switching method does not
+                # change which protocols the reservation answers.
+                "Args": base
+                + [
+                    "add",
+                    "reservedip",
+                    str(target.ip),
+                    _netsh_client_id(target),
+                    str(target._id),
+                    "netboot",
+                    "BOTH",
+                ],
+                "Ignore": False,
+            }
+        ]
+        for option_id, value in _option_ids(options):
+            commands.append(
+                {
+                    "Args": base
+                    + [
+                        "set",
+                        "reservedoptionvalue",
+                        str(target.ip),
+                        str(option_id),
+                        _OPTION_TYPES.get(option_id, "STRING"),
+                    ]
+                    # Each value is its own argument: that is how netsh takes a
+                    # multi-valued option (two name servers, say).
+                    + [str(item) for item in _values(value)],
+                    "Ignore": False,
+                }
+            )
+        body = list(_NETSH_BODY)
+        body.extend(self.options.raw_for("windhcp"))
+        return self.run({"Commands": commands}, body)
+
+    def _remove_target_netsh(self, netboot: "_ty.Any"):
+        target = netboot.target
+        base = self._netsh_scope(str(_scope(netboot)))
+        commands = [
+            {
+                # Deleting a reservation that is not there is success here, the
+                # same as in the PowerShell path: cleanup re-runs.
+                "Args": base
+                + [
+                    "delete",
+                    "reservedip",
+                    str(target.ip),
+                    _netsh_client_id(target),
+                ],
+                "Ignore": True,
+            }
+        ]
+        return self.run({"Commands": commands}, list(_NETSH_BODY))
 
     # -- running PowerShell ------------------------------------------------
 
@@ -227,9 +361,26 @@ def _client_id(target) -> str:
     return mac.as_str("-")
 
 
-def _option_ids(options) -> "list[tuple[int, str]]":
-    """Generic options as (option id, value) pairs Windows understands."""
-    pairs: "list[tuple[int, str]]" = []
+def _netsh_client_id(target) -> str:
+    """netsh wants the MAC as bare hex; the cmdlets want it hyphenated."""
+    return _client_id(target).replace("-", "")
+
+
+def _values(value) -> "list":
+    """A value as the list netsh takes, one argument per entry."""
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return [value]
+
+
+def _option_ids(options) -> "list[tuple[int, object]]":
+    """Generic options as (option id, value) pairs Windows understands.
+
+    The value is **unformatted**: the cmdlets take a multi-valued option as one
+    comma-joined string (`_value`), netsh as one argument per value (`_values`),
+    and joining it here would have made the second impossible.
+    """
+    pairs: "list[tuple[int, object]]" = []
     for name, value in options.items():
         option_id = _OPTION_IDS.get(name)
         if option_id is None:
@@ -239,7 +390,7 @@ def _option_ids(options) -> "list[tuple[int, str]]":
                 option_id = int(name)
             else:  # pragma: no cover - unknown names are refused earlier
                 continue
-        pairs.append((option_id, _value(value)))
+        pairs.append((option_id, value))
     return pairs
 
 
