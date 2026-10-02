@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Iterable, Optional, Tuple, Union
 
 from jinja2 import DebugUndefined, StrictUndefined, Undefined
 from jinja2 import Environment as Renderer
@@ -21,10 +21,58 @@ if TYPE_CHECKING:
     from . import Loader
 
 
+class TemplateEngineError(Exception):
+    """No configured engine claims a template file.
+
+    Not a `PixieError`: `netboot.engine` imports this package, so the error a
+    loader raises cannot live there.
+    """
+
+
+#: An `EXT` entry meaning "any suffix", for an engine that is deliberately a
+#: catch-all. `EXT = None` means the same thing.
+ANY_SUFFIX = "*"
+
+
+def template_extensions(cls) -> Optional[Tuple[str, ...]]:
+    """The suffixes `cls` claims, or `None` for "any suffix".
+
+    `EXT` is written for the person subclassing, not for the comparison: a
+    single string (`EXT = "shtpl"`) and a missing leading dot both work, and
+    matching is case-insensitive.
+    """
+    ext: Union[None, str, Iterable[str]] = getattr(cls, "EXT", ())
+    if ext is None:
+        return None
+    if isinstance(ext, str):
+        ext = (ext,)
+    suffixes = []
+    for entry in ext:
+        entry = str(entry)
+        if entry in (ANY_SUFFIX, "." + ANY_SUFFIX):
+            return None
+        if not entry.startswith("."):
+            entry = "." + entry
+        suffixes.append(entry.lower())
+    return tuple(suffixes)
+
+
+def can_process_suffix(cls, file) -> bool:
+    """Whether `file`'s suffix is one of `cls.EXT`."""
+    suffixes = template_extensions(cls)
+    if suffixes is None:
+        return True
+    return str(getattr(file, "suffix", "")).lower() in suffixes
+
+
 class Template:
     """The minimal template contract: render, and say what you can process."""
 
     loader: "Loader"
+
+    #: Suffixes this engine renders. `()` claims nothing, `None` (or `"*"`)
+    #: claims everything -- see `template_extensions`.
+    EXT: ClassVar[Union[None, str, Tuple[str, ...]]] = ()
 
     def __init__(self, template: str) -> None:
         pass
@@ -47,4 +95,4 @@ class Template:
     @classmethod
     def can_process(cls, file: Path, template: str) -> bool:
         """Can this engine render `file`? Checked in `template_types` order."""
-        return False
+        return can_process_suffix(cls, file)

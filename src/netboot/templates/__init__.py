@@ -4,7 +4,14 @@ from jinja2 import TemplateNotFound
 from pathlib_next import Path, PosixPathname
 
 from ..utils.misc import parse_path
-from .common import JINJA_UNDEFINED, UNDEFINED_MODES, Renderer, Template
+from .common import (
+    JINJA_UNDEFINED,
+    UNDEFINED_MODES,
+    Renderer,
+    Template,
+    TemplateEngineError,
+    template_extensions,
+)
 from .jinja import JinjaTemplate, _Jinja2Template
 from .shell import ShellTemplate
 
@@ -197,4 +204,16 @@ class Loader(_JinjaLoader):
 
                 template.loader = self
                 return template
-        raise Exception(f"No engine available for template:{name}")
+        # Suffix picks the engine, so a file with none (or an unknown one) is a
+        # config mistake, not something to guess at: guessing is what used to
+        # read a kickstart's `%packages` as a placeholder.
+        claimed = []
+        for t in self.template_types:
+            suffixes = template_extensions(t)
+            claimed.append(
+                f"{t.__name__} ({', '.join(suffixes) if suffixes else 'any suffix'})"
+            )
+        raise TemplateEngineError(
+            f"no template engine handles {name!r} (resolved to {filename}); "
+            f"engines: {'; '.join(claimed) or 'none configured'}"
+        )

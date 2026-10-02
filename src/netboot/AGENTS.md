@@ -292,8 +292,9 @@ servers identifies a reservation by it.
   UTF-8. A name may carry `k=v;flag:` options before the final `:` (parsed but
   not currently consulted by name selection). Picks the first
   `template_types` entry whose `.can_process(path, source)` is true; raises
-  `jinja2.TemplateNotFound` if nothing matches, or a plain `Exception` if a
-  matching type has no usable engine.
+  `jinja2.TemplateNotFound` if no file matches the name, or
+  **`TemplateEngineError`** -- naming the file and every engine with its
+  suffixes -- if a file was found that no engine claims.
 - **`UNDEFINED_MODES`** / **`JINJA_UNDEFINED`** (`netboot.templates`) — the
   three mode names and the `jinja2` undefined class each maps to.
 - **`Renderer`** — alias for `jinja2.Environment`; `make_context` builds it
@@ -302,7 +303,8 @@ servers identifies a reservation by it.
   `PixieContext` (never share one across contexts — `globals["ctx"]` is
   mutated per render).
 - **`Template`** — minimal base (`.render(**globals)`, classmethod
-  `.can_process(file, template) -> bool`, both no-ops/`False` on the base),
+  `.can_process(file, template) -> bool`, which matches the suffixes in the
+  class attribute **`EXT`** -- `()` on the base, so it claims nothing),
   plus **`.is_up_to_date`** — a property that calls the loader's freshness
   check, so an edited shell template is reloaded rather than served from cache
   forever.
@@ -311,22 +313,40 @@ servers identifies a reservation by it.
   `%{NAME}`-style file raises `TemplateNotFound`. An imported macro file does
   not see `shell_quote`/`Path`/`Uri` unless imported `with context`.
 
-- **`JinjaTemplate`** (`.j2`/`.jinja`/`.jinja2` suffix) — a real
+- **`JinjaTemplate`** (`EXT = (".j2", ".jinja", ".jinja2")`) — a real
   `jinja2.Template`; `.render()` additionally injects `shell_quote`, `Path`
   (**`pathlib_next.Path`**, not the stdlib's — it accepts URI paths too) and
   `Uri` (`pathlib_next.uri.UriPath`) into the render globals. These reach the
   rendered template only; a `{% import %}`ed macro file does not see them
   unless imported `with context`.
-- **`ShellTemplate`** (matches any suffix — keep it **last** in
-  `template_types`) — `string.Template` with `%`-delimited placeholders;
-  `.render()` flattens the context (`utils.flatten`, keys joined with `_`,
-  list items by index) into `UPPERCASE` substitution variables (`None` → `""`,
-  `bool` → `"true"`/`"false"`). **Only the braced form `%{NAME}` is
-  substituted**: a bare `%word` is literal text, which is what lets kickstart
-  files (`%packages`, `%pre`, `%post`, `%end`) and `date +%Y` render
-  untouched. `%%` yields a literal `%`. An unknown `%{NAME}` follows
-  `templates_undefined`: `KeyError` under `strict` (the default), an empty
-  string under `lenient`, and the untouched placeholder under `debug`.
+- **`ShellTemplate`** (`EXT = (".shtpl",)` since 0.3.0 — it claimed *any*
+  suffix before) — `%`-delimited placeholders; `.render()` flattens the context
+  (`utils.flatten`, keys joined with `_`, list items by index) into `UPPERCASE`
+  substitution variables (`None` → `""`, `bool` → `"true"`/`"false"`).
+  **Only the braced form `%{NAME}` is substituted**: a bare `%word` is literal
+  text, which is what lets kickstart files (`%packages`, `%pre`, `%post`,
+  `%end`) and `date +%Y` render untouched. `%%` yields a literal `%`. An
+  unknown `%{NAME}` follows `templates_undefined`: `KeyError` under `strict`
+  (the default), an empty string under `lenient`, and the untouched placeholder
+  under `debug`.
+  **Defaults**: `%{NAME:-fallback}` substitutes `fallback` when the value is
+  unset *or* empty, `%{NAME-fallback}` only when it is unset; one layer of
+  `'`/`"` quotes is stripped; the fallback is literal (no nesting, no `}`); a
+  placeholder *with* a default never raises in any mode. `:=`, `:?` and `:+`
+  are not implemented and stay literal text.
+  **Configured by subclassing**, three class attributes: `EXT` (a string, a
+  sequence, dots optional, case-insensitive; `None` or `"*"` claims any suffix
+  — keep such a class **last** in `template_types`), `DELIMITER` (default
+  `"%"`; doubling it escapes it) and `PATTERN` — `"braced"` (default, `%{NAME}`
+  only), `"unbraced"` (`%NAME` only) or `"all"`; anything else raises
+  `ValueError` on first render. The compiled pattern is cached per class, so a
+  subclass never inherits its parent's delimiter. Module constants:
+  `PATTERNS`, `DEFAULT_OPERATORS`.
+- **`TemplateEngineError`** / **`template_extensions(cls)`** / **`ANY_SUFFIX`**
+  (`netboot.templates`) — the no-engine error, the `EXT` normaliser (returns a
+  lowercase tuple of suffixes, or `None` for "any"), and the `"*"` spelling of
+  "any". `TemplateEngineError` is **not** a `PixieError`: `netboot.engine`
+  imports this package, so the error cannot live there.
 
 ## Utils (`netboot.utils`)
 

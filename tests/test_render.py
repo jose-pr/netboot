@@ -15,7 +15,7 @@ def templates_dir(tmp_path):
     d = tmp_path / "templates"
     d.mkdir()
     (d / "boot.j2").write_text("host={{ ctx.target.hostname }} img={{ ctx.image._id }}")
-    (d / "boot.sh").write_text("HOST=%{TARGET_HOSTNAME} IMG=%{IMAGE__ID}")
+    (d / "boot.shtpl").write_text("HOST=%{TARGET_HOSTNAME} IMG=%{IMAGE__ID}")
     return d
 
 
@@ -49,7 +49,7 @@ def test_render_jinja(templates_dir):
 def test_render_shell(templates_dir):
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
-    out = ctx.render("boot.sh")
+    out = ctx.render("boot.shtpl")
     assert "HOST=host1" in out
     assert "IMG=debian" in out
 
@@ -75,7 +75,7 @@ echo done
 def test_shell_engine_renders_a_kickstart_with_percent_sections(templates_dir):
     # Regression: `%packages`/`%pre`/`%post` used to be read as placeholders,
     # so a normal kickstart file could not be rendered at all.
-    (templates_dir / "install.ks").write_text(KICKSTART)
+    (templates_dir / "install.ks.shtpl").write_text(KICKSTART)
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
     out = ctx.render("install.ks")
@@ -86,32 +86,32 @@ def test_shell_engine_renders_a_kickstart_with_percent_sections(templates_dir):
 def test_shell_engine_leaves_the_unbraced_form_literal(templates_dir):
     # Only `%{NAME}` substitutes; a bare `%NAME` is text, even when it names a
     # real context variable.
-    (templates_dir / "old.sh").write_text("HOST=%TARGET_HOSTNAME")
+    (templates_dir / "old.shtpl").write_text("HOST=%TARGET_HOSTNAME")
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
-    assert ctx.render("old.sh") == "HOST=%TARGET_HOSTNAME"
+    assert ctx.render("old.shtpl") == "HOST=%TARGET_HOSTNAME"
 
 
 def test_shell_engine_leaves_an_unknown_bare_percent_word_alone(templates_dir):
-    (templates_dir / "plain.sh").write_text("cp %sourcefile /boot && date +%Y%m%d")
+    (templates_dir / "plain.shtpl").write_text("cp %sourcefile /boot && date +%Y%m%d")
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
-    assert ctx.render("plain.sh") == "cp %sourcefile /boot && date +%Y%m%d"
+    assert ctx.render("plain.shtpl") == "cp %sourcefile /boot && date +%Y%m%d"
 
 
 def test_shell_engine_still_escapes_a_doubled_percent(templates_dir):
-    (templates_dir / "esc.sh").write_text("100%% done %{TARGET_HOSTNAME}")
+    (templates_dir / "esc.shtpl").write_text("100%% done %{TARGET_HOSTNAME}")
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
-    assert ctx.render("esc.sh") == "100% done host1"
+    assert ctx.render("esc.shtpl") == "100% done host1"
 
 
 def test_shell_engine_raises_for_an_unknown_braced_name(templates_dir):
-    (templates_dir / "bad.sh").write_text("X=%{NOSUCHVARIABLE}")
+    (templates_dir / "bad.shtpl").write_text("X=%{NOSUCHVARIABLE}")
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
     with pytest.raises(KeyError):
-        ctx.render("bad.sh")
+        ctx.render("bad.shtpl")
 
 
 def test_image_without_template_path_still_renders(templates_dir):
@@ -168,11 +168,11 @@ def test_jinja_keeps_the_templates_trailing_newline(templates_dir):
 def test_mac_less_targets_do_not_share_a_null_mac_candidate(templates_dir):
     # Every MAC-less target used to look for `00-00-00-00-00-00.<name>` first,
     # so one stray file of that name applied to all of them.
-    (templates_dir / "00-00-00-00-00-00.boot.sh").write_text("WRONG")
-    (templates_dir / "boot.sh").write_text("HOST=%{TARGET_HOSTNAME}")
+    (templates_dir / "00-00-00-00-00-00.boot.shtpl").write_text("WRONG")
+    (templates_dir / "boot.shtpl").write_text("HOST=%{TARGET_HOSTNAME}")
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
-    assert ctx.render("boot.sh") == "HOST=host1"
+    assert ctx.render("boot.shtpl") == "HOST=host1"
 
 
 def test_a_uri_search_path_is_not_turned_into_a_local_directory():
@@ -188,19 +188,19 @@ def test_shell_templates_notice_an_edited_file(templates_dir):
     from netboot.templates import Loader
     from netboot.templates.common import Renderer
 
-    (templates_dir / "cached.sh").write_text("v1")
+    (templates_dir / "cached.shtpl").write_text("v1")
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
     renderer = Renderer(loader=Loader([templates_dir]))
     renderer.globals["ctx"] = ctx
-    template = renderer.get_template("cached.sh")
+    template = renderer.get_template("cached.shtpl")
     assert template.is_up_to_date is True
     import os
     import time
 
     time.sleep(0.01)
-    (templates_dir / "cached.sh").write_text("v2")
-    os.utime(templates_dir / "cached.sh", (time.time() + 1, time.time() + 1))
+    (templates_dir / "cached.shtpl").write_text("v2")
+    os.utime(templates_dir / "cached.shtpl", (time.time() + 1, time.time() + 1))
     assert template.is_up_to_date is False
 
 
@@ -332,16 +332,16 @@ def test_debug_leaves_the_placeholder_visible(templates_dir):
     [("lenient", "X="), ("debug", "X=%{NOSUCHVAR}")],
 )
 def test_the_shell_engine_follows_the_same_switch(templates_dir, mode, expected):
-    (templates_dir / "u.sh").write_text("X=%{NOSUCHVAR}")
+    (templates_dir / "u.shtpl").write_text("X=%{NOSUCHVAR}")
     ctx = _netboot_with_undefined(templates_dir, mode)
-    assert ctx.render("u.sh") == expected
+    assert ctx.render("u.shtpl") == expected
 
 
 def test_the_shell_engine_is_strict_by_default(templates_dir):
-    (templates_dir / "u.sh").write_text("X=%{NOSUCHVAR}")
+    (templates_dir / "u.shtpl").write_text("X=%{NOSUCHVAR}")
     ctx = _netboot_with_undefined(templates_dir, "strict")
     with pytest.raises(KeyError):
-        ctx.render("u.sh")
+        ctx.render("u.shtpl")
 
 
 def test_an_unknown_mode_is_reported(templates_dir):
