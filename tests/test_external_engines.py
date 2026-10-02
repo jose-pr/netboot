@@ -125,6 +125,41 @@ def test_a_hanging_program_times_out():
         template.render()
 
 
+def test_crlf_from_the_program_is_normalised_when_the_engine_asks(tmp_path):
+    # Ruby-based programs translate stdout on Windows; an artifact must not
+    # depend on which host rendered it. ERB stops ruby doing it ($stdout.binmode);
+    # EPP cannot, so it normalises -- this covers that path without puppet.
+    import sys
+
+    emit = "import sys; sys.stdout.buffer.write(b'a\\r\\nb\\r\\n')"
+
+    class _Crlf(EppTemplate):
+        COMMAND = sys.executable
+
+        def command(self, program, template_path, values_path):
+            return [program, "-c", emit]
+
+    template = _Crlf("x")
+    template._globals_ = {}
+    assert template.render() == "a\nb\n"
+
+    class _Kept(_Crlf):
+        NEWLINES = None
+
+    kept = _Kept("x")
+    kept._globals_ = {}
+    assert kept.render() == "a\r\nb\r\n"
+
+
+def test_the_erb_script_stops_ruby_translating_stdout():
+    # The fix has to live in the script, because normalising afterwards would
+    # also strip CRLF a template emitted on purpose.
+    from netboot.templates.external import _ERB_SCRIPT
+
+    assert "$stdout.binmode" in _ERB_SCRIPT
+    assert ERBTemplate.NEWLINES is None
+
+
 # -- rendering: needs the real programs -------------------------------------
 
 ERB_SOURCE = """\

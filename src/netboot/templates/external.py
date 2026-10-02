@@ -44,6 +44,13 @@ class SubprocessTemplate(Template):
     #: Basename the template is written under, so the program's own error
     #: messages name something recognisable.
     BASENAME: ClassVar[str] = "template"
+    #: `"lf"` to translate CRLF out of the program's stdout, `None` to keep what
+    #: it emitted. A Ruby-based program on Windows translates "\n" to "\r\n" as
+    #: it writes stdout, which would make an artifact depend on the host netboot
+    #: happens to run on -- the same thing reading templates as UTF-8 prevents.
+    #: An engine that can stop the program doing it (see `_ERB_SCRIPT`) keeps
+    #: `None`, so a template that really wants CRLF can still emit it.
+    NEWLINES: ClassVar[str] = None
     #: Filename for the marshalled context. The contents are always JSON; the
     #: name matters because a program may insist on an extension -- `puppet epp
     #: render` refuses a `--values_file` that is not `.yaml` or `.pp`, and JSON
@@ -107,7 +114,10 @@ class SubprocessTemplate(Template):
             )
         # Decoded, not handed back as bytes: these are text templates, and the
         # programs emit UTF-8.
-        return result.stdout.decode("utf-8")
+        rendered = result.stdout.decode("utf-8")
+        if self.NEWLINES == "lf":
+            rendered = rendered.replace("\r\n", "\n")
+        return rendered
 
     @classmethod
     def can_process(cls, file: Path, template: str) -> bool:
@@ -119,10 +129,14 @@ class SubprocessTemplate(Template):
 #: a legal Ruby instance variable, into `@name` as well -- so a template can say
 #: `<%= @target['hostname'] %>` or `<%= @context['ctx']['target']['hostname'] %>`.
 #: `trim_mode: '-'` makes `<%- -%>` available; `print` rather than `puts` so the
-#: artifact's trailing newline is the template's own.
+#: artifact's trailing newline is the template's own, and `$stdout.binmode` so
+#: Windows ruby does not turn every "\n" into "\r\n" on the way out -- measured
+#: on a GitHub windows-latest runner, where it made the same template render
+#: different bytes than on Linux.
 _ERB_SCRIPT = """
 require 'erb'
 require 'json'
+$stdout.binmode
 @context = JSON.parse(File.read(ARGV[0]))
 @context.each do |key, value|
   instance_variable_set("@#{key}", value) if key =~ /\\A[a-z_][A-Za-z0-9_]*\\z/
@@ -182,6 +196,11 @@ class EppTemplate(SubprocessTemplate):
     EXT = (".epp",)
     COMMAND = "puppet"
     ENV_VAR = "PIXIE_PUPPET"
+    #: puppet renders through Ruby and there is no flag to stop it translating
+    #: stdout on Windows, so CRLF is normalised out of the result. The cost is
+    #: that a `.epp` template cannot deliberately emit CRLF; the alternative is
+    #: an artifact whose bytes depend on which host rendered it.
+    NEWLINES = "lf"
     #: `puppet epp render` rejects any other extension for `--values_file`,
     #: whatever the file actually holds. JSON is valid YAML, so the contents are
     #: unchanged -- only the name is.
