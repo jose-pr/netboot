@@ -145,7 +145,7 @@ class kea(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                 option_data.append({"code": int(code), "data": _value(value)})
             else:
                 option_data.append({"name": name, "data": _value(value)})
-        option_data.extend(options.raw_for("kea"))
+        option_data.extend(self.extras(ctx, "add"))
         if option_data:
             reservation["option-data"] = option_data
         return reservation

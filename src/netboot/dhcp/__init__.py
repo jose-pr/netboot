@@ -13,7 +13,7 @@ if _ty.TYPE_CHECKING:
 
 from urllib.parse import urlparse
 
-from .options import DhcpOptions, build_options, split_query
+from .options import PHASES, DhcpOptions, build_options, split_query
 
 #: Backends netboot ships, and the extra each needs. Used only to turn "no
 #: backend for scheme" into a message that names the fix.
@@ -114,6 +114,45 @@ class DhcpServer:
     def options_for(self, ctx) -> DhcpOptions:
         """The client options for this target on this server, fully merged."""
         return build_options(ctx, self)
+
+    def extras(self, ctx, phase: str = "add") -> "list":
+        """Backend-native fragments to apply along with the reservation.
+
+        This is the extension point for anything netboot does not model: an
+        extra statement, an extra command, a conditional that makes the server
+        answer two kinds of client differently (the iPXE chainload is the usual
+        one -- hand a PXE ROM the iPXE binary, then hand iPXE the script).
+
+        Two ways in, and they end up in the same list:
+
+        - **from config**, `raw.<backend>=...` on the connection, or
+          `raw.<backend>.remove=...` for teardown;
+        - **from code**, by overriding this method in a `DhcpServer` subclass,
+          which is the one that can look at `ctx` and decide per target:
+
+          ```python
+          class dhcpd(netboot.dhcp.dhcpd.dhcpd):
+              def extras(self, ctx, phase="add"):
+                  lines = super().extras(ctx, phase)
+                  if phase == "add" and ctx.image._id.startswith("ipxe"):
+                      lines.append('if exists user-class ... { filename "boot.ipxe"; }')
+                  return lines
+          ```
+
+        What a fragment *is* belongs to the backend and is documented there:
+        dhcpd takes config statements, dnsmasq config lines, kea `option-data`
+        entries, windhcp PowerShell lines (or, under `method=netsh`, a
+        `{"Args": [...], "Ignore": bool}` command). A backend calls this once
+        per phase and emits whatever comes back **verbatim** -- netboot does not
+        parse, validate or escape it, which is the point of an escape hatch and
+        also the risk of one.
+        """
+        if phase not in PHASES:
+            raise ValueError(f"phase must be one of {PHASES}, not {phase!r}")
+        options = getattr(self, "options", None)
+        if options is None:  # pragma: no cover - a subclass that skips __init__
+            return []
+        return options.raw_for(type(self).__name__, phase)
 
     def remove_target(self, netboot: "PixieContext"):
         """Disarm this backend for the target in `netboot` (a `PixieContext`)."""

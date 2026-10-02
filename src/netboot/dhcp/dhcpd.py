@@ -109,7 +109,7 @@ class dhcpd(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         target = netboot.target
         mac = _mac(target)
         options = self.options_for(netboot)
-        statements = render_statements(options, self.options.raw_for("dhcpd"))
+        statements = render_statements(options, self.extras(netboot, "add"))
         connection = self.connect()
         try:
             connection.add_host_supersede(

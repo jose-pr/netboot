@@ -59,8 +59,16 @@ APPLY_TIME = {
 OPTIONS_BUILDER = "options_builder"
 
 #: Query-key prefix for backend-native text netboot never translates:
-#: ``raw.dnsmasq=dhcp-option=tag:x,66,10.0.0.2``.
+#: ``raw.dnsmasq=dhcp-option=tag:x,66,10.0.0.2``. A phase may be appended --
+#: ``raw.dhcpd.remove=...`` -- for a fragment that belongs to teardown rather
+#: than to arming; a bare ``raw.<backend>`` is ``add``.
 RAW_PREFIX = "raw."
+
+#: The phases a raw fragment (or a backend's `extras()`) can belong to.
+PHASES = ("add", "remove")
+
+#: Separator in a `raw` key between backend and phase.
+RAW_PHASE_SEP = "."
 
 
 def is_option(name: str) -> bool:
@@ -83,9 +91,17 @@ class DhcpOptions(dict):
         super().__init__(*args, **kwargs)
         self.raw: "dict[str, list[str]]" = {k: list(v) for k, v in (raw or {}).items()}
 
-    def raw_for(self, backend: str) -> "list[str]":
-        """The untranslated lines this backend should emit verbatim."""
-        return list(self.raw.get(backend, ()))
+    def raw_for(self, backend: str, phase: str = "add") -> "list[str]":
+        """The untranslated lines this backend should emit verbatim.
+
+        `phase` is `add` or `remove`. A key with no phase (`raw.dhcpd=`) belongs
+        to `add`, which is what a fragment almost always is -- an extra
+        statement or command applied along with the reservation.
+        """
+        lines = list(self.raw.get(f"{backend}{RAW_PHASE_SEP}{phase}", ()))
+        if phase == "add":
+            lines = list(self.raw.get(backend, ())) + lines
+        return lines
 
     def copy(self) -> "DhcpOptions":
         return DhcpOptions(self, raw=self.raw)
@@ -111,7 +127,12 @@ def split_query(uri: str, settings: "_ty.Iterable[str]", backend: str):
         elif key == OPTIONS_BUILDER:
             builder = value
         elif key.startswith(RAW_PREFIX):
-            options.raw.setdefault(key[len(RAW_PREFIX) :], []).append(value)
+            name = key[len(RAW_PREFIX) :]
+            backend_name, _, phase = name.rpartition(RAW_PHASE_SEP)
+            if backend_name and phase in PHASES:
+                # `raw.dhcpd.remove=...` -- a teardown fragment.
+                name = f"{backend_name}{RAW_PHASE_SEP}{phase}"
+            options.raw.setdefault(name, []).append(value)
         elif key in APPLY_TIME:
             raise PixieConfigError(
                 f"{key!r} cannot be set on a {backend} connection: it depends on "

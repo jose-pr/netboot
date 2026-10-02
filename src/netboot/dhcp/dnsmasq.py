@@ -95,7 +95,11 @@ class dnsmasq(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         tag = _tag(target)
         self._write(self.hostsfile, tag, [_host_line(target, tag)])
         if self.optsfile is not None:
-            self._write(self.optsfile, tag, _option_lines(tag, options))
+            self._write(
+                self.optsfile,
+                tag,
+                _option_lines(tag, options, self.extras(netboot, "add")),
+            )
         self._reload()
 
     def remove_target(self, netboot: "_ty.Any"):
@@ -226,7 +230,7 @@ def _host_line(target, tag: str) -> str:
     return "dhcp-host=" + ",".join(fields)
 
 
-def _option_lines(tag: str, options) -> "list[str]":
+def _option_lines(tag: str, options, extras: "list[str]|None" = None) -> "list[str]":
     """Translate the generic options into dnsmasq's own syntax."""
     lines: "list[str]" = []
     boot_file = options.get("boot-file-name")
@@ -244,7 +248,10 @@ def _option_lines(tag: str, options) -> "list[str]":
         if code is None:
             code = name[len("option-") :] if name.startswith("option-") else name
         lines.append(f"dhcp-option=tag:{tag},{code},{_value(value)}")
-    lines.extend(options.raw_for("dnsmasq"))
+    # `extras` comes from the server's `extras()` hook when there is one, so a
+    # subclass can add a `dhcp-match`/`dhcp-boot` pair per target; falling back
+    # to the options' own raw lines keeps this usable without a server.
+    lines.extend(extras if extras is not None else options.raw_for("dnsmasq"))
     return lines
 
 

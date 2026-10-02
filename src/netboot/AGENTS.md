@@ -232,6 +232,20 @@ options from the URI query (see below) and translates them.
 Each raises `PixieLookupError` for a target with no MAC — every one of these
 servers identifies a reservation by it.
 
+- **`DhcpServer.extras(ctx, phase="add") -> list`** — the extension point for
+  anything netboot does not model: an extra statement, an extra command, or a
+  condition (the iPXE chainload is the usual one). The default returns the
+  configured `raw.<backend>` fragments for that phase; a subclass overrides it to
+  decide **per target**, and should call `super()` to keep the config's own. The
+  fragment shape is the backend's: dhcpd statements, dnsmasq config lines, a kea
+  `option-data` entry, or — for windhcp — a PowerShell line or a
+  `{"Args": [...], "Ignore": bool}` netsh command, which is rendered as a quoted
+  `netsh` call when the method is `powershell` rather than dropped. `phase` is
+  `add` or `remove` (**`PHASES`**); a bare `raw.<backend>` is `add`,
+  `raw.<backend>.remove` is teardown. Fragments are emitted **verbatim** — no
+  parsing, validation or escaping — and always **after** the modelled options,
+  so a conditional overrides them.
+
 ## DHCP options (`netboot.dhcp.options`)
 
 - **`GENERIC_OPTIONS`** — the option names netboot models and every backend
