@@ -13,6 +13,7 @@ from .common import (
     template_extensions,
 )
 from .jinja import JinjaTemplate, _Jinja2Template
+from .copy import CopyTemplate
 from .shell import ShellTemplate
 
 if TYPE_CHECKING:
@@ -56,7 +57,11 @@ class Loader(_JinjaLoader):
     def __init__(
         self,
         searchpaths: list,
-        template_types: list[Type[Template]] = [JinjaTemplate, ShellTemplate],
+        template_types: list[Type[Template]] = [
+            JinjaTemplate,
+            ShellTemplate,
+            CopyTemplate,
+        ],
         undefined: str = "strict",
     ) -> None:
         self.searchpaths = [
@@ -71,7 +76,21 @@ class Loader(_JinjaLoader):
     def get_source(
         self, environment: Renderer, template: str, **options
     ) -> Tuple[str, str, Callable[[], bool]]:
-        """Find `template` and return its text, path and freshness check."""
+        """Find `template` and return its text, path and freshness check.
+
+        Jinja2's loader contract is text, so this decodes. `load` uses
+        `find_source` instead: which engine gets the file decides whether it is
+        decoded at all.
+        """
+        data, filename, uptodate = self.find_source(environment, template, **options)
+        # Templates are UTF-8, not whatever the machine's locale says: the same
+        # tree must render identically on every host.
+        return data.decode("utf-8"), filename, uptodate
+
+    def find_source(
+        self, environment: Renderer, template: str, **options
+    ) -> Tuple[bytes, str, Callable[[], bool]]:
+        """Find `template` and return its **bytes**, path and freshness check."""
         ctx: "PixieContext" = environment.globals.get("ctx")
         options: dict[str, str]
 
@@ -144,9 +163,10 @@ class Loader(_JinjaLoader):
                 if path is None:
                     continue
 
-                # Templates are UTF-8, not whatever the machine's locale says:
-                # the same tree must render identically on every host.
-                contents = path.read_text(encoding="utf-8")
+                # Read as bytes: a copy template must be byte-exact, and only
+                # the engine that claims the file knows whether decoding it is
+                # even meaningful.
+                contents = path.read_bytes()
                 mtime = path.stat().st_mtime
 
                 def uptodate(path=path, mtime=mtime) -> bool:
@@ -171,9 +191,33 @@ class Loader(_JinjaLoader):
         """Build the template object, picking the first engine that can process it."""
         if globals is None:
             globals = {}
-        source, filename, uptodate = self.get_source(environment, name)
+        data, filename, uptodate = self.find_source(environment, name)
+        # Decoding is deferred: a `BINARY` engine (the copy engine) takes the
+        # bytes as they are, and a file that is not UTF-8 text at all must still
+        # reach it instead of failing on the way.
+        try:
+            source = data.decode("utf-8")
+        except UnicodeDecodeError as error:
+            source, decode_error = None, error
+        else:
+            decode_error = None
         for t in self.template_types:
-            if t.can_process(PosixPathname(filename), source):
+            if t.can_process(
+                PosixPathname(filename), data if source is None else source
+            ):
+                if getattr(t, "BINARY", False):
+                    template = t(data)
+                    template._globals_ = globals
+                    template._uptodate_ = uptodate
+                    template._undefined_ = self.undefined
+                    template.loader = self
+                    return template
+                if decode_error is not None:
+                    raise TemplateEngineError(
+                        f"{filename} is not valid UTF-8 text, which "
+                        f"{t.__name__} needs; only a BINARY engine (the copy "
+                        f"engine) can take it as bytes"
+                    ) from decode_error
                 if issubclass(t, _Jinja2Template):
                     code = None
                     # try to load the code from the bytecode cache if there is a
@@ -204,9 +248,9 @@ class Loader(_JinjaLoader):
 
                 template.loader = self
                 return template
-        # Suffix picks the engine, so a file with none (or an unknown one) is a
-        # config mistake, not something to guess at: guessing is what used to
-        # read a kickstart's `%packages` as a placeholder.
+        # Only reachable when `template_types` was narrowed and carries no
+        # catch-all: the default list ends in `CopyTemplate`, which copies
+        # an unclaimed file as it is.
         claimed = []
         for t in self.template_types:
             suffixes = template_extensions(t)

@@ -274,7 +274,8 @@ servers identifies a reservation by it.
 
 ## Templates (`netboot.templates`)
 
-- **`Loader(searchpaths, template_types=(JinjaTemplate, ShellTemplate))`** — a
+- **`Loader(searchpaths, template_types=(JinjaTemplate, ShellTemplate,
+  CopyTemplate))`** — a
   Jinja2 `BaseLoader`. Search-path entries are parsed the same way as config
   paths, so a `http://...` entry stays a URI instead of becoming a directory
   named `http:`. Without a `ctx` in the environment globals the loader still
@@ -294,7 +295,13 @@ servers identifies a reservation by it.
   `template_types` entry whose `.can_process(path, source)` is true; raises
   `jinja2.TemplateNotFound` if no file matches the name, or
   **`TemplateEngineError`** -- naming the file and every engine with its
-  suffixes -- if a file was found that no engine claims.
+  suffixes -- if a file was found that no engine claims. With the default
+  `template_types` that cannot happen: the list ends in the catch-all
+  `CopyTemplate`. **`get_source()` returns text (the jinja2 contract) and
+  decodes UTF-8; `find_source()` is the same search returning `bytes`** and is
+  what `load()` uses, so decoding happens only for an engine that needs text --
+  and raises `TemplateEngineError` naming the file when such an engine claims a
+  file that is not UTF-8.
 - **`UNDEFINED_MODES`** / **`JINJA_UNDEFINED`** (`netboot.templates`) — the
   three mode names and the `jinja2` undefined class each maps to.
 - **`Renderer`** — alias for `jinja2.Environment`; `make_context` builds it
@@ -304,7 +311,9 @@ servers identifies a reservation by it.
   mutated per render).
 - **`Template`** — minimal base (`.render(**globals)`, classmethod
   `.can_process(file, template) -> bool`, which matches the suffixes in the
-  class attribute **`EXT`** -- `()` on the base, so it claims nothing),
+  class attribute **`EXT`** -- `()` on the base, so it claims nothing -- plus
+  **`BINARY`** (`False`; `True` to be constructed from the file's raw bytes and
+  to return bytes)),
   plus **`.is_up_to_date`** — a property that calls the loader's freshness
   check, so an edited shell template is reloaded rather than served from cache
   forever.
@@ -342,6 +351,14 @@ servers identifies a reservation by it.
   `ValueError` on first render. The compiled pattern is cached per class, so a
   subclass never inherits its parent's delimiter. Module constants:
   `PATTERNS`, `DEFAULT_OPERATORS`.
+- **`CopyTemplate`** (`EXT = None`, so it claims **any** suffix -- keep it
+  **last**; `BINARY = True`) -- the default catch-all: `.render()` returns the
+  file's **`bytes`**, unchanged and undecoded, which is what a static
+  `grub.cfg`, an EFI binary or a license file needs. A caller writing that out
+  wants `write_bytes`, and `ctx.render()` yields `bytes` rather than `str` for
+  such a file. If the source still holds `%{NAME}` placeholders it logs a
+  **warning** naming the `.shtpl` rename, since a silent copy of what used to be
+  a shell template is the one way the fallback can ship the wrong file.
 - **`TemplateEngineError`** / **`template_extensions(cls)`** / **`ANY_SUFFIX`**
   (`netboot.templates`) — the no-engine error, the `EXT` normaliser (returns a
   lowercase tuple of suffixes, or `None` for "any"), and the `"*"` spelling of

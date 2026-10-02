@@ -284,11 +284,13 @@ class PixieContext(Namespace):
         # Each PixieContext owns its own Renderer (built in make_context), so
         # setting globals["ctx"] here is per-context; do not share one Renderer
         # across contexts or nested renders would clobber this.
-        """Render `filename` against this context and return the text.
+        """Render `filename` against this context and return the result.
 
         The name is resolved by the template search (MAC, hostname, IP, then the
-        bare name). `strict=False` logs the failure at DEBUG and returns `None`
-        instead of raising.
+        bare name). Text for a Jinja or shell template; **`bytes`** for a file
+        the copy engine claims, which is every suffix no other engine owns -- it
+        is a byte-exact copy, so it is never decoded. `strict=False` logs the
+        failure at DEBUG and returns `None` instead of raising.
         """
         self._renderer.globals["ctx"] = self
         try:

@@ -4,6 +4,7 @@ The engine claims `.shtpl` and nothing else; `EXT`, `DELIMITER` and `PATTERN`
 are the three class attributes a subclass sets to claim something different.
 """
 
+import logging
 from argparse import Namespace
 
 import pytest
@@ -31,7 +32,7 @@ def render(source, mode="strict", cls=ShellTemplate, **context):
         ("boot.shtpl", True),
         ("boot.SHTPL", True),  # suffix match is case-insensitive
         ("boot.cfg.shtpl", True),
-        ("boot.cfg", False),  # the pre-0.3 catch-all is gone
+        ("boot.cfg", False),  # the catch-all moved to CopyTemplate
         ("install.ks", False),
         ("boot.j2", False),
     ],
@@ -63,21 +64,103 @@ def test_the_jinja_engine_claims_its_suffixes_through_ext():
     assert JinjaTemplate.can_process(PosixPathname("a.shtpl"), "") is False
 
 
-def test_a_file_no_engine_claims_is_an_error_naming_the_suffixes(tmp_path):
-    root = tmp_path / "templates"
-    root.mkdir()
-    (root / "boot.cfg").write_text("kernel %{IMAGE__ID}")
-    engine = netboot.Pixie(
+def _engine_with(root):
+    return netboot.Pixie(
         templates=[root],
         images={"debian": {"template_path": []}},
         dhcpzones={"lan": {"network": "10.0.0.0/24"}},
         targets={"host1": {"hostname": "host1", "ip": "10.0.0.5", "image": "debian"}},
     )
+
+
+def test_a_file_no_engine_claims_is_copied_as_bytes(tmp_path):
+    root = tmp_path / "templates"
+    root.mkdir()
+    (root / "grub.cfg").write_bytes(b"linux /vmlinuz console=ttyS0 100%\n")
+    engine = _engine_with(root)
     ctx = engine.make_context(engine.lookup_target("host1"))
+    assert ctx.render("grub.cfg") == b"linux /vmlinuz console=ttyS0 100%\n"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"\x00\x01\x02\xff\xfe",  # not text at all
+        b"latin-1 caf\xe9 and nothing else",  # not UTF-8
+        b"crlf\r\nkept\r\n",  # line endings survive
+        b"no trailing newline",
+    ],
+)
+def test_the_copy_is_byte_exact(tmp_path, payload):
+    # The point of the engine being binary: whatever the file holds comes back
+    # unchanged, including bytes no decoder would accept.
+    root = tmp_path / "templates"
+    root.mkdir()
+    (root / "image.bin").write_bytes(payload)
+    engine = _engine_with(root)
+    ctx = engine.make_context(engine.lookup_target("host1"))
+    assert ctx.render("image.bin") == payload
+
+
+def test_a_text_engine_still_requires_utf8(tmp_path):
+    # The loader no longer decodes up front, so the error for a Jinja template
+    # that is not UTF-8 must come from the engine choice, not from the read.
+    root = tmp_path / "templates"
+    root.mkdir()
+    (root / "boot.j2").write_bytes(b"host=\xff\xfe")
+    engine = _engine_with(root)
+    ctx = engine.make_context(engine.lookup_target("host1"))
+    with pytest.raises(TemplateEngineError, match="not valid UTF-8"):
+        ctx.render("boot.j2")
+
+
+def test_a_copy_that_still_holds_placeholders_warns(tmp_path, caplog):
+    # The one way the catch-all can silently ship the wrong file: a template
+    # written before the shell engine took its own suffix.
+    root = tmp_path / "templates"
+    root.mkdir()
+    (root / "boot.cfg").write_text("kernel %{IMAGE__ID}")
+    engine = _engine_with(root)
+    ctx = engine.make_context(engine.lookup_target("host1"))
+    with caplog.at_level(logging.WARNING, logger="netboot"):
+        assert ctx.render("boot.cfg") == b"kernel %{IMAGE__ID}"
+    assert ".shtpl" in caplog.text and "%{NAME}" in caplog.text
+
+
+def test_an_escaped_delimiter_alone_is_not_reported_as_a_placeholder(tmp_path, caplog):
+    root = tmp_path / "templates"
+    root.mkdir()
+    (root / "notes.txt").write_text("disk 100%% full")
+    engine = _engine_with(root)
+    ctx = engine.make_context(engine.lookup_target("host1"))
+    with caplog.at_level(logging.WARNING, logger="netboot"):
+        assert ctx.render("notes.txt") == b"disk 100%% full"
+    assert "rename" not in caplog.text
+
+
+def test_without_a_catch_all_an_unclaimed_file_is_an_error(tmp_path):
+    # `template_types` narrowed to the suffix engines: there is then nothing to
+    # copy a file with, and the error names what each engine does claim.
+    from netboot.templates import Loader
+    from netboot.templates.common import Renderer
+
+    root = tmp_path / "templates"
+    root.mkdir()
+    (root / "boot.cfg").write_text("kernel x")
+    renderer = Renderer(
+        loader=Loader([root], template_types=[JinjaTemplate, ShellTemplate])
+    )
     with pytest.raises(TemplateEngineError) as excinfo:
-        ctx.render("boot.cfg")
+        renderer.get_template("boot.cfg")
     message = str(excinfo.value)
     assert "boot.cfg" in message and ".shtpl" in message and ".j2" in message
+
+
+def test_the_copy_engine_claims_anything_and_comes_last():
+    from netboot.templates import Loader, CopyTemplate
+
+    assert CopyTemplate.can_process(PosixPathname("anything.xyz"), "") is True
+    assert Loader([]).template_types[-1] is CopyTemplate
 
 
 # -- delimiter and pattern -------------------------------------------------

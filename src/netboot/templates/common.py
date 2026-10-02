@@ -73,6 +73,11 @@ class Template:
     #: Suffixes this engine renders. `()` claims nothing, `None` (or `"*"`)
     #: claims everything -- see `template_extensions`.
     EXT: ClassVar[Union[None, str, Tuple[str, ...]]] = ()
+    #: True to be constructed from the file's raw `bytes` rather than decoded
+    #: text, and to return `bytes` from `render()`. The loader only decodes for
+    #: engines that say they need text, so a file that is not UTF-8 at all can
+    #: still reach a binary engine.
+    BINARY: ClassVar[bool] = False
 
     def __init__(self, template: str) -> None:
         pass
