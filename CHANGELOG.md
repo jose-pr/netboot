@@ -11,11 +11,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   *every* suffix before, as the documented fallback). The suffix picks the engine
   and the stem names the artifact, which is the convention `install.ks.j2`
   already used: rename `boot.cfg` to `boot.cfg.shtpl` and `ctx.render("boot.cfg")`
-  keeps working unchanged. A file no engine claims now raises
-  `netboot.templates.TemplateEngineError`, naming the file and every engine with
-  its suffixes, instead of being rendered on the assumption that it is a shell
-  template. To keep the old behaviour, subclass with `EXT = None` and pass the
-  class last in `Loader(template_types=[...])`.
+  keeps working unchanged. A file no engine claims is **copied as is** by the new
+  `CopyTemplate`, last in the default `template_types` — so a static `grub.cfg`
+  needs no engine, and a file that *does* carry `%{NAME}` placeholders ships them
+  unrendered until it is renamed. That one case logs a warning naming the rename.
+  Narrowing `template_types` so nothing claims a file raises
+  `netboot.templates.TemplateEngineError`, which names the file and every
+  engine's suffixes.
 
 ### Added
 - `ShellTemplate` is configured by subclassing, through three class attributes:
@@ -28,6 +30,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   text, and a placeholder with a default never fails whatever
   `templates_undefined` says. `:=`, `:?` and `:+` are not implemented and stay
   literal text.
+- `CopyTemplate` — the copy-as-is engine described above, working in **bytes**:
+  the loader no longer decodes a file before knowing which engine claims it, so
+  the copy is byte-exact for anything (CRLF, latin-1, a binary) and
+  `ctx.render()` returns `bytes` for such a file. `EXT` narrows it to chosen
+  suffixes; `Template.BINARY` is the flag any engine can set to be handed raw
+  bytes. A non-UTF-8 file claimed by a *text* engine now raises
+  `TemplateEngineError` naming the file, where it used to fail inside the read.
+- `Loader.find_source()` — the byte-returning counterpart of `get_source()`
+  (which keeps jinja2's text contract).
 - `Template.EXT` and `JinjaTemplate.EXT`, so suffix ownership is one declarative
   attribute per engine, plus `netboot.templates.template_extensions()` to read it
   back normalised.

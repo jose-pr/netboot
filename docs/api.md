@@ -41,6 +41,8 @@ The engine and its context objects. Rendered from source via
 
 ::: netboot.templates.ShellTemplate
 
+::: netboot.templates.CopyTemplate
+
 ## Utilities
 
 ::: netboot.utils.dicts

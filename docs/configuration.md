@@ -183,9 +183,18 @@ back to the bare template name.
 `%`-delimited shell engine, whose `%{UPPER_SNAKE}` placeholders come from the
 flattened context. Because a template is also found by its stem, the file behind
 an artifact called `boot.cfg` is `boot.cfg.shtpl` and `ctx.render("boot.cfg")`
-still finds it. A file no engine claims is an error naming the suffixes each one
-handles — before 0.3.0 the shell engine claimed *every* suffix, so a tree written
-against that needs renaming once.
+still finds it.
+
+Anything else is **copied as is** — a static `grub.cfg`, an EFI binary or a
+license file is a template that needs no engine. The copy engine works in
+**bytes**: the loader never decodes the file, so the result is byte-exact
+whatever it holds (CRLF line endings, latin-1 text, something that is not text at
+all) and `ctx.render()` returns `bytes` for it rather than `str`.
+
+Before 0.3.0 the shell engine claimed every suffix, so a file that *does* carry
+`%{NAME}` placeholders now ships them unrendered: rename it to `*.shtpl` once.
+That is the one mistake a copy can hide, so a copy that still finds placeholders
+logs a warning naming the rename.
 
 Only the braced form is substituted, so a bare `%word` is left alone — a kickstart
 file keeps its `%packages`, `%pre`, `%post` and `%end` sections, and a script keeps
@@ -213,4 +222,10 @@ class DollarTemplate(ShellTemplate):
 ```
 
 Pass the class in `Loader(..., template_types=[...])`; an engine that claims any
-suffix belongs **last** in that list.
+suffix belongs **last** in that list. The default list is `[JinjaTemplate,
+ShellTemplate, CopyTemplate]` — narrow it (dropping the copy engine, or giving it
+a suffix list of its own) and a file nothing claims raises
+`netboot.templates.TemplateEngineError`, naming the file and what each engine
+handles. A file that is not valid UTF-8 raises the same error when the engine
+that claims it needs text; set `BINARY = True` on an engine to be handed the raw
+bytes instead, as `CopyTemplate` does.
