@@ -219,7 +219,12 @@ options from the URI query (see below) and translates them.
   what runs there**: `powershell` (default) for the `DhcpServer` module's
   cmdlets, `netsh` for `netsh dhcp server ...` on a host without that module.
   `server=` becomes `-ComputerName`, or netsh's `\\server` (already-`\\`-prefixed
-  is left alone). Parameters travel as a JSON payload, never interpolated into
+  is left alone). An option's value is always a **list** in the payload, because
+  `Set-DhcpServerv4OptionValue -Value` takes `String[]` and refuses a joined
+  `"a,b"`; netsh takes one argument per value. Under `method=netsh` the script
+  **reads the state back** (`netsh ... dump`) and fails naming any option that is
+  missing or short of values, because netsh exits 0 and claims success after
+  silently dropping a value it dislikes. Parameters travel as a JSON payload, never interpolated into
   the script — including under `netsh`, which is invoked as
   `& netsh @($c.Args)` so every argument stays an array element. netsh is judged
   by `$LASTEXITCODE`, not its localised success line; a `delete` carries

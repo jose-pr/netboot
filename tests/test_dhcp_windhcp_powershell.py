@@ -27,10 +27,30 @@ pytestmark = pytest.mark.skipif(POWERSHELL is None, reason="needs PowerShell")
 #: returns `$env:NETSH_FAIL_AT`'s call as a failure, then runs the real script.
 HARNESS = """param([string]$Script)
 $global:calls = 0
+$global:applied = @()
 function netsh {
     $i = $global:calls
     $global:calls++
     Add-Content -LiteralPath $env:NETSH_LOG -Value ("CALL " + ($args -join "|"))
+    if ($args -contains "dump") {
+        # With no NETSH_DUMP, report back exactly what was asked for: netsh did
+        # as it was told, which is the normal case. A test that wants the
+        # measured failure -- success reported, value dropped -- supplies its own.
+        if ("$env:NETSH_DUMP" -ne "") {
+            Get-Content -LiteralPath $env:NETSH_DUMP
+        } else {
+            $global:applied
+        }
+        $global:LASTEXITCODE = 0
+        return
+    }
+    if ($args -contains "reservedoptionvalue") {
+        # `$k`, not `$i`: `$i` is the call number the fail-at check below uses.
+        $k = [array]::IndexOf($args, "reservedoptionvalue")
+        $ip = $args[$k + 1]; $id = $args[$k + 2]; $kind = $args[$k + 3]
+        $vals = ($args[($k + 4)..($args.Count - 1)] | ForEach-Object { '"' + $_ + '"' }) -join " "
+        $global:applied += "Dhcp Server Scope set reservedoptionvalue $ip $id $kind $vals"
+    }
     if ("$env:NETSH_FAIL_AT" -ne "" -and [int]$env:NETSH_FAIL_AT -eq $i) {
         $global:LASTEXITCODE = 1
     } else {
@@ -84,7 +104,7 @@ def _script(uri, action="add", **overrides):
     return captured[0]
 
 
-def _run(tmp_path, script, fail_at=None):
+def _run(tmp_path, script, fail_at=None, dump=None):
     """Run `script` under the harness; return (verdict, [netsh arg lists])."""
     script_path = tmp_path / "script.ps1"
     # write_bytes, not write_text(newline=...): that keyword is 3.10+ and the
@@ -96,6 +116,12 @@ def _run(tmp_path, script, fail_at=None):
     log.write_text("", encoding="utf-8")
     env = dict(os.environ, NETSH_LOG=str(log))
     env["NETSH_FAIL_AT"] = "" if fail_at is None else str(fail_at)
+    if dump is None:
+        env["NETSH_DUMP"] = ""
+    else:
+        dump_path = tmp_path / "dump.txt"
+        dump_path.write_bytes(dump.encode("utf-8"))
+        env["NETSH_DUMP"] = str(dump_path)
     completed = subprocess.run(
         [
             POWERSHELL,
@@ -214,3 +240,92 @@ def test_the_cmdlet_script_also_parses_and_runs(tmp_path):
     )
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout)["ok"] is True
+
+
+# -- the netsh read-back ----------------------------------------------------
+
+#: What `netsh ... dump` really prints (captured from Windows Server 2025): one
+#: command per option value, values quoted one token each, whatever the locale.
+DUMP_TEMPLATE = (
+    "Dhcp Server \\\\host Scope 10.0.0.0 Add reservedip 10.0.0.10 aabbccddeeff "
+    '"web01" "netboot" "BOTH"\n'
+    "{options}"
+)
+
+
+def _dump(*options):
+    lines = "".join(
+        "Dhcp Server \\\\host Scope 10.0.0.0 set reservedoptionvalue 10.0.0.10 "
+        f"{option_id} {kind} {values}\n"
+        for option_id, kind, values in options
+    )
+    return DUMP_TEMPLATE.format(options=lines)
+
+
+def _with_nameservers():
+    return _script(
+        "windhcp://dhcp01/?method=netsh",
+        dhcpzones={
+            "lan": {
+                "network": "10.0.0.0/24",
+                "gateway": "10.0.0.1",
+                "nameservers": ["10.0.0.53", "10.0.0.54"],
+            }
+        },
+    )
+
+
+def test_a_complete_dump_passes_verification(tmp_path):
+    dump = _dump(
+        ("3", "IPADDRESS", '"10.0.0.1"'),
+        ("6", "IPADDRESS", '"10.0.0.53" "10.0.0.54"'),
+        ("1", "IPADDRESS", '"255.255.255.0"'),
+        ("28", "IPADDRESS", '"10.0.0.255"'),
+        ("67", "STRING", '"pxelinux.0"'),
+    )
+    verdict, _ = _run(tmp_path, _with_nameservers(), dump=dump)
+    assert verdict == "OK"
+
+
+def test_an_option_missing_from_the_dump_fails_the_run(tmp_path):
+    # netsh exited 0 for every command and the option is not there: exactly what
+    # a rejected value looks like from outside.
+    dump = _dump(
+        ("3", "IPADDRESS", '"10.0.0.1"'),
+        ("1", "IPADDRESS", '"255.255.255.0"'),
+        ("28", "IPADDRESS", '"10.0.0.255"'),
+        ("67", "STRING", '"pxelinux.0"'),
+    )
+    verdict, _ = _run(tmp_path, _with_nameservers(), dump=dump)
+    assert verdict.startswith("THREW")
+    assert "option 6 was not applied" in verdict
+
+
+def test_a_dropped_value_fails_the_run(tmp_path):
+    # The measured case: two name servers asked for, one kept, success reported.
+    dump = _dump(
+        ("3", "IPADDRESS", '"10.0.0.1"'),
+        ("6", "IPADDRESS", '"10.0.0.53"'),
+        ("1", "IPADDRESS", '"255.255.255.0"'),
+        ("28", "IPADDRESS", '"10.0.0.255"'),
+        ("67", "STRING", '"pxelinux.0"'),
+    )
+    verdict, _ = _run(tmp_path, _with_nameservers(), dump=dump)
+    assert verdict.startswith("THREW")
+    assert "option 6 kept 1 of 2 values" in verdict
+
+
+def test_a_quoted_value_with_spaces_counts_as_one(tmp_path):
+    # `15 STRING "my domain"` is one value, not two.
+    script = _script(
+        "windhcp://dhcp01/?method=netsh&domain-name=my+domain",
+        dhcpzones={"lan": {"network": "10.0.0.0/24"}},
+    )
+    dump = _dump(
+        ("15", "STRING", '"my domain"'),
+        ("1", "IPADDRESS", '"255.255.255.0"'),
+        ("28", "IPADDRESS", '"10.0.0.255"'),
+        ("67", "STRING", '"pxelinux.0"'),
+    )
+    verdict, _ = _run(tmp_path, script, dump=dump)
+    assert verdict == "OK"

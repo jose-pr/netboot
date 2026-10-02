@@ -78,6 +78,37 @@ PASSWORD_ENV_VAR = "PIXIE_WINDHCP_PASSWORD"
 #: because the success line ("Command completed successfully.") is localised and
 #: matching it would break on a non-English host. `Ignore` is for a delete that
 #: may have nothing to delete, so cleanup can re-run.
+#: netsh exits 0 and prints its localised success line even when it rejected
+#: what it was told: setting option 6 to two name servers, one of which does not
+#: answer, drops that one, says "not a valid DNS Server", says "Command completed
+#: successfully", and exits 0 (measured on Windows Server 2025, 2026-10-02). So
+#: the end state is read back instead of trusted. `dump` is the one netsh output
+#: that is machine-readable and not prose -- it emits the commands that would
+#: recreate the state, quoted one token per value, in any locale.
+_NETSH_VERIFY = [
+    "if ($p.Verify) {",
+    "  $d = @($p.VerifyArgs)",
+    '  $dump = (& netsh @d 2>&1 | Out-String) -split "`r?`n"',
+    "  $bad = @()",
+    "  foreach ($v in $p.Verify) {",
+    "    $re = 'set reservedoptionvalue\\s+' + [regex]::Escape($p.IPAddress) +",
+    "          '\\s+' + $v.Id + '\\s'",
+    "    $line = $dump | Where-Object { $_ -match $re } | Select-Object -First 1",
+    '    if (-not $line) { $bad += "option $($v.Id) was not applied"; continue }',
+    "    $tail = $line -replace ('^.*' + $re), ''",
+    "    $tail = $tail -replace '^\\S+\\s*', ''",
+    '    $n = @([regex]::Matches($tail, \'"[^"]*"|\\S+\')).Count',
+    "    if ($n -lt $v.Count) {",
+    '      $bad += "option $($v.Id) kept $n of $($v.Count) values"',
+    "    }",
+    "  }",
+    "  if ($bad) {",
+    '    throw "netsh reported success but the server disagrees: " +',
+    "          ($bad -join '; ')",
+    "  }",
+    "}",
+]
+
 _NETSH_BODY = [
     "foreach ($c in $p.Commands) {",
     # `@a` on a *variable* is splatting, one argument per element. `@($c.Args)`
@@ -146,8 +177,14 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             "ClientId": _client_id(target),
             "Name": str(target._id),
             "ComputerName": self.server,
+            # A list, never a comma-joined string: `Set-DhcpServerv4OptionValue
+            # -Value` takes String[], and refuses "a,b" with "Parameters for
+            # option value to be set for option ID 6 do not match with option
+            # definition" -- which, under $ErrorActionPreference='Stop', also
+            # abandoned every option after it. Measured against a real Windows
+            # Server 2025 DHCP server, 2026-10-02.
             "Options": [
-                {"Id": option_id, "Value": _value(value)}
+                {"Id": option_id, "Value": [str(v) for v in _values(value)]}
                 for option_id, value in _option_ids(options)
             ],
         }
@@ -242,6 +279,10 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                     "Ignore": False,
                 }
             )
+        verify = [
+            {"Id": str(option_id), "Count": len(_values(value))}
+            for option_id, value in _option_ids(options)
+        ]
         extra_commands, extra_lines = _split_extras(self.extras(netboot, "add"))
         # A netsh command from `extras()` runs after the reservation and its
         # options, which is the order a conditional needs: the thing it
@@ -249,7 +290,16 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         commands.extend(extra_commands)
         body = list(_NETSH_BODY)
         body.extend(extra_lines)
-        return self.run({"Commands": commands}, body)
+        # Verification runs last, after any extra command, so a conditional that
+        # replaces an option is not reported as the option going missing.
+        body.extend(_NETSH_VERIFY)
+        payload = {
+            "Commands": commands,
+            "IPAddress": str(target.ip),
+            "Verify": verify,
+            "VerifyArgs": base + ["dump"],
+        }
+        return self.run(payload, body)
 
     def _remove_target_netsh(self, netboot: "_ty.Any"):
         target = netboot.target

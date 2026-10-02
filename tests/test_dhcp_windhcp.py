@@ -81,10 +81,11 @@ def test_add_builds_the_reservation_and_its_options(stub):
     assert payload["ClientId"] == "aa-bb-cc-dd-ee-ff"  # Windows' hyphen spelling
     assert payload["Name"] == "web01"
     ids = {option["Id"]: option["Value"] for option in payload["Options"]}
-    assert ids[67] == "boot\\x64\\wdsnbp.com"  # boot file
-    assert ids[66] == "10.0.0.2"  # tftp server
-    assert ids[6] == "10.0.0.53"
-    assert ids[3] == "10.0.0.1"  # router, from the zone
+    # A one-element list: -Value takes String[], never a joined string.
+    assert ids[67] == ["boot\\x64\\wdsnbp.com"]  # boot file
+    assert ids[66] == ["10.0.0.2"]  # tftp server
+    assert ids[6] == ["10.0.0.53"]
+    assert ids[3] == ["10.0.0.1"]  # router, from the zone
 
 
 def test_computer_name_is_only_sent_when_it_differs(stub):
@@ -316,19 +317,28 @@ def test_netsh_passes_a_multi_valued_option_as_separate_arguments(stub):
     assert dns[-2:] == ["10.0.0.53", "10.0.0.54"]
 
 
-def test_the_cmdlets_still_get_one_joined_value(stub):
+def test_the_cmdlets_get_a_list_of_values_not_a_joined_string(stub):
+    # Measured against Windows Server 2025: `Set-DhcpServerv4OptionValue -Value`
+    # takes String[] and refuses "a,b" with "Parameters for option value ... do
+    # not match with option definition", which under ErrorAction Stop also
+    # abandoned every option after it. A reservation then had a router and no
+    # boot file, which is a target that gets an address and cannot boot.
     server, ran = stub("windhcp://dhcp01/")
     engine = _engine(
         dhcpzones={
             "lan": {
                 "network": "10.0.0.0/24",
+                "gateway": "10.0.0.1",
                 "nameservers": ["10.0.0.53", "10.0.0.54"],
             }
         }
     )
     server.add_target(_ctx(engine))
     options = {o["Id"]: o["Value"] for o in _payload(ran[0])["Options"]}
-    assert options[6] == "10.0.0.53,10.0.0.54"
+    assert options[6] == ["10.0.0.53", "10.0.0.54"]
+    # A single-valued option is still a one-element list, so the script needs no
+    # special case.
+    assert options[3] == ["10.0.0.1"]
 
 
 def test_netsh_addresses_a_remote_server_unc_style(stub):
@@ -405,3 +415,33 @@ def test_netsh_keeps_the_raw_escape_hatch(stub):
     )
     server.add_target(_ctx(_engine()))
     assert "Write-Output 'extra'" in ran[0]
+
+
+def test_netsh_asks_the_server_to_confirm_what_it_applied(stub):
+    # netsh exits 0 and says "Command completed successfully" having dropped a
+    # value it disliked (measured: option 6 with an unreachable name server), so
+    # the payload carries what to verify and where to read it back from.
+    server, ran = stub("windhcp://dhcp01/?method=netsh&server=dhcp02")
+    engine = _engine(
+        dhcpzones={
+            "lan": {
+                "network": "10.0.0.0/24",
+                "gateway": "10.0.0.1",
+                "nameservers": ["10.0.0.53", "10.0.0.54"],
+            }
+        }
+    )
+    server.add_target(_ctx(engine))
+    payload = _payload(ran[0])
+    assert payload["IPAddress"] == "10.0.0.10"
+    assert payload["VerifyArgs"][-1] == "dump"
+    assert payload["VerifyArgs"][:3] == ["dhcp", "server", "\\\\dhcp02"]
+    counts = {v["Id"]: v["Count"] for v in payload["Verify"]}
+    assert counts["6"] == 2  # two name servers must survive, not one
+    assert counts["3"] == 1
+
+
+def test_the_removal_script_has_nothing_to_verify(stub):
+    server, ran = stub("windhcp://dhcp01/?method=netsh")
+    server.remove_target(_ctx(_engine()))
+    assert "Verify" not in _payload(ran[0])
