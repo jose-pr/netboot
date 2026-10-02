@@ -6,8 +6,8 @@ a laptop.
 
 ```
 config/pixie.yaml              the config `pixie` discovers (./config/pixie.yaml)
-templates/debian/boot.cfg      shell-engine template (%{NAME} placeholders)
-templates/debian/install.ks.j2 Jinja template (full context access)
+templates/debian/boot.cfg.shtpl shell-engine template (%{NAME} placeholders)
+templates/debian/install.ks.j2  Jinja template (full context access)
 plugins/recording.py           a DhcpServer backend that prints instead of arming
 ```
 
@@ -44,9 +44,11 @@ Expected output for `initiate web01`: the backend line, then the rendered
   zone by containment, so it names its `dhcpzone` — otherwise zone lookup finds
   nothing. Either target can be selected by id, hostname, MAC or IP, in any MAC
   spelling.
-- **Both template engines.** `boot.cfg` has no Jinja suffix, so the shell engine
-  renders it: `%{UPPER_SNAKE}` placeholders from the flattened context, and a
-  bare `%` left alone (which is what lets a kickstart's `%packages` through).
+- **Both template engines.** The suffix picks the engine and the stem names the
+  artifact: `boot.cfg.shtpl` is rendered by the shell engine and asked for as
+  `boot.cfg` — `%{UPPER_SNAKE}` placeholders from the flattened context, a bare
+  `%` left alone (which is what lets a kickstart's `%packages` through), and
+  `%{NAME:-fallback}` for a value the context may not carry.
   `install.ks.j2` is Jinja, with `ctx`, `shell_quote`, `Path` and `Uri` in scope.
 - **A real DHCP backend.** `config/pixie.yaml` carries a commented
   `dnsmasq://` entry beside the recording stub: uncomment it (and drop the stub)

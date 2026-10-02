@@ -6,6 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **The shell template engine now claims the `.shtpl` suffix only** (it claimed
+  *every* suffix before, as the documented fallback). The suffix picks the engine
+  and the stem names the artifact, which is the convention `install.ks.j2`
+  already used: rename `boot.cfg` to `boot.cfg.shtpl` and `ctx.render("boot.cfg")`
+  keeps working unchanged. A file no engine claims now raises
+  `netboot.templates.TemplateEngineError`, naming the file and every engine with
+  its suffixes, instead of being rendered on the assumption that it is a shell
+  template. To keep the old behaviour, subclass with `EXT = None` and pass the
+  class last in `Loader(template_types=[...])`.
+
+### Added
+- `ShellTemplate` is configured by subclassing, through three class attributes:
+  `EXT` (a string or a sequence, dots optional, case-insensitive; `None` or
+  `"*"` claims any suffix), `DELIMITER` (default `"%"`) and `PATTERN` —
+  `"braced"` (default, `%{NAME}`), `"unbraced"` (`%NAME`) or `"all"`.
+- POSIX default expressions in the braced form: `%{NAME:-fallback}` substitutes
+  the fallback when the value is unset *or* empty, `%{NAME-fallback}` only when
+  it is unset. One layer of `'`/`"` quotes is stripped, the fallback is literal
+  text, and a placeholder with a default never fails whatever
+  `templates_undefined` says. `:=`, `:?` and `:+` are not implemented and stay
+  literal text.
+- `Template.EXT` and `JinjaTemplate.EXT`, so suffix ownership is one declarative
+  attribute per engine, plus `netboot.templates.template_extensions()` to read it
+  back normalised.
+
 ## [0.2.4] - 2026-09-28
 
 ### Changed

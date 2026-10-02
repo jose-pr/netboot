@@ -176,11 +176,41 @@ not a mapping is an error naming the file.
 
 `templates` is a list of search paths (local or URI). For each render netboot looks
 for a file named by the target's MAC (`aa-bb-cc-...`), hostname, or IP — falling
-back to the bare template name. A `.j2` / `.jinja` / `.jinja2` file is rendered
-with Jinja2; anything else is rendered with the `%`-delimited shell engine, whose
-`%{UPPER_SNAKE}` placeholders come from the flattened context.
+back to the bare template name.
+
+**The suffix picks the engine, and the stem names the artifact.** A `.j2` /
+`.jinja` / `.jinja2` file is rendered with Jinja2; a `.shtpl` file with the
+`%`-delimited shell engine, whose `%{UPPER_SNAKE}` placeholders come from the
+flattened context. Because a template is also found by its stem, the file behind
+an artifact called `boot.cfg` is `boot.cfg.shtpl` and `ctx.render("boot.cfg")`
+still finds it. A file no engine claims is an error naming the suffixes each one
+handles — before 0.3.0 the shell engine claimed *every* suffix, so a tree written
+against that needs renaming once.
 
 Only the braced form is substituted, so a bare `%word` is left alone — a kickstart
 file keeps its `%packages`, `%pre`, `%post` and `%end` sections, and a script keeps
 `date +%Y`. Write `%%` for a literal `%` next to a brace, `%{NAME}` to substitute.
-An unknown `%{NAME}` is an error.
+An unknown `%{NAME}` follows `templates_undefined` (above).
+
+`%{NAME:-fallback}` renders `fallback` when `NAME` is unset **or empty**, and
+`%{NAME-fallback}` only when it is unset — the two POSIX forms, so a template can
+carry its own default instead of requiring the variable. One layer of `'`/`"`
+quotes is stripped (`%{NAME:-'a default'}`), the fallback is literal text (no
+nested placeholders, and no `}` inside it), and a placeholder that has a default
+never fails whatever `templates_undefined` says. The other POSIX forms (`:=`,
+`:?`, `:+`) are not implemented and stay literal text.
+
+The engine is configured by subclassing, not by config, for a tree that uses
+another convention:
+
+```python
+from netboot.templates.shell import ShellTemplate
+
+class DollarTemplate(ShellTemplate):
+    EXT = (".tpl", ".cfg")   # a single string is fine; `None` claims any suffix
+    DELIMITER = "$"
+    PATTERN = "all"          # 'braced' (default), 'unbraced', or 'all'
+```
+
+Pass the class in `Loader(..., template_types=[...])`; an engine that claims any
+suffix belongs **last** in that list.

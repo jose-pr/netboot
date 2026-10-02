@@ -1,5 +1,7 @@
-# Shell-engine template: only %%{NAME} substitutes; a bare % is literal text,
-# so this comment survives and so does a shell line like: date +%Y%m%d
+# Shell-engine template: the `.shtpl` suffix is what picks the engine, and the
+# rendered artifact is named by the stem (`boot.cfg`). Only %%{NAME} substitutes;
+# a bare % is literal text, so this comment survives and so does a shell line
+# like: date +%Y%m%d. %%{NAME:-fallback} fills in a value the context lacks.
 default=install
 label install
     kernel %{IMAGE_GLOBALS_KERNEL}
