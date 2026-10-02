@@ -168,19 +168,35 @@ def test_host_ip_resolves_a_hostname(monkeypatch):
 
 
 def test_an_unresolvable_host_falls_back_to_the_configured_text(monkeypatch):
-    # `.ip()` is Optional, so the fallback is explicit at the call site. This is
-    # the shape netboot uses wherever a URL has to be built regardless.
+    # netimps keeps `.ip()` Optional so the type is honest; `try_ip()` is
+    # netboot's one-`or` wrapper, for the callers that must build a URL anyway.
     import netimps
 
     monkeypatch.setattr(netimps, "get_ip", lambda name, *a, **kw: None)
     host = Host("mirror.example")
     assert host.ip() is None
-    assert (host.ip() or str(host)) == "mirror.example"
+    assert host.try_ip() == "mirror.example"
 
 
 def test_an_empty_host_resolves_to_nothing():
-    assert Host(None).ip() is None
-    assert (Host(None).ip() or str(Host(None))) == ""
+    assert Host().ip() is None
+    assert Host().try_ip() == ""
+    assert Host(None).try_ip() == ""
+
+
+def test_try_ip_shares_netimps_caching(monkeypatch):
+    # The duplicate this replaced re-resolved on every call; a repo asked for
+    # several services paid for each one.
+    import netimps
+
+    calls = []
+    monkeypatch.setattr(
+        netimps, "get_ip", lambda name, *a, **kw: calls.append(name) or None
+    )
+    host = Host("mirror.example")
+    assert host.try_ip() == "mirror.example"
+    assert host.try_ip() == "mirror.example"
+    assert len(calls) == 1
 
 
 def test_a_failed_resolution_is_cached_until_asked_to_retry(monkeypatch):

@@ -159,9 +159,10 @@ class Repository(_NS):
             return "", None
         if scheme == "https":
             return host, port
-        # `.ip()` is Optional on purpose; `str(host)` is always the configured
-        # text, so an unresolvable name still builds a URL.
-        return str(Host(host).ip() or host), port
+        # `try_ip()` is netimps' `.ip()` with the configured text as fallback:
+        # an unresolvable name still has to build a URL. Cached, so a repo asked
+        # for several services resolves once.
+        return str(Host(host).try_ip()), port
 
     def service(self, name: str):
         """The base URI for a service name, `None` for `.local` when unset.

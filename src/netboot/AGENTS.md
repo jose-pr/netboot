@@ -289,7 +289,7 @@ servers identifies a reservation by it.
   named service's base URI (`service=None` → `.local`, scheme `"file"`);
   `None` if that service isn't defined. **`.service(name) -> UriPath | None`**
   — the base URI for `name`. For a *relative* service path the authority is
-  filled in from `.address`: resolved to an IP (`.ip() or str(host)`) for every scheme
+  filled in from `.address`: resolved to an IP (`try_ip()`) for every scheme
   except `https`, which keeps the configured name so TLS validation and
   name-based virtual hosts still work. An `address` of the form `host:port` or
   `[v6]:port` becomes a real host and port rather than a hostname containing an
@@ -455,19 +455,27 @@ servers identifies a reservation by it.
   `_parse_<prop>` coercers at construction, and marks the built object as
   merge-opaque — a later config layer replaces it wholesale rather than
   merging field-by-field).
-- **`Host`** — re-exported from **netimps**, not netboot's own (it was, on the
-  claim that it was a netboot concept; netimps has had the same type since
-  0.2.0). A hostname-or-IP address: **`.ip(refresh=False) -> IPAddress | None`**
-  resolves (a literal as-is, a name through one forward lookup) and **caches the
-  result, failures included**; `refresh=True` retries. `.value` is the text as
-  configured, `str(host)` the same, `.is_address` says whether it is a literal
-  without asking DNS. The fallback netboot wants is spelled at the call site:
-  **`host.ip() or str(host)`** — `.ip()` stays `Optional` so the type is honest,
-  and `str(host)` never loses the original text. Equality and hashing are by
-  text, and reach a plain `str` too. The `dns` extra is optional — without it
-  netimps resolves through its system/`nslookup` backends. **Faking resolution
-  in a test means patching `netimps.get_ip`**, which `.ip()` imports at call
-  time; patching netboot's own `resolve` re-export no longer reaches it.
+- **`Host(address: str | Host | None = None)`** — a **subclass of
+  `netimps.Host`** (netboot reimplemented that type once, on the claim that a
+  host was a netboot concept; it is not). `isinstance(h, netimps.Host)` holds, so
+  anything typed against the library accepts it.
+  From netimps: **`.ip(refresh=False) -> IPAddress | None`** resolves (a literal
+  as-is, a name through one forward lookup) and **caches the result, failures
+  included**; `.value` is the configured text, `str(host)` the same;
+  `.is_address` answers without DNS; equality and hashing are by text and reach
+  a plain `str` too (netboot's own class returned `NotImplemented` there).
+  Added by netboot, and the reason for the subclass — these are the names it
+  published before adopting netimps, kept so nothing breaks:
+  **`.try_ip() -> IPAddress | str`** (`.ip()` with the configured text as the
+  fallback, which is what a caller building a URL regardless wants; netimps keeps
+  `.ip()` `Optional` on purpose, and this is that one `or`), **`.address`** (the
+  old name for `.value`, writable — assigning it drops the cached resolution, or
+  `.ip()` would answer for the previous host), and a **default argument**, which
+  netimps requires.
+  The `dns` extra is optional — without it netimps resolves through its
+  system/`nslookup` backends. **Faking resolution in a test means patching
+  `netimps.get_ip`**, which `.ip()` imports at call time; patching netboot's own
+  `resolve` re-export no longer reaches it.
 - **`flatten(map, _prefix="") -> dict`** — recursively flattens a
   dict/`Namespace`/list into a single-level dict, joining keys with `_`
   (`{"a": {"b": 1}}` → `{"a_b": 1}`) and using list indices as keys. Two
