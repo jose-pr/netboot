@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`netboot.utils.net.Host` is netimps' `Host` now**, not netboot's own. The
+  local class claimed `Host` was "a netboot concept"; netimps has had the same
+  type since 0.2.0, written for the same reason, and the module's own stated
+  principle is to use the library's vocabulary. The current pin already provides
+  it, so no dependency change.
+
+  **This breaks two documented members**, so a consumer that used them must
+  change (under the pre-1.0 rule it also makes the next release a minor):
+
+  | was | now |
+  | --- | --- |
+  | `host.try_ip()` — address, or the raw string | `host.ip()` — address or `None`; write `host.ip() or str(host)` for the old fallback |
+  | `host.address` | `host.value` (`str(host)` unchanged) |
+  | `Host()` | `Host(None)` — the value argument is required |
+  | `Host("a") == "a"` was `False` | `True`, and the hashes match |
+
+  What you gain: `.ip()` **caches, failures included** (`refresh=True` retries),
+  so repeated lookups on one host cost one resolution; `.is_address` answers
+  without DNS; and on netimps 0.3.3 `.fqdn` gives a domain-name value type.
+  Faking resolution in a test now means patching **`netimps.get_ip`** — `.ip()`
+  imports it at call time, so patching netboot's `resolve` re-export no longer
+  reaches it.
+
 ## [0.3.1] - 2026-10-02
 
 ### Fixed

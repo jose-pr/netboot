@@ -59,7 +59,7 @@ The engine and its context objects. Rendered from source via
 
 ::: netboot.utils.dicts
 
-::: netboot.utils.net.Host
+::: netboot.utils.net
 
 ## CLI entry point
 
