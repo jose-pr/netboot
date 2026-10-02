@@ -7,28 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
-- **`netboot.utils.net.Host` is netimps' `Host` now**, not netboot's own. The
-  local class claimed `Host` was "a netboot concept"; netimps has had the same
-  type since 0.2.0, written for the same reason, and the module's own stated
-  principle is to use the library's vocabulary. The current pin already provides
-  it, so no dependency change.
+- **`netboot.utils.net.Host` is now netimps' `Host`**, subclassed rather than
+  reimplemented. The local class claimed `Host` was "a netboot concept"; netimps
+  has had the same type since 0.2.0, written for the same reason, and this
+  module's stated principle is to use the library's vocabulary. **Nothing is
+  removed**: `.try_ip()`, `.address` (readable *and* writable) and `Host()` with
+  no argument all behave as before, so this is not an API break.
 
-  **This breaks two documented members**, so a consumer that used them must
-  change (under the pre-1.0 rule it also makes the next release a minor):
+  What you gain for free: **`.ip()` caches its result, failures included**, so a
+  repo asked for several services resolves once where the old class resolved
+  every time (`refresh=True` retries). Also inherited: `.value` (the same text as
+  `.address`), `.is_address` (no DNS), and, on netimps 0.3.3, `.fqdn`.
 
-  | was | now |
-  | --- | --- |
-  | `host.try_ip()` — address, or the raw string | `host.ip()` — address or `None`; write `host.ip() or str(host)` for the old fallback |
-  | `host.address` | `host.value` (`str(host)` unchanged) |
-  | `Host()` | `Host(None)` — the value argument is required |
-  | `Host("a") == "a"` was `False` | `True`, and the hashes match |
-
-  What you gain: `.ip()` **caches, failures included** (`refresh=True` retries),
-  so repeated lookups on one host cost one resolution; `.is_address` answers
-  without DNS; and on netimps 0.3.3 `.fqdn` gives a domain-name value type.
-  Faking resolution in a test now means patching **`netimps.get_ip`** — `.ip()`
-  imports it at call time, so patching netboot's `resolve` re-export no longer
-  reaches it.
+  Two behaviour differences worth knowing, neither of them a documented contract:
+  `Host("a") == "a"` is now `True` with matching hashes, where the old class
+  returned `NotImplemented`; and faking resolution in a test means patching
+  **`netimps.get_ip`**, which `.ip()` imports at call time, rather than netboot's
+  own `resolve` re-export.
 
 ## [0.3.1] - 2026-10-02
 
