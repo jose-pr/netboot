@@ -39,6 +39,18 @@ The engine and its context objects. Rendered from source via
 
 ::: netboot.templates.JinjaTemplate
 
+::: netboot.templates.MakoTemplate
+
+::: netboot.templates.LiquidTemplate
+
+::: netboot.templates.HandlebarsTemplate
+
+::: netboot.templates.MustacheTemplate
+
+::: netboot.templates.ERBTemplate
+
+::: netboot.templates.EppTemplate
+
 ::: netboot.templates.ShellTemplate
 
 ::: netboot.templates.CopyTemplate

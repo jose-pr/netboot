@@ -36,7 +36,15 @@ python -m venv .venv/3.14-nt-amd64
 ```
 
 Install **every extra that has tests**: without `http` the repository-service
-tests skip rather than run, and `pytest -rs` is how you see that happen.
+tests skip rather than run, and `pytest -rs` is how you see that happen. The
+`dev` extra pulls in the optional template engines' libraries (`mako`,
+`python-liquid`, `pybars3`, `chevron`) for the same reason.
+
+`tests/test_external_engines.py` needs **`ruby`** and **`puppet`**, which this
+Windows box does not have: those cases skip here and run under WSL
+(`FedoraLinux-44` has both). A change to `.erb`/`.epp` rendering is unverified
+until the suite has run there — the engine-shape cases (registration, suffixes,
+the missing-program error) do run everywhere.
 
 ## Commands
 

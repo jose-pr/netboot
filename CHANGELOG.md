@@ -20,6 +20,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   engine's suffixes.
 
 ### Added
+- **Seven more template engines**, each claiming its own suffix and costing
+  nothing when unused: `MakoTemplate` (`.mako`, `netboot[mako]`),
+  `LiquidTemplate` (`.liquid`, `netboot[liquid]`), `HandlebarsTemplate`
+  (`.hbs`/`.handlebars`, `netboot[handlebars]`), `MustacheTemplate` (`.mustache`,
+  `netboot[mustache]`), and `ERBTemplate` (`.erb`) / `EppTemplate` (`.epp`),
+  which render through the system `ruby` and `puppet epp render` so an existing
+  template behaves as its author tested it (`PIXIE_RUBY` / `PIXIE_PUPPET` name
+  the program if it is not on `PATH`). Every engine is registered whether or not
+  its dependency is present — a claimed file reports what is missing instead of
+  being copied — and nothing is imported until a file claims it. What each engine
+  does with `templates_undefined` differs by library and is tabulated in the
+  configuration guide; handlebars and mustache cannot fail on an undefined name
+  at all.
+- `template_data()` / `DataView` / `jsonable()` — a lazy mapping view of the
+  render context for engines that read data rather than evaluate Python
+  (`{{ target.hostname }}` beside `{{ ctx.target.hostname }}`), and its
+  JSON-serialisable form for the subprocess engines.
+- `SubprocessTemplate` — the base for an engine that renders through another
+  language's own tooling: program lookup with an env override, a temporary
+  template and values file, a timeout, and the program's stderr in the error.
 - `ShellTemplate` is configured by subclassing, through three class attributes:
   `EXT` (a string or a sequence, dots optional, case-insensitive; `None` or
   `"*"` claims any suffix), `DELIMITER` (default `"%"`) and `PATTERN` —

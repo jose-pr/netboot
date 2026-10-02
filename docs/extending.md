@@ -98,6 +98,28 @@ Other attributes on the contract: **`BINARY = True`** to be handed the file's ra
 and `EXT = None` to claim *every* suffix — which only makes sense together with a
 low priority.
 
+The shipped engines are the worked examples, and they cover the three shapes an
+engine takes:
+
+- **evaluates Python** (`JinjaTemplate`, `MakoTemplate`) — hand the engine `ctx`
+  itself and let the template reach into it.
+- **reads data only** (`LiquidTemplate`, `HandlebarsTemplate`,
+  `MustacheTemplate`) — build the namespace with
+  `netboot.templates.template_data(self._globals_, extras)`, which returns a lazy
+  mapping view of the context. liquid cannot traverse attributes at all, so this
+  is not optional for that class of engine.
+- **shells out** (`ERBTemplate`, `EppTemplate`) — subclass
+  `SubprocessTemplate`, set `COMMAND`, `ENV_VAR` and `EXT`, and implement
+  `command(program, template_path, values_path)`. The base marshals the context
+  with `jsonable()`, writes template and values into a temporary directory, runs
+  the program with a timeout, and turns a non-zero exit into a
+  `TemplateEngineError` carrying the program's own stderr.
+
+An engine that needs an optional library imports it in a helper, not at module
+scope, and raises `ImportError` naming the extra — that way the class can be
+registered unconditionally, and a file it claims reports what is missing rather
+than falling through to the copy engine.
+
 ## Custom DHCP backends
 
 `netboot.dhcp.DhcpServer` dispatches on the URI scheme of a zone's `dhcpservers`

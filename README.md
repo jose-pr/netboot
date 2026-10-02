@@ -35,10 +35,20 @@ Optional extras:
 | `netboot[dns]` | The `dnspython` resolver backend (best coverage; without it hostname targets still resolve via the system/`nslookup` fallbacks) |
 | `netboot[http]` | `http`/`https` repository services (`requests`); `file`/`tftp` repos and rendering need nothing extra |
 | `netboot[kea]` | The `kea://` DHCP backend (`requests`) |
+| `netboot[mako]` | `*.mako` templates (`mako`) |
+| `netboot[liquid]` | `*.liquid` templates (`python-liquid`) |
+| `netboot[handlebars]` | `*.hbs` / `*.handlebars` templates (`pybars3`) |
+| `netboot[mustache]` | `*.mustache` templates (`chevron`) |
 | `netboot[dhcpd]` | The `dhcpd://` DHCP backend over OMAPI (`pypureomapi`) |
 | `netboot[winrm]` | `windhcp://` over WinRM (`pywinrm`); over ssh it needs nothing |
 | `netboot[ssh]` | `dnsmasq://` with remote `sftp://` paths (`pathlib_next[sftp]`) |
 | `netboot[docs]`   | Build the documentation site (`mkdocs`) |
+
+`*.erb` and `*.epp` templates need no extra, but do need `ruby` or `puppet`
+installed: they render through the real program, so an existing template behaves
+as its author tested it. `PIXIE_RUBY` / `PIXIE_PUPPET` name it when it is not on
+`PATH`. Jinja2 (`.j2`) and the `%{NAME}` shell engine (`.shtpl`) are built in, and
+a file no engine claims is copied unchanged.
 
 Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),
 [`pathlib_next`](https://github.com/jose-pr/pathlib-next) (URI-aware paths),
@@ -111,7 +121,9 @@ python -m venv .venv/3.14
 ```
 
 Install every extra that has tests — without `http` the repository-service tests
-skip instead of running, which `-rs` makes visible. Develop on the latest Python
+skip instead of running, which `-rs` makes visible (`dev` carries the template
+engines' libraries for the same reason; the `.erb`/`.epp` tests skip unless
+`ruby`/`puppet` are installed). Develop on the latest Python
 and also run the floor (3.9) before finishing a piece of work. More detail, plus
 the layout and CI notes, in
 [`AGENTS.md`](https://github.com/jose-pr/netboot/blob/main/AGENTS.md).

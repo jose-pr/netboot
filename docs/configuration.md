@@ -181,7 +181,38 @@ back to the bare template name.
 **The suffix picks the engine, and the stem names the artifact.** A `.j2` /
 `.jinja` / `.jinja2` file is rendered with Jinja2; a `.shtpl` file with the
 `%`-delimited shell engine, whose `%{UPPER_SNAKE}` placeholders come from the
-flattened context. Because a template is also found by its stem, the file behind
+flattened context. Seven more engines ship for template trees that already exist
+in another language:
+
+| Engine | Suffixes | Needs | `templates_undefined` |
+| ------ | -------- | ----- | --------------------- |
+| `JinjaTemplate` | `.j2` `.jinja` `.jinja2` | — | all three |
+| `MakoTemplate` | `.mako` | `netboot[mako]` | `strict`, `lenient`; `debug` behaves as `lenient` |
+| `LiquidTemplate` | `.liquid` | `netboot[liquid]` | all three (`debug` names the variable in the output) |
+| `HandlebarsTemplate` | `.hbs` `.handlebars` | `netboot[handlebars]` | **always lenient** — the library cannot fail |
+| `MustacheTemplate` | `.mustache` | `netboot[mustache]` | **always lenient** (logs under `strict`) |
+| `ERBTemplate` | `.erb` | `ruby` on `PATH` (or `PIXIE_RUBY`) | n/a — missing data is Ruby's `nil` |
+| `EppTemplate` | `.epp` | `puppet` on `PATH` (or `PIXIE_PUPPET`) | n/a — missing data is Puppet's `undef` |
+| `ShellTemplate` | `.shtpl` | — | all three |
+| `CopyTemplate` | anything else | — | n/a — nothing is substituted |
+
+Every optional engine is **registered whether or not its library is installed**,
+so a `.liquid` file tells you to `pip install netboot[liquid]` instead of being
+quietly copied. None of them is imported until a file claims it, so an install
+that uses none pays nothing.
+
+Jinja and mako evaluate Python, so a template reaches into `ctx` directly. The
+data languages (liquid, handlebars, mustache) and the external ones (ERB, EPP)
+get a **mapping view** of the same context instead: `{{ ctx.target.hostname }}`
+and `{{ target.hostname }}` both resolve, an address or a path arrives as the
+string a template would have printed, and the engine's own machinery
+(`ctx._netboot_`, the renderer) is left out. ERB additionally sets each top-level
+name as an instance variable (`@target`), and EPP as a parameter (`$target`).
+
+ERB and EPP run the real `ruby` and `puppet` as a subprocess, with the context
+marshalled to JSON — which is the point: an existing `.erb` renders the way its
+author tested it, rather than the way a reimplementation guesses. Set `PIXIE_RUBY`
+or `PIXIE_PUPPET` if the program is installed but not on `PATH`. Because a template is also found by its stem, the file behind
 an artifact called `boot.cfg` is `boot.cfg.shtpl` and `ctx.render("boot.cfg")`
 still finds it.
 
