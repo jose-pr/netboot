@@ -355,6 +355,45 @@ servers identifies a reservation by it.
   `ValueError` on first render. The compiled pattern is cached per class, so a
   subclass never inherits its parent's delimiter. Module constants:
   `PATTERNS`, `DEFAULT_OPERATORS`.
+- **Optional engines**, all registered unconditionally (a claimed file must
+  report its missing dependency, never be copied) and importing nothing until a
+  file claims them:
+  - **`MakoTemplate`** (`.mako`, `netboot[mako]`) -- Python expressions like
+    Jinja: gets `ctx`, `shell_quote`, `Path`, `Uri`. `strict` ->
+    mako's `strict_undefined`; `lenient` renders an empty string via a `Context`
+    subclass; **`debug` behaves as `lenient`** (a compiled mako template cannot
+    re-emit its `${...}`). Keeps the file's own newlines, unlike Jinja, whose
+    lexer normalises them. Names mako reserves (`self`, `next`, `context`, ...)
+    are dropped from the namespace with a warning.
+  - **`LiquidTemplate`** (`.liquid`, `netboot[liquid]`) -- the only optional
+    engine honouring all three modes (python-liquid ships an undefined class for
+    each; `debug` names the variable in the output).
+  - **`HandlebarsTemplate`** (`.hbs`/`.handlebars`, `netboot[handlebars]`, via
+    pybars3) and **`MustacheTemplate`** (`.mustache`, `netboot[mustache]`, via
+    chevron) -- **always lenient**: neither library can fail on an undefined
+    name. Mustache turns on chevron's `warn` under `strict`; handlebars logs
+    that the mode does not apply. Use another engine for an artifact that must
+    fail rather than ship a blank.
+  - **`ERBTemplate`** (`.erb`) and **`EppTemplate`** (`.epp`) -- render through
+    the real `ruby` / `puppet epp render` as a subprocess, so an existing
+    template behaves as its author tested it. They need the **program**, not a
+    Python package: `PIXIE_RUBY` / `PIXIE_PUPPET` override the lookup, a missing
+    one raises `TemplateEngineError` naming it, a non-zero exit carries the
+    program's stderr, and a render that exceeds `TIMEOUT` (60s) is abandoned.
+    ERB sets `@context` plus one instance variable per top-level name; EPP
+    receives each as a parameter (`$target`). `templates_undefined` does not
+    reach either -- missing data is `nil`/`undef`.
+- **`SubprocessTemplate`** -- the base for the two above: `COMMAND`, `ENV_VAR`,
+  `TIMEOUT`, `BASENAME`, `VALUES_NAME` (JSON contents; `puppet` insists on a
+  `.yaml` name) and `command(program, template_path, values_path)`.
+- **`template_data(globals, extras)`** / **`DataView`** / **`jsonable(value)`**
+  (`netboot.templates`) -- the namespace the non-Python engines get: `ctx` as a
+  lazy `Mapping` view plus the context's own attributes at the top level, so
+  `{{ target.hostname }}` works beside `{{ ctx.target.hostname }}`. Views wrap on
+  access and copy nothing. `jsonable()` is the serialisable form for the
+  subprocess engines: scalars stay, structures recurse, everything else is
+  stringified, `_`-prefixed keys are dropped (**except `_id`**) and a depth and
+  cycle guard keeps `ctx._netboot_` -- which reaches the whole program -- out.
 - **`CopyTemplate`** (`EXT = None`, so it claims **any** suffix -- keep it
   **last**; `BINARY = True`) -- the default catch-all: `.render()` returns the
   file's **`bytes`**, unchanged and undecoded, which is what a static

@@ -53,11 +53,20 @@ def _engine_with(root):
 
 
 def test_the_shipped_engines_are_registered_with_the_fallback_last():
-    assert [t.__name__ for t in TEMPLATE_TYPES] == [
-        "JinjaTemplate",
+    names = [t.__name__ for t in TEMPLATE_TYPES]
+    # Every shipped engine, optional ones included -- registration never
+    # depends on a library being installed.
+    assert names[0] == "JinjaTemplate"
+    assert names[-1] == "CopyTemplate"
+    assert {
+        "MakoTemplate",
+        "LiquidTemplate",
+        "HandlebarsTemplate",
+        "MustacheTemplate",
+        "ERBTemplate",
+        "EppTemplate",
         "ShellTemplate",
-        "CopyTemplate",
-    ]
+    } <= set(names)
     assert CopyTemplate.PRIORITY == FALLBACK_PRIORITY
     assert ShellTemplate.PRIORITY == JinjaTemplate.PRIORITY == DEFAULT_PRIORITY
 
@@ -66,12 +75,9 @@ def test_a_registered_engine_is_consulted_before_the_catch_all():
     # Registered *after* CopyTemplate, which is the realistic case: the plugin
     # module is imported once netboot itself is.
     register_template_type(_Shouty)
-    assert [t.__name__ for t in Loader([]).template_types] == [
-        "JinjaTemplate",
-        "ShellTemplate",
-        "_Shouty",
-        "CopyTemplate",
-    ]
+    types = Loader([]).template_types
+    assert types.index(_Shouty) < types.index(CopyTemplate)
+    assert types[-1] is CopyTemplate
 
 
 def test_a_plugin_engine_renders_its_own_suffix_end_to_end(tmp_path):

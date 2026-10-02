@@ -52,6 +52,15 @@ dependencies = [
 [project.optional-dependencies]
 # Config-file loading for the CLI (YAML with !include).
 config = ["pyyaml"]
+# The mako template engine (`*.mako`). netboot.templates registers the engine
+# either way, so a .mako file without the extra raises ImportError naming it
+# rather than falling through to the copy engine.
+mako = ["mako"]
+# Further optional template engines, same deal: the engine is always registered,
+# the library is imported only when a file claims it.
+liquid = ["python-liquid"]
+handlebars = ["pybars3"]
+mustache = ["chevron"]
 # http/https repository services. pathlib_next's uri scheme handler for
 # http(s) imports `requests` at module import, and nothing else installs it --
 # pathlib_next[uri] does not. Repos served over file/tftp, and rendering in
@@ -84,6 +93,11 @@ dev = [
     # Backend dependencies, so their tests run rather than skip.
     "pypureomapi",
     "pywinrm",
+    # Template engines behind an extra, so their tests run rather than skip.
+    "mako",
+    "python-liquid",
+    "pybars3",
+    "chevron",
 ]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 

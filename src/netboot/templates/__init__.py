@@ -20,13 +20,31 @@ from .common import (
     unregister_template_type,
 )
 from .copy import CopyTemplate
+from .data import DataView, jsonable, template_data
+from .external import EppTemplate, ERBTemplate, SubprocessTemplate
+from .handlebars import HandlebarsTemplate
 from .jinja import JinjaTemplate, _Jinja2Template
+from .liquid import LiquidTemplate
+from .mako import MakoTemplate
+from .mustache import MustacheTemplate
 from .shell import ShellTemplate
 
 # The shipped engines, in the order they are consulted when priorities tie.
+# Registering an optional engine does not import its library -- a `.liquid`
+# file must say which extra is missing, not fall through to the copy engine.
 # `CopyTemplate` carries `FALLBACK_PRIORITY`, so it is last whatever a plugin
 # registers afterwards.
-for _engine in (JinjaTemplate, ShellTemplate, CopyTemplate):
+for _engine in (
+    JinjaTemplate,
+    MakoTemplate,
+    LiquidTemplate,
+    HandlebarsTemplate,
+    MustacheTemplate,
+    ERBTemplate,
+    EppTemplate,
+    ShellTemplate,
+    CopyTemplate,
+):
     register_template_type(_engine)
 del _engine
 
