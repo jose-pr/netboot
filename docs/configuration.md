@@ -60,7 +60,7 @@ DHCP options the server should give the client.
 | `dnsmasq://` | dnsmasq | writes `dhcp-host`/`dhcp-option` files, local or over `sftp://` | nothing locally; `netboot[ssh]` for remote paths |
 | `kea://`, `keas://` | ISC Kea | `reservation-add` / `reservation-del` via the control agent | `netboot[kea]` |
 | `dhcpd://` | ISC dhcpd | an OMAPI host object | `netboot[dhcpd]` |
-| `windhcp://` | Windows DHCP | its own PowerShell cmdlets over ssh or WinRM | nothing over ssh; `netboot[winrm]` for WinRM |
+| `windhcp://` | Windows DHCP | its PowerShell cmdlets *or* `netsh`, over ssh or WinRM | nothing over ssh; `netboot[winrm]` for WinRM |
 
 Each has one thing that is easy to get wrong:
 
@@ -72,8 +72,21 @@ Each has one thing that is easy to get wrong:
   file-only Kea loads the hook and still refuses.
 - **dhcpd** hosts added over OMAPI do not survive a restart by themselves — that
   is dhcpd's design.
-- **Windows** needs the `DhcpServer` module on the host PowerShell runs on, and
-  an account with DHCP-administrator rights.
+- **Windows** needs an account with DHCP-administrator rights, and — for the
+  default `method=powershell` — the `DhcpServer` module on the host the shell runs
+  on. Where that module is missing (Server Core without the RSAT feature, or an
+  older release) `method=netsh` drives `netsh dhcp server ...` instead. The two
+  choices are independent: `transport=` is how netboot gets a shell (`ssh` or
+  `winrm`), `method=` is what it runs there.
+
+  netsh is still invoked *from* PowerShell, with each argument an element of a
+  JSON array — so no value is ever spliced into a command line, which is the same
+  guarantee the cmdlet path gives. netsh's **exit code** decides success, because
+  its "Command completed successfully." line is localised. A few behaviours are
+  netsh's own rather than netboot's: an option's data type has to be declared
+  (netboot maps the modelled options, and sends anything else as `STRING`), a
+  multi-valued option is passed as one argument per value, and the reservation is
+  created as `BOTH` (DHCP and BOOTP) to match what the cmdlets do by default.
 
 ### Options
 

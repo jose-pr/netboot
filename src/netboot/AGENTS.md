@@ -212,12 +212,22 @@ options from the URI query (see below) and translates them.
   `netboot[dhcpd]`) — an OMAPI host object whose `statements` carry the options,
   escaped. Secret from `keyfile=` or `$PIXIE_DHCPD_OMAPI_KEY`. A host added this
   way does **not** survive a dhcpd restart by itself.
-- **`windhcp://[user@]host/?transport=ssh|winrm&server=&auth=&port=&ssl=`**
-  (`netboot.dhcp.windhcp`) — the `DhcpServer` PowerShell cmdlets over the system
-  `ssh` client (default, no dependency) or WinRM (`netboot[winrm]`, password
-  from `$PIXIE_WINDHCP_PASSWORD`). `server=` becomes `-ComputerName`. Parameters
-  travel as a JSON payload, never interpolated into the script. The scope is the
-  zone's network address, overridable with `scope` **on the zone**.
+- **`windhcp://[user@]host/?transport=ssh|winrm&method=powershell|netsh&server=&auth=&port=&ssl=`**
+  (`netboot.dhcp.windhcp`) — Windows DHCP over the system `ssh` client (default,
+  no dependency) or WinRM (`netboot[winrm]`, password from
+  `$PIXIE_WINDHCP_PASSWORD`). **`transport=` is how we get a shell, `method=` is
+  what runs there**: `powershell` (default) for the `DhcpServer` module's
+  cmdlets, `netsh` for `netsh dhcp server ...` on a host without that module.
+  `server=` becomes `-ComputerName`, or netsh's `\\server` (already-`\\`-prefixed
+  is left alone). Parameters travel as a JSON payload, never interpolated into
+  the script — including under `netsh`, which is invoked as
+  `& netsh @($c.Args)` so every argument stays an array element. netsh is judged
+  by `$LASTEXITCODE`, not its localised success line; a `delete` carries
+  `Ignore` so cleanup can re-run; option data types come from `_OPTION_TYPES`
+  (unlisted → `STRING`), a multi-valued option becomes one argument per value
+  (the cmdlets take it comma-joined instead), and a reservation is added as
+  `BOTH`. The scope is the zone's network address, overridable with `scope`
+  **on the zone**.
 
 Each raises `PixieLookupError` for a target with no MAC — every one of these
 servers identifies a reservation by it.

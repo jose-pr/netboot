@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `windhcp://` takes **`method=powershell|netsh`**. The default is unchanged (the
+  `DhcpServer` cmdlets); `method=netsh` drives `netsh dhcp server ...` instead,
+  for a host where that PowerShell module is not installed. It is independent of
+  `transport=`, and netsh is invoked from PowerShell with each argument an array
+  element, so no value is spliced into a command line. Success is `$LASTEXITCODE`
+  rather than netsh's localised success line, a removal tolerates a reservation
+  that is not there, option data types are declared per option (unmapped ones as
+  `STRING`), and a multi-valued option becomes one argument per value.
+
 ## [0.3.0] - 2026-10-02
 
 ### Changed
