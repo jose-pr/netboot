@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **`windhcp://` could not set a multi-valued option** (two name servers, two NTP
+  servers) with its default PowerShell method, and the failure took the rest of
+  the reservation with it. The value was sent comma-joined, and
+  `Set-DhcpServerv4OptionValue -Value` takes `String[]`: Windows answered
+  "Parameters for option value to be set for option ID 6 do not match with option
+  definition" and, under `ErrorActionPreference = 'Stop'`, every option after it
+  was abandoned — so the target got a router and **no boot file**. Values are now
+  sent as a list. Present since the backend shipped in 0.2.0; found by running it
+  against a real Windows Server 2025 DHCP server rather than reading the script.
+
 ### Added
 - **`DhcpServer.extras(ctx, phase)`** — one documented extension point for
   backend-native fragments netboot does not model: an extra statement, an extra
@@ -16,6 +27,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   belongs to teardown rather than to arming. For `windhcp://` a fragment may be a
   PowerShell line or a `{"Args": [...], "Ignore": bool}` netsh command, which
   works under either `method`.
+- `method=netsh` **verifies what the server actually applied**. netsh exits 0 and
+  prints its success line even when it rejected what it was told — measured: a
+  `domain-name-servers` option with one unreachable address keeps the other, says
+  "not a valid DNS Server", says "Command completed successfully", exits 0. So
+  after applying, netboot reads the state back with `netsh ... dump` (the one
+  netsh output that is command syntax rather than localised prose) and fails
+  naming any option that is missing or short of values. The cmdlet method needs
+  none of this: Windows raises there by itself.
 - `windhcp://` takes **`method=powershell|netsh`**. The default is unchanged (the
   `DhcpServer` cmdlets); `method=netsh` drives `netsh dhcp server ...` instead,
   for a host where that PowerShell module is not installed. It is independent of

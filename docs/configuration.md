@@ -72,6 +72,10 @@ Each has one thing that is easy to get wrong:
   file-only Kea loads the hook and still refuses.
 - **dhcpd** hosts added over OMAPI do not survive a restart by themselves — that
   is dhcpd's design.
+- **Windows** validates some option values as it stores them, whichever method
+  you use: a name server that does not answer is refused rather than stored. An
+  arm that fails part-way leaves the reservation with the options applied so far
+  — the next successful arm fixes it, and `pixie complete` removes it.
 - **Windows** needs an account with DHCP-administrator rights, and — for the
   default `method=powershell` — the `DhcpServer` module on the host the shell runs
   on. Where that module is missing (Server Core without the RSAT feature, or an
@@ -84,8 +88,15 @@ Each has one thing that is easy to get wrong:
   guarantee the cmdlet path gives. Extra commands (a policy, say) go through
   `raw.windhcp=` or a subclass's `extras()`; see
   [Extra commands and conditions](extending.md#extra-commands-and-conditions),
-  which is also where the iPXE chainload recipe lives. netsh's **exit code** decides success, because
-  its "Command completed successfully." line is localised. A few behaviours are
+  which is also where the iPXE chainload recipe lives.
+
+  **netsh cannot be trusted to report failure.** Given an option value it dislikes
+  — a name server that does not answer — it keeps the rest, prints "not a valid DNS
+  Server", prints "Command completed successfully" and exits 0 (measured on
+  Windows Server 2025). So netboot reads the state back afterwards with
+  `netsh ... dump`, the one netsh output that is command syntax rather than
+  localised prose, and fails naming any option that did not land or lost values.
+  The cmdlet method needs no such check: Windows raises there by itself. A few behaviours are
   netsh's own rather than netboot's: an option's data type has to be declared
   (netboot maps the modelled options, and sends anything else as `STRING`), a
   multi-valued option is passed as one argument per value, and the reservation is
