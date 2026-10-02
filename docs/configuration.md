@@ -81,7 +81,10 @@ Each has one thing that is easy to get wrong:
 
   netsh is still invoked *from* PowerShell, with each argument an element of a
   JSON array — so no value is ever spliced into a command line, which is the same
-  guarantee the cmdlet path gives. netsh's **exit code** decides success, because
+  guarantee the cmdlet path gives. Extra commands (a policy, say) go through
+  `raw.windhcp=` or a subclass's `extras()`; see
+  [Extra commands and conditions](extending.md#extra-commands-and-conditions),
+  which is also where the iPXE chainload recipe lives. netsh's **exit code** decides success, because
   its "Command completed successfully." line is localised. A few behaviours are
   netsh's own rather than netboot's: an option's data type has to be declared
   (netboot maps the modelled options, and sends anything else as `STRING`), a

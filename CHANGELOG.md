@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`DhcpServer.extras(ctx, phase)`** — one documented extension point for
+  backend-native fragments netboot does not model: an extra statement, an extra
+  command, or a condition such as the iPXE chainload (serve the iPXE binary to a
+  PXE ROM, the script to iPXE). It defaults to the configured `raw.<backend>`
+  fragments, and a subclass overrides it to decide per target. All four shipped
+  backends consume it, and `raw.<backend>.remove=` is new: a fragment that
+  belongs to teardown rather than to arming. For `windhcp://` a fragment may be a
+  PowerShell line or a `{"Args": [...], "Ignore": bool}` netsh command, which
+  works under either `method`.
 - `windhcp://` takes **`method=powershell|netsh`**. The default is unchanged (the
   `DhcpServer` cmdlets); `method=netsh` drives `netsh dhcp server ...` instead,
   for a host where that PowerShell module is not installed. It is independent of
