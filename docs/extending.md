@@ -47,6 +47,57 @@ def only_on_lookup(event, netboot, value, kwargs):
     return value or fallback_target()
 ```
 
+## Custom template engines
+
+An engine is a class with two things: the suffixes it claims (`EXT`) and
+`render()`. Register it and it joins the engines every `Loader` consults.
+
+```python
+from netboot.templates import Template, register_template_type
+
+@register_template_type
+class MakoTemplate(Template):
+    EXT = ".mako"                      # a string, or a sequence of them
+
+    def __init__(self, template: str) -> None:
+        self._source = template
+
+    def render(self, **extras):
+        ctx = self._globals_["ctx"]    # the PixieContext being rendered
+        return my_mako_render(self._source, ctx)
+```
+
+Import the module before anything renders — `--load-module your.plugin`, the same
+flag a DHCP backend plugin needs.
+
+**Priority, not registration order, decides who gets a file.** Engines are
+consulted highest `PRIORITY` first, and a plugin is necessarily registered
+*after* the shipped engines — if order decided, every plugin would sit behind the
+catch-all `CopyTemplate` and never see a file. So:
+
+| `PRIORITY` | Meaning |
+| ---------- | ------- |
+| `DEFAULT_PRIORITY` (`0`) | an ordinary engine claiming its own suffixes — the default, and enough to outrank the copy engine |
+| above `0` | override a shipped engine on a suffix it also claims (`priority=10` to take `.j2` from `JinjaTemplate`) |
+| `FALLBACK_PRIORITY` (`-100`) | a last resort, where `CopyTemplate` sits |
+
+Engines of *equal* priority keep the order they were given, so an explicit
+`Loader(..., template_types=[...])` still means what it says. Set the priority on
+the class, or at registration for a class you do not own:
+
+```python
+register_template_type(SomeonesEngine, priority=10)
+```
+
+`unregister_template_type(cls)` removes one again, and a `Loader` snapshots the
+registry when it is built, so importing a plugin halfway through a run never
+changes an engine already in use.
+
+Other attributes on the contract: **`BINARY = True`** to be handed the file's raw
+`bytes` instead of decoded text (and to return bytes, as `CopyTemplate` does),
+and `EXT = None` to claim *every* suffix — which only makes sense together with a
+low priority.
+
 ## Custom DHCP backends
 
 `netboot.dhcp.DhcpServer` dispatches on the URI scheme of a zone's `dhcpservers`

@@ -221,11 +221,14 @@ class DollarTemplate(ShellTemplate):
     PATTERN = "all"          # 'braced' (default), 'unbraced', or 'all'
 ```
 
-Pass the class in `Loader(..., template_types=[...])`; an engine that claims any
-suffix belongs **last** in that list. The default list is `[JinjaTemplate,
-ShellTemplate, CopyTemplate]` — narrow it (dropping the copy engine, or giving it
-a suffix list of its own) and a file nothing claims raises
-`netboot.templates.TemplateEngineError`, naming the file and what each engine
-handles. A file that is not valid UTF-8 raises the same error when the engine
+Register the class with `netboot.templates.register_template_type` (see
+[Extending](extending.md#custom-template-engines)) or pass it in
+`Loader(..., template_types=[...])`. Engines are consulted in `PRIORITY` order,
+highest first, so a registered engine is asked before the catch-all
+`CopyTemplate` whatever order they were registered in. The default is every
+registered engine: `JinjaTemplate`, `ShellTemplate`, then `CopyTemplate`. Narrow
+it — dropping the copy engine, or giving it a suffix list of its own — and a file
+nothing claims raises `netboot.templates.TemplateEngineError`, naming the file and
+what each engine handles. A file that is not valid UTF-8 raises the same error when the engine
 that claims it needs text; set `BINARY = True` on an engine to be handed the raw
 bytes instead, as `CopyTemplate` does.

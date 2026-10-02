@@ -39,6 +39,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `TemplateEngineError` naming the file, where it used to fail inside the read.
 - `Loader.find_source()` — the byte-returning counterpart of `get_source()`
   (which keeps jinja2's text contract).
+- **A template-engine registry**: `register_template_type()` (bare or as a
+  decorator, with an optional `priority=`), `unregister_template_type()`,
+  `TEMPLATE_TYPES` and `by_priority()`. `Loader(template_types=None)` — the new
+  default — uses every registered engine, so a `--load-module` plugin is picked
+  up without rebuilding the list, and the list is snapshotted at construction.
+- **`Template.PRIORITY`**, so engine selection does not depend on registration
+  order: engines are consulted highest first, `DEFAULT_PRIORITY` (0) for an
+  ordinary engine and `FALLBACK_PRIORITY` (-100) for `CopyTemplate`. A plugin is
+  registered after the shipped engines, so without this every plugin would sit
+  behind the catch-all and never see a file. Equal priorities keep the order they
+  were given, so an explicit `template_types` list still means what it says.
 - `Template.EXT` and `JinjaTemplate.EXT`, so suffix ownership is one declarative
   attribute per engine, plus `netboot.templates.template_extensions()` to read it
   back normalised.
