@@ -159,7 +159,9 @@ class Repository(_NS):
             return "", None
         if scheme == "https":
             return host, port
-        return str(Host(host).try_ip()), port
+        # `.ip()` is Optional on purpose; `str(host)` is always the configured
+        # text, so an unresolvable name still builds a URL.
+        return str(Host(host).ip() or host), port
 
     def service(self, name: str):
         """The base URI for a service name, `None` for `.local` when unset.

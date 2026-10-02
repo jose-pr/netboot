@@ -1,4 +1,4 @@
-"""Tests for content repositories, resource resolution and `Host.try_ip`.
+"""Tests for content repositories, resource resolution and `Host.ip`.
 
 These assemble every artifact URL a rendered template embeds, so the joining
 and host fill-in rules are shipped contract. DNS is monkeypatched throughout --
@@ -93,9 +93,9 @@ def test_joinpath_extends_every_service_and_the_local_path():
 @requires_http
 def test_address_is_resolved_when_it_is_a_hostname(monkeypatch):
     monkeypatch.setattr(
-        netboot.netutils,
-        "resolve",
-        lambda name, *a, **kw: [netboot.netutils.parse("192.0.2.20")],
+        __import__("netimps"),
+        "get_ip",
+        lambda name, *a, **kw: netboot.netutils.parse("192.0.2.20"),
     )
     uri = _repo(address="mirror.example").service("http")
     assert "192.0.2.20" in str(uri)
@@ -148,30 +148,56 @@ def test_context_resource_repo_returns_the_owning_repository(tmp_path):
     assert ctx.resource_repo("nosuchresource") is None
 
 
-def test_host_try_ip_short_circuits_an_ip_literal(monkeypatch):
+def test_host_ip_short_circuits_an_ip_literal(monkeypatch):
+    import netimps
+
     def _boom(*a, **kw):  # a literal must never reach DNS
-        raise AssertionError("resolve() called for an IP literal")
+        raise AssertionError("get_ip() called for an IP literal")
 
-    monkeypatch.setattr(netboot.netutils, "resolve", _boom)
-    assert str(Host("10.0.0.7").try_ip()) == "10.0.0.7"
+    monkeypatch.setattr(netimps, "get_ip", _boom)
+    assert str(Host("10.0.0.7").ip()) == "10.0.0.7"
 
 
-def test_host_try_ip_resolves_a_hostname(monkeypatch):
+def test_host_ip_resolves_a_hostname(monkeypatch):
+    import netimps
+
     monkeypatch.setattr(
-        netboot.netutils,
-        "resolve",
-        lambda name, *a, **kw: [netboot.netutils.parse("192.0.2.30")],
+        netimps, "get_ip", lambda name, *a, **kw: netboot.netutils.parse("192.0.2.30")
     )
-    assert str(Host("mirror.example").try_ip()) == "192.0.2.30"
+    assert str(Host("mirror.example").ip()) == "192.0.2.30"
 
 
-def test_host_try_ip_falls_back_to_the_raw_string(monkeypatch):
-    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
-    assert Host("mirror.example").try_ip() == "mirror.example"
+def test_an_unresolvable_host_falls_back_to_the_configured_text(monkeypatch):
+    # `.ip()` is Optional, so the fallback is explicit at the call site. This is
+    # the shape netboot uses wherever a URL has to be built regardless.
+    import netimps
+
+    monkeypatch.setattr(netimps, "get_ip", lambda name, *a, **kw: None)
+    host = Host("mirror.example")
+    assert host.ip() is None
+    assert (host.ip() or str(host)) == "mirror.example"
 
 
-def test_host_try_ip_of_an_empty_address_is_empty():
-    assert Host().try_ip() == ""
+def test_an_empty_host_resolves_to_nothing():
+    assert Host(None).ip() is None
+    assert (Host(None).ip() or str(Host(None))) == ""
+
+
+def test_a_failed_resolution_is_cached_until_asked_to_retry(monkeypatch):
+    # netimps.Host caches failures, which netboot's own class did not: several
+    # lookups on one object are the common case. Worth pinning, because a test
+    # that patches `get_ip` *after* a first call would otherwise look broken.
+    import netimps
+
+    calls = []
+    monkeypatch.setattr(
+        netimps, "get_ip", lambda name, *a, **kw: calls.append(name) or None
+    )
+    host = Host("mirror.example")
+    assert host.ip() is None and host.ip() is None
+    assert len(calls) == 1
+    assert host.ip(refresh=True) is None
+    assert len(calls) == 2
 
 
 def test_http_service_without_requests_names_the_extra(monkeypatch):
@@ -204,14 +230,14 @@ def test_a_host_and_port_address_builds_a_real_authority(monkeypatch):
     # "mirror.example:8080" used to percent-encode the colon into the hostname,
     # and the whole string was handed to DNS -- a lookup that can only fail, and
     # does so at different speeds on different machines. Nothing here resolves.
-    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
+    monkeypatch.setattr(__import__("netimps"), "get_ip", lambda name, *a, **kw: None)
     repo = Repository(address="mirror.example:8080", services={"http": "/boot"})
     assert str(repo.service("http")).startswith("http://mirror.example:8080/")
 
 
 @requires_http
 def test_an_ipv6_literal_address_keeps_its_brackets(monkeypatch):
-    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
+    monkeypatch.setattr(__import__("netimps"), "get_ip", lambda name, *a, **kw: None)
     repo = Repository(address="[2001:db8::1]:8080", services={"http": "/boot"})
     assert str(repo.service("http")).startswith("http://[2001:db8::1]:8080/")
 
@@ -221,9 +247,9 @@ def test_https_keeps_the_configured_name_so_tls_still_validates(monkeypatch):
     # Substituting the resolved IP breaks certificate checks and name-based
     # virtual hosts; other schemes still resolve, for clients without DNS.
     monkeypatch.setattr(
-        netboot.netutils,
-        "resolve",
-        lambda name, *a, **kw: [netboot.netutils.parse("192.0.2.40")],
+        __import__("netimps"),
+        "get_ip",
+        lambda name, *a, **kw: netboot.netutils.parse("192.0.2.40"),
     )
     repo = Repository(
         address="mirror.example", services={"https": "/boot", "http": "/boot"}

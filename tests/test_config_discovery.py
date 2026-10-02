@@ -80,7 +80,7 @@ def test_interpolation_is_available_and_sandboxed(config_tree):
 def test_resolve_auto_selects_the_record_type():
     """Guards `netimps>=0.2.1`: `resolve()` picks `rdtype` itself.
 
-    `Host.try_ip` calls `resolve(name)` with no record type, which only works
+    `PixieTarget` calls `resolve(name)` with no record type, which only works
     because 0.2.1 auto-selects one ("ptr" for an address literal, "a"
     otherwise). A signature check, not a lookup: no test here touches DNS.
     """
@@ -88,7 +88,7 @@ def test_resolve_auto_selects_the_record_type():
     assert rdtype is not None, "netimps.resolve lost its rdtype parameter"
     assert rdtype.default is None, (
         "netimps.resolve no longer defaults rdtype to None (auto-select); "
-        "Host.try_ip relies on that, netimps >= 0.2.1"
+        "PixieTarget relies on that, netimps >= 0.2.1"
     )
 
 

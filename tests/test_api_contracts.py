@@ -23,14 +23,17 @@ def test_resource_division_joins_the_path_and_keeps_the_repo():
     assert str(resource.path) == "images", "the original must not be mutated"
 
 
-def test_host_equality_and_hashing_use_the_address():
+def test_host_equality_and_hashing_use_the_text():
+    # `Host` is netimps' since the duplicate was dropped: the attribute is
+    # `.value`, and comparison/hashing reach a plain string too, where netboot's
+    # own class returned NotImplemented.
     assert Host("mirror.example") == Host("mirror.example")
     assert Host("mirror.example") != Host("other.example")
     assert len({Host("a"), Host("a"), Host("b")}) == 2
-    assert Host(Host("wrapped")).address == "wrapped"
-    assert Host(None).address == ""
-    # Comparing with a non-Host is NotImplemented, so Python falls back.
-    assert (Host("a") == "a") is False
+    assert Host(Host("wrapped")).value == "wrapped"
+    assert Host(None).value == ""
+    assert Host("a") == "a"
+    assert hash(Host("a")) == hash("a")
 
 
 def test_dhcpserver_default_scheme_handles_a_schemeless_uri(dhcp_backend):

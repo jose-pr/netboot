@@ -7,13 +7,18 @@ instead of being swallowed, and a ``ping`` that speaks each platform's own
 flags -- so the copy is gone.
 
 This module re-exports netimps under netboot's own name rather than wrapping
-it: the point of adopting a library is to use its vocabulary. Only
-:class:`Host` is netboot's own, because it is a netboot concept.
+it: the point of adopting a library is to use its vocabulary. Nothing here is
+netboot's own -- :class:`Host` used to be, on the claim that it was a netboot
+concept, and it was the same type netimps has had since 0.2.0 with the same
+stated justification. Resolve with ``host.ip() or str(host)``: ``.ip()`` is
+``Optional`` so the type stays honest, and ``str(host)`` is always the text that
+was configured, so the fallback is never lost.
 """
 
 from __future__ import annotations
 
 from netimps import (  # noqa: F401
+    Host,
     IPAddress,
     IPInterface,
     IPNetwork,
@@ -45,44 +50,3 @@ __all__ = [
     "resolve",
     "try_parse",
 ]
-
-
-class Host:
-    """A repository/service address that may be a hostname or an IP.
-
-    Content repos are addressed by hostname or IP in config; ``try_ip`` resolves
-    to an IP address when possible (an IP literal as-is, a hostname via DNS),
-    falling back to the original string when resolution fails so URLs can still
-    be built.
-    """
-
-    def __init__(self, address: "str | Host | None" = None) -> None:
-        if isinstance(address, Host):
-            address = address.address
-        self.address = "" if address is None else str(address)
-
-    def try_ip(self) -> "IPAddress | str":
-        """Best-effort resolve to an IP; return the raw address on failure."""
-        if not self.address:
-            return self.address
-        literal = try_parse(self.address, IPAddress)
-        if literal is not None:
-            return literal
-        resolved = resolve(self.address)
-        if resolved:
-            return resolved[0]
-        return self.address
-
-    def __str__(self) -> str:
-        return self.address
-
-    def __repr__(self) -> str:
-        return f"Host({self.address!r})"
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, Host):
-            return self.address == other.address
-        return NotImplemented
-
-    def __hash__(self) -> int:
-        return hash(self.address)
