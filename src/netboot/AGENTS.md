@@ -237,6 +237,22 @@ options from the URI query (see below) and translates them.
 Each raises `PixieLookupError` for a target with no MAC — every one of these
 servers identifies a reservation by it.
 
+- **Completion** (`netboot.dhcp.completion`) — `dhcp_complete:` decides what a
+  finished target's entry becomes, because one that still gets `boot-file-name`
+  reinstalls itself. **`build_completion(ctx) -> DhcpCompletion`** layers zone →
+  image → target (most specific wins); `.keep` is `False` by default (remove the
+  entry, netboot's original behaviour), and `.apply_to(options)` returns the
+  options a kept entry should have — **`BOOT_OPTIONS`** (`boot-file-name`,
+  `next-server`, `tftp-server-name`) **replaced** by `.options`, everything else
+  untouched. `options` without `keep: true` is a config error, not a no-op.
+  The engine calls **`DhcpServer.complete_target(ctx)`**, which is
+  `remove_target` unless the entry is kept, in which case it first calls
+  `remove_condition_member` for every condition (a kept entry still matching one
+  would keep being served the installer) and then **`keep_target(ctx,
+  completion)`**. The base `keep_target` raises `NotImplementedError`, so a
+  backend that cannot keep an entry is reported rather than silently ignoring the
+  config. All four shipped backends implement it; `kea` uses `reservation-add`'s
+  upsert so a failure leaves the old reservation rather than none.
 - **Conditions** (`netboot.dhcp.conditions`) — `dhcp_when:` is a **mapping keyed
   by name**, and the key is the backend's own construct name.
   **`build_conditions(ctx) -> dict[str, DhcpCondition]`** layers zone → image →

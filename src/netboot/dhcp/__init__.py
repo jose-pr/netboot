@@ -13,6 +13,7 @@ if _ty.TYPE_CHECKING:
 
 from urllib.parse import urlparse
 
+from .completion import DhcpCompletion, build_completion
 from .conditions import (
     ConditionMissing,
     ConditionUnsupported,
@@ -120,6 +121,45 @@ class DhcpServer:
     def options_for(self, ctx) -> DhcpOptions:
         """The client options for this target on this server, fully merged."""
         return build_options(ctx, self)
+
+    def completion_for(self, ctx) -> DhcpCompletion:
+        """What this target's entry becomes when provisioning finishes."""
+        return build_completion(ctx)
+
+    def complete_target(self, ctx) -> None:
+        """Disarm, honouring `dhcp_complete:`.
+
+        The default is `remove_target`, which is what netboot has always done.
+        With `keep: true` the entry stays and its **boot** options are replaced or
+        removed -- `keep_target` -- because a finished machine that is still
+        handed a boot file installs itself again, and deleting the reservation to
+        prevent that also throws away its address.
+
+        A backend that cannot keep an entry says so by not overriding
+        `keep_target`: the base raises, best-effort disarming logs it, and the
+        operator learns it from the warning rather than from a machine that
+        reinstalled overnight.
+        """
+        completion = self.completion_for(ctx)
+        if not completion.keep:
+            return self.remove_target(ctx)
+        for condition in self.conditions_for(ctx).values():
+            # A kept entry still matching a condition would keep being served the
+            # installer by it, which is the failure this whole path prevents.
+            self.remove_condition_member(ctx, condition)
+        return self.keep_target(ctx, completion)
+
+    def keep_target(self, ctx, completion: DhcpCompletion) -> None:
+        """Leave the entry in place with `completion`'s options instead.
+
+        Implemented per backend; the base refuses, so `dhcp_complete: {keep:
+        true}` against a backend that cannot do it is reported rather than
+        silently ignored.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} cannot keep a reservation on completion, so "
+            f"dhcp_complete.keep cannot be honoured on {self.uri}"
+        )
 
     def conditions_for(self, ctx) -> "dict[str, DhcpCondition]":
         """The named conditions that apply to this target, layered by name."""

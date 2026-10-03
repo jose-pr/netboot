@@ -118,6 +118,44 @@ class kea(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             return
         raise PixieConfigError(_explain(command="reservation-del", result=result))
 
+    # -- completion --------------------------------------------------------
+
+    def keep_target(self, ctx, completion) -> None:
+        """Rewrite the reservation with the completion options.
+
+        Kea has no partial reservation update, so this is `reservation-add`,
+        which **upserts**: writing the new reservation before removing anything
+        means a failure leaves the old one in place rather than a target with no
+        reservation at all.
+        """
+        from .. import PixieConfigError
+
+        reservation = self._reservation(ctx)
+        reservation.pop("client-classes", None)
+        for field in ("boot-file-name", "next-server"):
+            reservation.pop(field, None)
+        option_data = [
+            entry
+            for entry in reservation.get("option-data", [])
+            if entry.get("name") not in ("boot-file-name", "tftp-server-name")
+        ]
+        for name, value in completion.options.items():
+            field = _FIELDS.get(name)
+            if field:
+                reservation[field] = _value(value)
+            else:
+                option_data.append({"name": name, "data": _value(value)})
+        if option_data:
+            reservation["option-data"] = option_data
+        else:
+            reservation.pop("option-data", None)
+        result = self.command(
+            "reservation-add",
+            {"reservation": reservation, "subnet-id": reservation.get("subnet-id")},
+        )
+        if result.get("result") != 0:
+            raise PixieConfigError(_explain(command="reservation-add", result=result))
+
     # -- conditions (client classes) ---------------------------------------
 
     def ensure_condition(self, ctx, condition) -> str:

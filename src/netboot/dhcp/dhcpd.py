@@ -146,6 +146,27 @@ class dhcpd(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         finally:
             _close(connection)
 
+    def keep_target(self, netboot: "_ty.Any", completion) -> None:
+        """Supersede the host with the completion statements instead of deleting it.
+
+        `add_host_supersede` writes the host whole, so this is one call and there
+        is no window where the host exists with the installer's filename and the
+        new statements half applied.
+        """
+        target = netboot.target
+        options = completion.apply_to(self.options_for(netboot))
+        statements = render_statements(options, self.extras(netboot, "remove"))
+        connection = self.connect()
+        try:
+            connection.add_host_supersede(
+                str(target.ip),
+                _mac(target),
+                str(target._id),
+                statements=statements or None,
+            )
+        finally:
+            _close(connection)
+
     def _ensure_group(self, connection, group: str, conditions) -> None:
         """Create the group carrying these conditions, unless it is already there.
 

@@ -234,7 +234,9 @@ class PixieContext(Namespace):
         """
         for dhcpserver in self.dhcpzone.dhcpservers:
             try:
-                dhcpserver.remove_target(self)
+                # `complete_target` is `remove_target` unless the config says to
+                # keep the entry (`dhcp_complete:`).
+                dhcpserver.complete_target(self)
             except Exception as exc:
                 LOGGER.warning(
                     "could not disarm %s on %s: %s",

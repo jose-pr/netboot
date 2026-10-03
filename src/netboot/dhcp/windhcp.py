@@ -283,6 +283,45 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         body.extend(_script_lines(self.extras(netboot, "remove")))
         self.run(payload, body)
 
+    # -- completion (keep the reservation, drop the boot options) ----------
+
+    def keep_target(self, netboot: "_ty.Any", completion) -> None:
+        """Leave the reservation, replacing or removing its boot options.
+
+        `Remove-DhcpServerv4OptionValue` per option id rather than touching the
+        reservation: the address, its name and every other option stay exactly as
+        they were, which is the point of keeping it.
+        """
+        options = completion.apply_to(self.options_for(netboot))
+        applied = dict(_option_ids(self.options_for(netboot)))
+        wanted = dict(_option_ids(options))
+        payload = {
+            "ScopeId": str(_scope(netboot)),
+            "IPAddress": str(netboot.target.ip),
+            "ComputerName": self.server,
+            "Set": [
+                {"Id": option_id, "Value": [str(v) for v in _values(value)]}
+                for option_id, value in wanted.items()
+            ],
+            "Remove": [option_id for option_id in applied if option_id not in wanted],
+        }
+        body = [
+            "$common = @{}",
+            "if ($p.ComputerName) { $common['ComputerName'] = $p.ComputerName }",
+            "foreach ($o in $p.Set) {",
+            "  Set-DhcpServerv4OptionValue -ReservedIP $p.IPAddress -OptionId $o.Id"
+            " -Value $o.Value @common",
+            "}",
+            "foreach ($id in $p.Remove) {",
+            # Already absent is success: completion re-runs, and an operator may
+            # have cleared it by hand.
+            "  Remove-DhcpServerv4OptionValue -ReservedIP $p.IPAddress -OptionId $id"
+            " @common -ErrorAction SilentlyContinue",
+            "}",
+        ]
+        body.extend(_script_lines(self.extras(netboot, "remove")))
+        self.run(payload, body)
+
     # -- conditions (scope-level policies) ---------------------------------
 
     def _apply_conditions(self, netboot: "_ty.Any") -> None:

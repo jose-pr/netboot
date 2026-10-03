@@ -139,6 +139,24 @@ class dnsmasq(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             )
         self._reload()
 
+    def keep_target(self, netboot: "_ty.Any", completion) -> None:
+        """Rewrite this target's region with the completion options.
+
+        The easy one: netboot owns these files, so keeping the host line and
+        rewriting its options is the same write it already does to arm.
+        """
+        target = netboot.target
+        tag = _tag(target)
+        options = completion.apply_to(self.options_for(netboot))
+        self._write(self.hostsfile, tag, [_host_line(target, tag)])
+        if self.optsfile:
+            self._write(
+                self.optsfile,
+                tag,
+                _option_lines(tag, options, self.extras(netboot, "remove")),
+            )
+        self._reload()
+
     def remove_target(self, netboot: "_ty.Any"):
         tag = _tag(netboot.target)
         self._write(self.hostsfile, tag, [])
