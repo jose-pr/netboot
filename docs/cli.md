@@ -57,6 +57,37 @@ Look up the target, rebuild its context, and call `remove_target` on every DHCP
 backend in its zone. Post-boot cleanup beyond that is a hook's job
 (`PixieEvent.EndPixieComplete`).
 
+### `dhcp-config [target] [--apply] [--as USER]`
+
+Prints the server-side configuration the config needs but netboot may not be able
+to create itself: a Windows DHCP policy and the user class it references, a
+`dhcpd.conf` group, a Kea `client-classes` entry. One section per server per
+`dhcp_when:` condition, in that server's own syntax.
+
+With no arguments it covers every target; name one to narrow it. **Printing
+contacts nothing**, so it is safe to run anywhere and the output can go straight
+into a change ticket or a config-management repo.
+
+```sh
+pixie dhcp-config                 # what do my servers need?
+pixie dhcp-config --apply         # make it so, as the current account
+pixie dhcp-config --as admin      # ... prompting for an admin password
+```
+
+`--apply` runs the configuration; `--as USER` implies it and prompts for that
+account's password. **This is the only command that prompts.** `initiate` and
+`complete` run unattended — from hooks, from a provisioning system — so a prompt
+there would hang rather than ask anyone; `--as` without a terminal fails naming
+`PIXIE_WINDHCP_PASSWORD` instead of blocking. The password is passed to the
+backend as data and never logged, stored, or written into a generated script.
+
+Exit code 1 if any server could not be configured, with the reason per server;
+the others are still done.
+
+Run it once per condition. Afterwards netboot finds each construct by name, so
+routine arming needs none of those rights — which is the point of the command
+existing separately.
+
 ## Adding your own commands
 
 Point `--cmdspath` (or the `PIXIE_CMDS_PATH` environment variable) at a package or

@@ -80,8 +80,13 @@ Each has one thing that is easy to get wrong:
   default `method=powershell` — the `DhcpServer` module on the host the shell runs
   on. Where that module is missing (Server Core without the RSAT feature, or an
   older release) `method=netsh` drives `netsh dhcp server ...` instead. The two
-  choices are independent: `transport=` is how netboot gets a shell (`ssh` or
-  `winrm`), `method=` is what it runs there.
+  choices are independent: `transport=` is how netboot gets a shell (`local`,
+  `ssh` or `winrm`), `method=` is what it runs there. **`transport=local` runs
+  PowerShell on the machine netboot is running on**, which with `server=` is the
+  ordinary RSAT shape — run it here, act on that server — and needs no sshd, no
+  WinRM and no credential. An empty host means local, because there is no host to
+  reach: `windhcp:///?server=dhcp01`. A *named* host always uses a transport, even
+  if the name happens to be this machine.
 
   netsh is still invoked *from* PowerShell, with each argument an element of a
   JSON array — so no value is ever spliced into a command line, which is the same
@@ -190,6 +195,12 @@ When netboot cannot *create* the construct — no `class_cmds` hook, no DHCP-adm
 rights, a Windows host without the PowerShell module — the error carries the exact
 commands or config to apply. Once an administrator has run them, netboot finds the
 construct by name and needs no privileges of its own.
+
+`pixie dhcp-config` prints that configuration for every server a config names,
+without contacting anything, so it can be read, reviewed and pasted into a change
+ticket. `--apply` runs it, and `--as <user>` prompts for that account's password
+— the **only** place netboot prompts, because `initiate` runs unattended from
+hooks and would otherwise hang a pipeline. See [the CLI reference](cli.md).
 
 ### Options
 

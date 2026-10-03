@@ -7,6 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`pixie dhcp-config [target] [--apply] [--as USER]`** — prints the server-side
+  configuration a config needs but netboot may not be able to create: the Windows
+  policy and its user class, a `dhcpd.conf` group, a Kea `client-classes` entry.
+  Printing contacts nothing, so the output goes straight into a change ticket;
+  `--apply` runs it and `--as` prompts for an admin password. It is the **only**
+  command that prompts, because `initiate` and `complete` run unattended and a
+  prompt there would hang a pipeline. Run once per condition; routine arming then
+  needs none of those rights.
+- **`windhcp://` takes `transport=local`** — run PowerShell on this machine, with
+  `server=` pointing the cmdlets at the DHCP server, which is the ordinary RSAT
+  shape and needs no sshd, WinRM or credential. An empty host
+  (`windhcp:///?server=dhcp01`) defaults to it; a named host still uses a
+  transport. The account for WinRM can now come from `$PIXIE_WINDHCP_USER` when
+  the URI names none.
 - **`dhcp_complete:` — what a finished target's DHCP entry becomes.** A machine
   that still receives `boot-file-name` after its install boots the installer
   again; `pixie complete` removed the reservation to prevent that, which also
