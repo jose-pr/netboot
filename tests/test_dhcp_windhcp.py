@@ -447,10 +447,25 @@ def test_the_removal_script_has_nothing_to_verify(stub):
     assert "Verify" not in _payload(ran[0])
 
 
+@pytest.fixture
+def on_windows(monkeypatch):
+    """Make `transport=local` acceptable wherever the suite runs.
+
+    `local` needs Windows PowerShell and is refused elsewhere, but choosing the
+    transport, building the argv and handling the exit code are all
+    platform-independent -- and testing them on Linux and macOS too is what keeps
+    this from being a Windows-only feature with Windows-only coverage.
+    """
+    import netboot.dhcp.windhcp as mod
+
+    monkeypatch.setattr(mod._os, "name", "nt")
+    return mod
+
+
 # -- transport=local --------------------------------------------------------
 
 
-def test_an_empty_host_means_the_shell_is_here():
+def test_an_empty_host_means_the_shell_is_here(on_windows):
     # `windhcp:///?server=dhcp01` is the ordinary RSAT shape: run PowerShell
     # here, act on that server. There is no host to reach, so none is dialled.
     server = DhcpServer("windhcp:///?server=dhcp01")
@@ -465,7 +480,7 @@ def test_a_named_host_still_uses_a_transport():
     assert DhcpServer("windhcp://dhcp01/").transport == "ssh"
 
 
-def test_local_runs_the_same_script_the_other_transports_send(monkeypatch):
+def test_local_runs_the_same_script_the_other_transports_send(monkeypatch, on_windows):
     import subprocess
 
     calls = []
@@ -497,7 +512,7 @@ def test_local_runs_the_same_script_the_other_transports_send(monkeypatch):
     assert script in sent
 
 
-def test_a_failing_local_powershell_is_reported(monkeypatch):
+def test_a_failing_local_powershell_is_reported(monkeypatch, on_windows):
     import subprocess
 
     class _Failed:
@@ -517,8 +532,13 @@ def test_an_unknown_transport_is_refused():
 
 
 def test_local_is_refused_where_there_is_no_powershell(monkeypatch):
+    # The counterpart: on a POSIX host the default must *not* silently become a
+    # transport that cannot work.
     import netboot.dhcp.windhcp as mod
 
     monkeypatch.setattr(mod._os, "name", "posix")
     with pytest.raises(netboot.PixieConfigError, match="needs Windows PowerShell"):
         DhcpServer("windhcp:///?server=dhcp01")
+    # ... and an explicit one is refused just as clearly.
+    with pytest.raises(netboot.PixieConfigError, match="needs Windows PowerShell"):
+        DhcpServer("windhcp://host/?transport=local")
