@@ -102,6 +102,56 @@ Each has one thing that is easy to get wrong:
   multi-valued option is passed as one argument per value, and the reservation is
   created as `BOTH` (DHCP and BOOTP) to match what the cmdlets do by default.
 
+### Conditional options (`dhcp_when:`)
+
+Some boot decisions depend on **who is asking**. The standard case is chainloading
+iPXE: a PXE ROM must be handed the iPXE binary, and iPXE itself must then be
+handed a script — serve the binary to both and iPXE loads iPXE forever. No
+per-target option can express that, because both requests come from the same
+target; the *server* has to answer differently depending on the client.
+
+`dhcp_when:` is a **mapping keyed by name**, and the name is what each DHCP server
+calls its own construct — a Windows policy, a dhcpd group, a Kea client class:
+
+```yaml
+images:
+  debian:
+    dhcp_options:
+      boot-file-name: undionly.kpxe        # what a PXE ROM gets
+    dhcp_when:
+      ipxe:                                # -> policy / group / class "ipxe"
+        match: {user-class: iPXE}          # what iPXE sends
+        options: {boot-file-name: boot.ipxe}
+```
+
+It can be declared on a zone, an image or a target, and layers **by name**, so a
+target redeclaring `ipxe` replaces the image's instead of adding a second
+condition that also matches. Keying by name is also what makes two targets share
+one policy rather than create two.
+
+`match` accepts `user-class` (option 77) and `vendor-class` (option 60) — the tests
+every backend can express. `options` takes the same option names as
+`dhcp_options`.
+
+| Backend | Construct | netboot creates it | If it cannot |
+| ------- | --------- | ------------------ | ------------ |
+| `windhcp://` | a scope-level **policy** (plus the user/vendor **class** it references) | yes, through the cmdlets — **netsh has no policy support at all**, so this part ignores `method=` | prints the `Add-DhcpServerv4Class` / `Add-DhcpServerv4Policy` lines to run once as an admin |
+| `dhcpd://` | an inline **`if`** in the host's statements (default), or a named **group** with `conditions=group` | yes — statements always, groups over OMAPI | prints the `group { }` block for `dhcpd.conf`, which also survives a restart where an OMAPI group does not |
+| `kea://` | a **client class**, named by the reservation | only with the `class_cmds` hook (`class-add`) | prints the `client-classes` JSON for `kea-dhcp4.conf` |
+| `dnsmasq://` | — | **no** | refuses, and prints the `dhcp-match`/`dhcp-option` pair for `dnsmasq.conf` |
+
+**A backend that cannot apply a condition fails rather than arming without it.** A
+target that silently misses its chainload boots the installer again, which is
+worse than an error. That is safe because arming is best effort per server: the
+zone's other servers are still armed, the failure is logged, and the run fails
+only if **no** server could be armed. A zone whose only server refuses therefore
+fails, which is the correct reading of "this config cannot be delivered here".
+
+When netboot cannot *create* the construct — no `class_cmds` hook, no DHCP-admin
+rights, a Windows host without the PowerShell module — the error carries the exact
+commands or config to apply. Once an administrator has run them, netboot finds the
+construct by name and needs no privileges of its own.
+
 ### Options
 
 Anything in the query that is not a connection setting is a client option:

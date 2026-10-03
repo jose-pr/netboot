@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`dhcp_when:` — conditional options**, declared once and translated per
+  backend. A **mapping keyed by name**, where the name is the construct each
+  server uses: a Windows scope policy, a dhcpd group or inline `if`, a Kea client
+  class. It layers zone → image → target *by name*, so two targets share one
+  policy and a target can replace an image's condition. `match` takes
+  `user-class` and `vendor-class`; `options` takes the usual option names. This
+  is the iPXE chainload said once: `undionly.kpxe` for a PXE ROM,
+  `boot.ipxe` for iPXE.
+
+  A backend that cannot create the construct **says exactly what to run**
+  (`Add-DhcpServerv4Class`/`Add-DhcpServerv4Policy`, a `dhcpd.conf` `group`, the
+  Kea `client-classes` JSON), and one that cannot express conditions at all
+  (`dnsmasq://`, because the tag needs a `dhcp-match` line in config netboot does
+  not own) refuses rather than arming a target whose chainload would never fire.
+  Either way the zone's other servers are armed, since arming is best effort.
+- `DhcpServer.ensure_condition()` / `.condition_recipe()` /
+  `.remove_condition_member()` — the contract above, for a plugin backend.
+
 ### Changed
 - **`netimps>=0.3.3`** (was `>=0.3.1`), and three things netboot hand-rolled are
   now the library's. No behaviour netboot documented changes, except where noted:
