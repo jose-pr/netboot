@@ -212,10 +212,13 @@ options from the URI query (see below) and translates them.
   `netboot[dhcpd]`) — an OMAPI host object whose `statements` carry the options,
   escaped. Secret from `keyfile=` or `$PIXIE_DHCPD_OMAPI_KEY`. A host added this
   way does **not** survive a dhcpd restart by itself.
-- **`windhcp://[user@]host/?transport=ssh|winrm&method=powershell|netsh&server=&auth=&port=&ssl=`**
-  (`netboot.dhcp.windhcp`) — Windows DHCP over the system `ssh` client (default,
-  no dependency) or WinRM (`netboot[winrm]`, password from
-  `$PIXIE_WINDHCP_PASSWORD`). **`transport=` is how we get a shell, `method=` is
+- **`windhcp://[user@]host/?transport=local|ssh|winrm&method=powershell|netsh&server=&auth=&port=&ssl=`**
+  (`netboot.dhcp.windhcp`) — Windows DHCP over **`local`** PowerShell (the default
+  when the URI has no host, e.g. `windhcp:///?server=dhcp01`; refused on
+  non-Windows), the system `ssh` client (the default for a named host, no
+  dependency) or WinRM (`netboot[winrm]`, password from
+  `$PIXIE_WINDHCP_PASSWORD`, account from the URI or `$PIXIE_WINDHCP_USER`). All
+  three send the **same script**: `local` is the ssh transport without the ssh. **`transport=` is how we get a shell, `method=` is
   what runs there**: `powershell` (default) for the `DhcpServer` module's
   cmdlets, `netsh` for `netsh dhcp server ...` on a host without that module.
   `server=` becomes `-ComputerName`, or netsh's `\\server` (already-`\\`-prefixed
@@ -290,6 +293,16 @@ servers identifies a reservation by it.
   `raw.<backend>.remove` is teardown. Fragments are emitted **verbatim** — no
   parsing, validation or escaping — and always **after** the modelled options,
   so a conditional overrides them.
+
+- **`pixie dhcp-config [target] [--apply] [--as USER]`**
+  (`netboot.cmds.dhcp_config`) — prints each server's `condition_recipe()` with a
+  header naming the server and condition; **contacts nothing** without `--apply`.
+  `--apply` calls `ensure_condition` per server and returns 1 if any failed,
+  having done the rest. `--as` implies `--apply` and prompts with `getpass`, only
+  on a TTY — without one it fails naming `PIXIE_WINDHCP_PASSWORD`, rather than
+  blocking an unattended run. The password goes into the environment the backends
+  already read, never a log or a script. **The only command that prompts**; this
+  is where privileged one-offs live so `initiate`/`complete` stay unattended.
 
 ## DHCP options (`netboot.dhcp.options`)
 

@@ -445,3 +445,80 @@ def test_the_removal_script_has_nothing_to_verify(stub):
     server, ran = stub("windhcp://dhcp01/?method=netsh")
     server.remove_target(_ctx(_engine()))
     assert "Verify" not in _payload(ran[0])
+
+
+# -- transport=local --------------------------------------------------------
+
+
+def test_an_empty_host_means_the_shell_is_here():
+    # `windhcp:///?server=dhcp01` is the ordinary RSAT shape: run PowerShell
+    # here, act on that server. There is no host to reach, so none is dialled.
+    server = DhcpServer("windhcp:///?server=dhcp01")
+    assert server.transport == "local"
+    assert server.server == "dhcp01"
+    assert server.port == 0
+
+
+def test_a_named_host_still_uses_a_transport():
+    # Guessing that `windhcp://dhcp01/` is local because dhcp01 happens to be
+    # this machine would surprise whoever wrote the name.
+    assert DhcpServer("windhcp://dhcp01/").transport == "ssh"
+
+
+def test_local_runs_the_same_script_the_other_transports_send(monkeypatch):
+    import subprocess
+
+    calls = []
+
+    class _Done:
+        returncode = 0
+        stdout = "{}"
+        stderr = ""
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs.get("input")))
+        return _Done()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    engine = _engine()
+    ctx = _ctx(engine)
+
+    local = DhcpServer("windhcp:///?server=dhcp01")
+    local.add_target(ctx)
+    argv, script = calls[-1]
+    assert argv[0] == "powershell" and argv[-2:] == ["-Command", "-"]
+    assert "-NonInteractive" in argv
+
+    # Byte-identical to what ssh would have piped in.
+    over_ssh = DhcpServer("windhcp://host/?server=dhcp01")
+    sent = []
+    over_ssh.run = lambda payload, body: sent.append(over_ssh.script_for(payload, body))
+    over_ssh.add_target(ctx)
+    assert script in sent
+
+
+def test_a_failing_local_powershell_is_reported(monkeypatch):
+    import subprocess
+
+    class _Failed:
+        returncode = 3
+        stdout = ""
+        stderr = "it did not work"
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Failed())
+    server = DhcpServer("windhcp:///?server=dhcp01")
+    with pytest.raises(netboot.PixieConfigError, match="local PowerShell failed"):
+        server.add_target(_ctx(_engine()))
+
+
+def test_an_unknown_transport_is_refused():
+    with pytest.raises(netboot.PixieConfigError, match="local, ssh or winrm"):
+        DhcpServer("windhcp://h/?transport=telnet")
+
+
+def test_local_is_refused_where_there_is_no_powershell(monkeypatch):
+    import netboot.dhcp.windhcp as mod
+
+    monkeypatch.setattr(mod._os, "name", "posix")
+    with pytest.raises(netboot.PixieConfigError, match="needs Windows PowerShell"):
+        DhcpServer("windhcp:///?server=dhcp01")

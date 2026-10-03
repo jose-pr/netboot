@@ -3,7 +3,8 @@
 Windows DHCP has no line protocol to speak, so netboot drives the server's own
 tooling where the operator already has access. Two independent choices:
 
-- **`transport=`** -- how we get a shell: `ssh` (the system client) or `winrm`.
+- **`transport=`** -- how we get a shell: `local` (this machine, no dependency),
+  `ssh` (the system client) or `winrm`.
 - **`method=`** -- what we run there: `powershell` (the `DhcpServer` module's
   cmdlets, the default) or `netsh` (`netsh dhcp server ...`), for a host where
   the DHCP Server PowerShell module is not installed -- a Server Core box
@@ -11,7 +12,10 @@ tooling where the operator already has access. Two independent choices:
 
 The transport and the DHCP server stay separate either way: the shell runs on the
 URI's host, and the commands act on `server=` (`-ComputerName`, or netsh's
-`\\server`) when that differs.
+`\\server`) when that differs. `transport=local` plus `server=dhcp01` is therefore
+the ordinary RSAT shape -- run PowerShell here, act on that server -- and the one
+an operator's own workstation is already set up for. An empty host
+(`windhcp:///?server=dhcp01`) means local, because there is no host to reach.
 
 **No value is ever interpolated into the script.** The parameters travel as a
 JSON payload that PowerShell parses, with one escaping rule applied once (a
@@ -72,6 +76,11 @@ _OPTION_TYPES = {
 
 #: Where a WinRM password is read from. Never the URI.
 PASSWORD_ENV_VAR = "PIXIE_WINDHCP_PASSWORD"
+
+#: Where the account is read from when the URI names none. A privileged one-off
+#: (`pixie dhcp-config --as admin`) runs as a different account than routine
+#: arming, and that belongs beside the password rather than in the config.
+USER_ENV_VAR = "PIXIE_WINDHCP_USER"
 
 #: Runs each `Commands` entry as `netsh <args...>`. The arguments stay array
 #: elements -- never a string PowerShell re-parses -- so a value cannot become
@@ -187,7 +196,7 @@ _POLICY_BODY = [
 
 
 class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
-    """`windhcp://[user@]host/?transport=ssh|winrm&method=powershell|netsh&server=<dhcp server>`
+    """`windhcp://[user@]host/?transport=local|ssh|winrm&method=powershell|netsh&server=<dhcp server>`
 
     Every other query key is a client option. The scope comes from the zone
     when the target is applied, not from here.
@@ -201,11 +210,22 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
 
         parts = urlsplit(uri)
         self.hostname = parts.hostname or "localhost"
-        self.user = parts.username or ""
-        self.transport = self.settings.get("transport", "ssh")
-        if self.transport not in ("ssh", "winrm"):
+        self.user = parts.username or _os.environ.get(USER_ENV_VAR, "")
+        # No host to reach means the shell is here. Only an *empty* host: a named
+        # one that happens to be this machine still goes through its transport,
+        # because guessing otherwise surprises whoever wrote the name.
+        default_transport = "local" if not parts.hostname else "ssh"
+        self.transport = self.settings.get("transport", default_transport)
+        if self.transport not in ("local", "ssh", "winrm"):
             raise PixieConfigError(
-                f"windhcp: transport must be ssh or winrm, not {self.transport!r}"
+                f"windhcp: transport must be local, ssh or winrm, not "
+                f"{self.transport!r}"
+            )
+        if self.transport == "local" and _os.name != "nt":
+            raise PixieConfigError(
+                "windhcp: transport=local needs Windows PowerShell and the "
+                "DhcpServer module on this machine; use ssh or winrm to reach a "
+                "host that has them"
             )
         self.method = str(self.settings.get("method", "powershell")).lower()
         if self.method not in ("powershell", "netsh"):
@@ -215,7 +235,8 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         self.server = self.settings.get("server") or ""
         self.auth = self.settings.get("auth", "ntlm")
         self.port = int(
-            self.settings.get("port") or (22 if self.transport == "ssh" else 5985)
+            self.settings.get("port")
+            or {"ssh": 22, "winrm": 5985, "local": 0}[self.transport]
         )
         self.ssl = str(self.settings.get("ssl", "")).lower() in ("1", "true", "yes")
 
@@ -536,7 +557,36 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         script = self.script_for(payload, body)
         if self.transport == "winrm":
             return self._run_winrm(script)
+        if self.transport == "local":
+            return self._run_local(script)
         return self._run_ssh(script)
+
+    def _run_local(self, script: str) -> str:
+        """Feed the script to PowerShell on this machine.
+
+        The same script, payload and error handling as the ssh transport, which
+        already pipes into `powershell -Command -`; the only difference is that
+        nothing is in between.
+        """
+        from .. import PixieConfigError
+
+        argv = [
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "-",
+        ]
+        LOGGER.debug("windhcp local: %s", argv)
+        completed = _subprocess.run(
+            argv, input=script, capture_output=True, text=True, timeout=120
+        )
+        if completed.returncode != 0:
+            raise PixieConfigError(
+                f"windhcp: local PowerShell failed ({completed.returncode}): "
+                f"{(completed.stderr or completed.stdout).strip()}"
+            )
+        return completed.stdout
 
     def _run_ssh(self, script: str) -> str:
         """Feed the script to PowerShell over the system ssh client."""
