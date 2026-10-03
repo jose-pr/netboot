@@ -17,6 +17,29 @@ the ordinary RSAT shape -- run PowerShell here, act on that server -- and the on
 an operator's own workstation is already set up for. An empty host
 (`windhcp:///?server=dhcp01`) means local, because there is no host to reach.
 
+**A reservation's options outrank every policy.** Microsoft's order is
+reservation > scope policy > server policy > scope > server, and the rule is per
+option: a client that got option 67 from its reservation *ignores* option 67 from
+any policy. So an option a condition overrides must **not** be written on the
+reservation, or the condition is dead on arrival -- and this is invisible in the
+server's configuration, which is why it has to be a rule in the code rather than
+something to notice later.
+
+That leaves two shapes, and `conditions=` picks:
+
+* **`target`** (default) -- one policy per target per condition, matched on the
+  target's **MAC** plus the condition's test, and a base policy matched on the MAC
+  alone carrying what the overridden options would have been. Precise, works with
+  per-target boot files, and needs no rights beyond those a reservation already
+  needs, because netboot creates the policies itself.
+* **`shared`** -- one policy per condition name, matched on the test alone, for
+  every client in the scope. netboot still omits the overridden options from the
+  reservation, but the *base* value for them is then not netboot's to serve: it
+  comes from a scope option or another policy. This is the shape for a host where
+  netboot cannot create policies at all (**netsh has no policy verb**), because an
+  administrator can create one policy per condition once rather than one per
+  machine forever.
+
 **No value is ever interpolated into the script.** The parameters travel as a
 JSON payload that PowerShell parses, with one escaping rule applied once (a
 single-quoted PowerShell string escapes `'` by doubling it). Values arrive as
@@ -185,7 +208,18 @@ _POLICY_BODY = [
     "    $new = @{ Name = $pol.Name; ScopeId = $p.ScopeId; Condition = 'AND' }",
     "    if ($pol.UserClass)   { $new['UserClass']   = @('EQ', $pol.UserClass) }",
     "    if ($pol.VendorClass) { $new['VendorClass'] = @('EQ', $pol.VendorClass) }",
+    # The MAC is what scopes a policy to one target. Without it a policy answers
+    # every client in the scope that matches the test.
+    "    if ($pol.MacAddress)  { $new['MacAddress']  = @('EQ', $pol.MacAddress) }",
     "    Add-DhcpServerv4Policy @new @common",
+    "  }",
+    # Processing order decides which policy answers a client that matches several:
+    # the conditional one must be consulted before the base one, or a target's
+    # chainload never happens. Windows assigns an order by creation, and this says
+    # it rather than relying on it.
+    "  if ($pol.Order) {",
+    "    Set-DhcpServerv4Policy -Name $pol.Name -ScopeId $p.ScopeId"
+    " -ProcessingOrder $pol.Order @common",
     "  }",
     "  foreach ($o in $pol.Options) {",
     "    Set-DhcpServerv4OptionValue -PolicyName $pol.Name -ScopeId $p.ScopeId"
@@ -202,7 +236,9 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
     when the target is applied, not from here.
     """
 
-    SETTINGS = frozenset({"transport", "method", "server", "auth", "port", "ssl"})
+    SETTINGS = frozenset(
+        {"transport", "method", "server", "auth", "port", "ssl", "conditions"}
+    )
 
     def __init__(self, uri: str):
         super().__init__(uri)
@@ -227,6 +263,12 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                 "DhcpServer module on this machine; use ssh or winrm to reach a "
                 "host that has them"
             )
+        self.conditions = str(self.settings.get("conditions", "target")).lower()
+        if self.conditions not in ("target", "shared"):
+            raise PixieConfigError(
+                f"windhcp: conditions must be target or shared, not "
+                f"{self.conditions!r}"
+            )
         self.method = str(self.settings.get("method", "powershell")).lower()
         if self.method not in ("powershell", "netsh"):
             raise PixieConfigError(
@@ -250,6 +292,7 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             return self._add_target_netsh(netboot)
         target = netboot.target
         options = self.options_for(netboot)
+        overridden = self._overridden_ids(netboot)
         payload = {
             "ScopeId": str(_scope(netboot)),
             "IPAddress": str(target.ip),
@@ -262,9 +305,12 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
             # definition" -- which, under $ErrorActionPreference='Stop', also
             # abandoned every option after it. Measured against a real Windows
             # Server 2025 DHCP server, 2026-10-02.
+            # Omit anything a condition overrides: a reservation option beats
+            # every policy, so writing it here would make the condition dead.
             "Options": [
                 {"Id": option_id, "Value": [str(v) for v in _values(value)]}
                 for option_id, value in _option_ids(options)
+                if option_id not in overridden
             ],
         }
         body = [
@@ -345,19 +391,36 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
 
     # -- conditions (scope-level policies) ---------------------------------
 
+    def _policy_name(self, netboot: "_ty.Any", suffix: str = "") -> str:
+        """The policy name for this target (or this target's base policy)."""
+        if self.conditions == "shared":
+            return suffix
+        mac = _netsh_client_id(netboot.target)
+        return f"netboot-{mac}-{suffix}" if suffix else f"netboot-{mac}"
+
     def _apply_conditions(self, netboot: "_ty.Any") -> None:
-        """Create or reuse one policy per condition, then set its options."""
+        """Create or reuse the policies serving this target's conditions.
+
+        In `target` mode there is one policy per condition, matched on the MAC as
+        well as the test, plus a **base** policy matched on the MAC alone carrying
+        what the overridden options would have been -- because those options are
+        kept off the reservation, where they would have outranked every policy.
+        """
         conditions = self.conditions_for(netboot)
         if not conditions:
             return
         scope = str(_scope(netboot))
+        mac = "" if self.conditions == "shared" else _netsh_client_id(netboot.target)
         policies = []
+        order = 1
         for condition in conditions.values():
             policies.append(
                 {
-                    "Name": condition.name,
+                    "Name": self._policy_name(netboot, condition.name),
                     "UserClass": condition.match.get("user-class", ""),
                     "VendorClass": condition.match.get("vendor-class", ""),
+                    "MacAddress": mac,
+                    "Order": order,
                     "Classes": _classes_for(condition),
                     "Options": [
                         {"Id": option_id, "Value": [str(v) for v in _values(value)]}
@@ -365,6 +428,10 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                     ],
                 }
             )
+            order += 1
+        base = self._base_policy(netboot, conditions, mac, order)
+        if base is not None:
+            policies.append(base)
         payload = {
             "ScopeId": scope,
             "ComputerName": self.server,
@@ -389,6 +456,78 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                 f"once as a DHCP administrator, from any host with RSAT:",
                 recipes,
             ) from exc
+
+    def _overridden_ids(self, netboot: "_ty.Any") -> "set[int]":
+        """Option ids some condition overrides, which the reservation must not set.
+
+        A reservation's option outranks every policy's (reservation > scope policy
+        > server policy > scope > server, per option), so leaving one of these on
+        the reservation would silently kill the condition.
+        """
+        ids = set()
+        for condition in self.conditions_for(netboot).values():
+            ids.update(option_id for option_id, _ in _option_ids(condition.options))
+        return ids
+
+    def _base_policy(
+        self, netboot: "_ty.Any", conditions, mac: str, order: int
+    ) -> "dict|None":
+        """The policy serving the overridden options when no condition matches.
+
+        Only in `target` mode: it is matched on the MAC alone, so it is this
+        target's own fallback. In `shared` mode there is nothing netboot can
+        safely write -- a scope-wide base policy would answer for every client --
+        so the operator provides it (a scope option, or a policy of their own) and
+        this returns None.
+        """
+        if self.conditions == "shared":
+            return None
+        overridden = self._overridden_ids(netboot)
+        if not overridden:
+            return None
+        options = self.options_for(netboot)
+        values = [
+            {"Id": option_id, "Value": [str(v) for v in _values(value)]}
+            for option_id, value in _option_ids(options)
+            if option_id in overridden
+        ]
+        if not values:
+            return None
+        return {
+            "Name": self._policy_name(netboot),
+            "UserClass": "",
+            "VendorClass": "",
+            "MacAddress": mac,
+            "Order": order,
+            "Classes": [],
+            "Options": values,
+        }
+
+    def remove_condition_member(self, netboot: "_ty.Any", condition) -> None:
+        """Remove this target's own policies; never a shared one.
+
+        In `target` mode the policies belong to this target and go with it. In
+        `shared` mode the policy is the estate's, and removing it would break every
+        other target that names the same condition.
+        """
+        if self.conditions == "shared":
+            return
+        names = [self._policy_name(netboot, condition.name), self._policy_name(netboot)]
+        payload = {
+            "ScopeId": str(_scope(netboot)),
+            "ComputerName": self.server,
+            "Names": names,
+        }
+        body = [
+            "$common = @{}",
+            "if ($p.ComputerName) { $common['ComputerName'] = $p.ComputerName }",
+            "foreach ($n in $p.Names) {",
+            # Already gone is success: completion re-runs.
+            "  Remove-DhcpServerv4Policy -Name $n -ScopeId $p.ScopeId @common"
+            " -ErrorAction SilentlyContinue",
+            "}",
+        ]
+        self.run(payload, body)
 
     def ensure_condition(self, netboot: "_ty.Any", condition) -> str:
         """Windows can create its own policies, so this is create-if-absent.
@@ -484,7 +623,11 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                 "Ignore": False,
             }
         ]
+        overridden = self._overridden_ids(netboot)
         for option_id, value in _option_ids(options):
+            if option_id in overridden:
+                # Served by a policy instead; on the reservation it would win.
+                continue
             commands.append(
                 {
                     "Args": base

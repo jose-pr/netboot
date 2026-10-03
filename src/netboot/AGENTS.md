@@ -274,7 +274,17 @@ servers identifies a reservation by it.
   leaves the others armed.
   Per backend: `windhcp` creates a scope-level policy **plus the user/vendor
   class it references** (Windows refuses a policy naming an undefined class) and
-  always does so through the cmdlets, because **netsh has no policy verb at all**;
+  always does so through the cmdlets, because **netsh has no policy verb at all**.
+  **A reservation's options outrank every policy** (reservation > scope policy >
+  server policy > scope > server, per option), so an overridden option id is
+  **omitted from the reservation** and served by policies: one per condition
+  matched on the target's MAC *and* the test, plus a **base** policy on the MAC
+  alone carrying what the reservation would have said, with `ProcessingOrder` set
+  explicitly so the conditional one is consulted first. `conditions=shared`
+  instead makes one policy per condition name with no MAC, for a host where
+  netboot cannot create policies (an admin then creates them once); the base value
+  is the operator's to provide in that mode. Completion removes a target's own
+  policies and never a shared one;
   `dhcpd` inlines an `if` (default) or writes a named group with
   `conditions=group`; `kea` adds a client class with `class-add` when the
   `class_cmds` hook is loaded and names it in the reservation's

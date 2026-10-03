@@ -203,9 +203,102 @@ def test_windhcp_creates_the_policy_before_the_reservation():
     assert "Policies" in sent[0][0], "the policy script must come first"
     assert "IPAddress" in sent[1][0]
     policy = _payload_of(sent, "Policies")["Policies"][0]
-    assert policy["Name"] == "ipxe"
+    # Per target by default, and named for the MAC, because a Windows policy is
+    # scope-level and the MAC is the only condition that narrows it to one host.
+    assert policy["Name"] == "netboot-aabbccddeeff-ipxe"
     assert policy["UserClass"] == "iPXE"
+    assert policy["MacAddress"] == "aabbccddeeff"
     assert policy["Options"] == [{"Id": 67, "Value": ["boot.ipxe"]}]
+
+
+def test_an_overridden_option_is_kept_off_the_reservation():
+    # The rule that shapes all of this: a reservation's option outranks every
+    # policy (reservation > scope policy > server policy > scope > server, per
+    # option), so leaving 67 on the reservation would make the condition dead and
+    # the server's configuration would look perfectly correct while doing it.
+    server, sent = _windhcp()
+    server.add_target(_ctx())
+    reservation = _payload_of(sent, "IPAddress")
+    ids = [option["Id"] for option in reservation["Options"]]
+    assert 67 not in ids, "the conditioned option must come from a policy"
+    # Everything no condition touches stays where it was (1 = subnet mask, which
+    # the zone's network always yields).
+    assert 1 in ids
+
+
+def test_the_base_policy_serves_what_the_reservation_no_longer_can():
+    server, sent = _windhcp()
+    server.add_target(_ctx())
+    policies = _payload_of(sent, "Policies")["Policies"]
+    conditional, base = policies[0], policies[1]
+    assert base["Name"] == "netboot-aabbccddeeff"
+    assert base["UserClass"] == "" and base["MacAddress"] == "aabbccddeeff"
+    assert base["Options"] == [{"Id": 67, "Value": ["undionly.kpxe"]}]
+    # Order is explicit: the conditional policy must be consulted first, or the
+    # base one answers an iPXE client and the chainload never happens.
+    assert conditional["Order"] < base["Order"]
+
+
+def test_the_netsh_method_also_keeps_the_option_off_the_reservation():
+    server, sent = _windhcp("windhcp://dhcp01/?method=netsh")
+    server.add_target(_ctx())
+    commands = _payload_of(sent, "Commands")["Commands"]
+    for command in commands:
+        if "reservedoptionvalue" in command["Args"]:
+            assert "67" not in command["Args"], "67 must come from the policy"
+
+
+def test_shared_mode_has_one_policy_for_every_target_and_no_base():
+    # The netsh-only shape: an administrator creates one policy per condition
+    # once, rather than one per machine forever. netboot still keeps the option
+    # off the reservation, but the base value is then not netboot's to serve.
+    server, sent = _windhcp("windhcp://dhcp01/?conditions=shared")
+    server.add_target(_ctx())
+    policies = _payload_of(sent, "Policies")["Policies"]
+    assert [p["Name"] for p in policies] == ["ipxe"]
+    assert policies[0]["MacAddress"] == ""
+    ids = [o["Id"] for o in _payload_of(sent, "IPAddress")["Options"]]
+    assert 67 not in ids
+
+
+def test_an_unknown_conditions_mode_is_refused():
+    with pytest.raises(netboot.PixieConfigError, match="target or shared"):
+        DhcpServer("windhcp://dhcp01/?conditions=global")
+
+
+def test_completing_a_kept_target_removes_only_its_own_policies():
+    server, sent = _windhcp()
+    engine = _engine(
+        images={
+            "debian": {
+                "template_path": [],
+                "dhcp_options": {"boot-file-name": "undionly.kpxe"},
+                "dhcp_when": dict(IPXE),
+                "dhcp_complete": {"keep": True},
+            }
+        }
+    )
+    server.complete_target(_ctx(engine))
+    names = _payload_of(sent, "Names")["Names"]
+    assert names == ["netboot-aabbccddeeff-ipxe", "netboot-aabbccddeeff"]
+    assert "Remove-DhcpServerv4Policy" in "\n".join(sent[0][1])
+
+
+def test_shared_policies_are_never_removed_on_completion():
+    server, sent = _windhcp("windhcp://dhcp01/?conditions=shared")
+    engine = _engine(
+        images={
+            "debian": {
+                "template_path": [],
+                "dhcp_options": {"boot-file-name": "undionly.kpxe"},
+                "dhcp_when": dict(IPXE),
+                "dhcp_complete": {"keep": True},
+            }
+        }
+    )
+    server.complete_target(_ctx(engine))
+    # Only the reservation rewrite; the estate's policy is left alone.
+    assert not any("Names" in payload for payload, _ in sent)
 
 
 def test_windhcp_defines_the_user_class_the_policy_needs():
