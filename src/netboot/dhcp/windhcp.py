@@ -464,8 +464,8 @@ def _scope(ctx) -> str:
     return str(network.network_address)
 
 
-def _client_id(target) -> str:
-    """Windows identifies a reservation by MAC, in its hyphen spelling."""
+def _require_mac(target):
+    """The target's MAC, or a clear error: a reservation is identified by one."""
     from .. import PixieLookupError
     from ..engine import PixieTarget
 
@@ -475,12 +475,17 @@ def _client_id(target) -> str:
             f"target {target._id!r} has no MAC address, and a Windows DHCP "
             "reservation is identified by one"
         )
-    return mac.as_str("-")
+    return mac
+
+
+def _client_id(target) -> str:
+    """Windows identifies a reservation by MAC, in its hyphen spelling."""
+    return _require_mac(target).as_str("-")
 
 
 def _netsh_client_id(target) -> str:
     """netsh wants the MAC as bare hex; the cmdlets want it hyphenated."""
-    return _client_id(target).replace("-", "")
+    return _require_mac(target).hex()
 
 
 def _values(value) -> "list":

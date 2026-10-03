@@ -292,7 +292,10 @@ servers identifies a reservation by it.
   filled in from `.address`: resolved to an IP (`try_ip()`) for every scheme
   except `https`, which keeps the configured name so TLS validation and
   name-based virtual hosts still work. An `address` of the form `host:port` or
-  `[v6]:port` becomes a real host and port rather than a hostname containing an
+  `[v6]:port` becomes a real host and port (**`netimps.normalize_host`**; a v6
+  literal comes back unbracketed, which is what `pathlib_next`'s `Source` wants,
+  and a malformed port raises `PixieConfigError` naming the repo) rather than a
+  hostname containing an
   escaped colon, and a repo with no address warns. A service written as a full
   URI keeps its own authority untouched. `repo[path, service]` is sugar for `.get(path, service=service)`.
   An `http`/`https` service needs the **`http` extra** (`pip install

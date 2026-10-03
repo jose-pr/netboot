@@ -254,7 +254,10 @@ class PixieContext(Namespace):
         # is the same case as the unspecified IP: every MAC-less target would
         # otherwise share the candidate `00-00-00-00-00-00.<name>`, and one
         # stray file of that name would apply to all of them.
-        ip_name = str(ip) if ip and str(ip) not in ("0.0.0.0", "::") else ""
+        # `is_wildcard` knows every spelling of "every local address", a
+        # `%zone` suffix and `None` included; the literal tuple this replaced
+        # knew two of them.
+        ip_name = "" if netutils.is_wildcard(ip) else str(ip)
         mac = self.target.mac
         mac_name = mac.as_str("-") if str(mac) != PixieTarget._NULL_MAC else ""
         names = []

@@ -8,24 +8,10 @@ from pathlib_next.uri import Source, UriPath
 
 from ..logging import LOGGER
 from ..utils.config import Namespace as _NS
-from ..utils.net import Host
+from ..utils.net import Host, normalize_host
 
 #: Schemes whose pathlib_next handler needs the ``http`` extra (``requests``).
 _HTTP_SCHEMES = ("http", "https")
-
-
-def _split_port(text: str) -> "tuple[str, _ty.Optional[int]]":
-    """Split `host:port`, `[v6]:port` or a bare host into its two parts."""
-    if not text:
-        return "", None
-    if text.startswith("["):  # [2001:db8::1]:8080
-        literal, _, rest = text.partition("]")
-        port = rest.lstrip(":")
-        return literal + "]", int(port) if port.isdigit() else None
-    head, sep, tail = text.rpartition(":")
-    if sep and tail.isdigit() and head and ":" not in head:
-        return head, int(tail)
-    return text, None
 
 
 def _scheme_of(value: object) -> str:
@@ -147,9 +133,13 @@ class Repository(_NS):
         name, and a name-based virtual host needs one too, so `https` keeps the
         address as configured. Other schemes use the resolved IP, because a PXE
         client often has no working DNS when it fetches its boot files.
+
+        The split is netimps' `normalize_host`, which netboot duplicated for a
+        while. It returns a v6 literal **unbracketed**, which is what
+        `pathlib_next`'s `Source` wants -- it brackets one itself.
         """
-        host, port = _split_port(str(self.address))
-        if not host:
+        address = str(self.address)
+        if not address:
             LOGGER.warning(
                 "repository has no address, so %s:// URLs are built without a "
                 "host; give the repo an `address`, or write the service as a "
@@ -157,6 +147,16 @@ class Repository(_NS):
                 scheme,
             )
             return "", None
+        try:
+            host, port = normalize_host(address)
+        except ValueError as exc:
+            # `mirror.example:http` is a config mistake. The duplicate this
+            # replaced treated it as a hostname, so it reached DNS as one.
+            from .. import PixieConfigError
+
+            raise PixieConfigError(
+                f"repository address {address!r} is not a host or host:port: {exc}"
+            ) from exc
         if scheme == "https":
             return host, port
         # `try_ip()` is netimps' `.ip()` with the configured text as fallback:

@@ -30,13 +30,16 @@ classifiers = [
 ]
 dependencies = [
     "duho>=0.6.0,<0.7",
-    # Above the .0 deliberately: 0.3.0 made resolve() raise ResolutionError
-    # when no backend could even ask (a resolver outage), and 0.3.1 restored
-    # [] as the default (strict=False). PixieTarget relies on that: every
-    # target is built at startup, so a raise would fail every command. Don't
-    # normalize this back to 0.3.0. `Host` comes from here too (netimps has had
-    # it since 0.2.0); the floor is set by resolve(), not by Host.
-    "netimps>=0.3.1,<0.4",
+    # Three symbols set this floor, all new in 0.3.3: `is_wildcard` (the unset
+    # -address check in PixieContext._template_names), `normalize_host`'s loose
+    # union (it takes a `Host`, and raises on a malformed port instead of
+    # stringifying it), and `MACAddress.hex` (windhcp's netsh client id). Older
+    # history worth keeping: 0.3.0 made resolve() raise ResolutionError when no
+    # backend could even ask, and 0.3.1 restored [] as the default
+    # (strict=False) -- PixieTarget relies on that, since every target is built
+    # at startup and a raise would fail every command. `Host` is netimps' too
+    # (since 0.2.0; netboot subclasses it).
+    "netimps>=0.3.3,<0.4",
     # Above the .0 deliberately, measured 2026-09-17: recursive `!include`
     # globs (`sub/**/*.yaml`) break on pathlib_next >=0.9.5 unless yaconfiglib
     # is >=0.12.0, and yaconfiglib 0.12.0 itself requires pathlib-next>=0.9.9.

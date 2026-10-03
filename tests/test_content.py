@@ -274,6 +274,22 @@ def test_https_keeps_the_configured_name_so_tls_still_validates(monkeypatch):
     assert "192.0.2.40" in str(repo.service("http"))
 
 
+def test_a_malformed_repository_address_is_a_config_error():
+    # `normalize_host` raises where netboot's own splitter shrugged and treated
+    # the whole thing as a hostname -- which then reached DNS as one.
+    repo = Repository(address="mirror.example:http", services={"http": "/boot"})
+    with pytest.raises(netboot.PixieConfigError) as excinfo:
+        repo.service("http")
+    message = str(excinfo.value)
+    assert "mirror.example:http" in message and "host or host:port" in message
+
+
+def test_a_port_only_address_is_a_config_error():
+    repo = Repository(address="mirror.example:", services={"http": "/boot"})
+    with pytest.raises(netboot.PixieConfigError):
+        repo.service("http")
+
+
 @requires_http
 def test_a_repo_without_an_address_warns(caplog):
     import logging

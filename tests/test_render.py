@@ -221,7 +221,9 @@ def test_template_names_accepts_options(tmp_path):
     assert any(n == "10.0.0.9.boot.j2" for n in names)  # IP stringified in name
 
 
-@pytest.mark.parametrize("unset_ip", ["", "0.0.0.0", "::"])
+# `::%eth0` is the case the literal `("0.0.0.0", "::")` check could not see;
+# netimps' `is_wildcard` strips the zone id. Scoped addresses parse on 3.9 too.
+@pytest.mark.parametrize("unset_ip", ["", "0.0.0.0", "::", "::%eth0", "0.0.0.0"])
 def test_template_names_skips_an_unset_ip(unset_ip):
     # An unset ip must not emit a name; MAC/hostname still do. The previous
     # version of this test never built a 0.0.0.0 target, so it did not pin the
@@ -233,6 +235,7 @@ def test_template_names_skips_an_unset_ip(unset_ip):
     assert str(ctx.target.ip or "") in ("", unset_ip)
     names = ctx._template_names("boot.j2")
     assert not any(n.startswith(("0.0.0.0", "::")) for n in names)
+    assert "%" not in "".join(names)
     assert names == ["aa-bb-cc-dd-ee-ff.boot.j2", "boot.j2"]
 
 
