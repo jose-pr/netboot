@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **`netimps>=0.3.3`** (was `>=0.3.1`), and three things netboot hand-rolled are
+  now the library's. No behaviour netboot documented changes, except where noted:
+  - repository addresses are split by **`normalize_host`**, so a malformed one
+    (`mirror.example:http`, `mirror.example:`) now raises `PixieConfigError`
+    naming the repo instead of being treated as a hostname and handed to DNS as
+    one. `[v6]:port` still produces `http://[2001:db8::1]:8080/...` — the host
+    comes back unbracketed and `pathlib_next` brackets it itself.
+  - "the target has no address" is **`is_wildcard`**, which also covers `None`
+    and a `%zone` suffix (`::%eth0`); the check it replaced knew `0.0.0.0` and
+    `::` only, so a scoped unspecified address produced a template candidate
+    named after it.
+  - the `windhcp://` netsh client id is **`MACAddress.hex()`** rather than
+    formatting with separators and stripping them again.
 - **`netboot.utils.net.Host` is now netimps' `Host`**, subclassed rather than
   reimplemented. The local class claimed `Host` was "a netboot concept"; netimps
   has had the same type since 0.2.0, written for the same reason, and this
