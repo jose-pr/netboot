@@ -102,6 +102,45 @@ Each has one thing that is easy to get wrong:
   multi-valued option is passed as one argument per value, and the reservation is
   created as `BOTH` (DHCP and BOOTP) to match what the cmdlets do by default.
 
+### When provisioning finishes (`dhcp_complete:`)
+
+A target that still receives `boot-file-name` after its install finishes **boots
+the installer again**. `pixie complete` removes the reservation, which stops that
+— and also throws away the fixed address the rest of the estate may depend on.
+`dhcp_complete:` chooses what the entry becomes instead:
+
+```yaml
+images:
+  debian:
+    dhcp_options: {boot-file-name: undionly.kpxe}
+    dhcp_complete:
+      keep: true                                 # default false = remove it
+      options: {boot-file-name: sanboot.ipxe}     # omit for "no boot options"
+```
+
+| Config | Result |
+| ------ | ------ |
+| nothing (the default) | the reservation is removed, exactly as before |
+| `keep: true` | the address and its options stay; the **boot** options go, so the client's firmware falls through to local disk |
+| `keep: true` with `options` | those options are served instead — an iPXE script ending in `sanboot` hands control to the disk, which works on firmware with no local-disk fallback of its own |
+
+Only `boot-file-name`, `next-server` and `tftp-server-name` are replaced or
+removed. `router`, `domain-name-servers`, `subnet-mask` and the rest are what make
+a kept reservation worth keeping, and none of them re-kicks a machine. `options`
+**replaces** the boot options rather than merging with them — a merge would leave
+the installer's in place, which is the whole problem.
+
+It can be declared on a zone, an image or a target, and the most specific wins.
+A kept entry also **loses its `dhcp_when` membership**, or the condition would go
+on serving the installer to a finished machine.
+
+Every shipped backend can keep an entry: `windhcp://` sets and removes option
+values on the reservation, `dhcpd://` supersedes the host in one call, `kea://`
+upserts the reservation (so a failure leaves the old one rather than none), and
+`dnsmasq://` rewrites that target's region in the files it already owns. A plugin
+backend that cannot says so by not implementing `keep_target`, and the failure is
+logged per server like any other.
+
 ### Conditional options (`dhcp_when:`)
 
 Some boot decisions depend on **who is asking**. The standard case is chainloading

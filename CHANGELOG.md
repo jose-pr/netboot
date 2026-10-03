@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`dhcp_complete:` — what a finished target's DHCP entry becomes.** A machine
+  that still receives `boot-file-name` after its install boots the installer
+  again; `pixie complete` removed the reservation to prevent that, which also
+  threw away the fixed address. Now `keep: true` leaves the address and drops the
+  **boot** options (firmware falls through to local disk), and `options:` serves
+  something else instead — an iPXE `sanboot` script, for firmware with no
+  local-disk fallback. Router, DNS and subnet mask are never touched, and a kept
+  entry also loses its `dhcp_when` membership so the condition cannot keep serving
+  it the installer. The default is unchanged. All four backends implement it;
+  verified against a real Windows Server 2025 for each of the three outcomes.
 - **`dhcp_when:` — conditional options**, declared once and translated per
   backend. A **mapping keyed by name**, where the name is the construct each
   server uses: a Windows scope policy, a dhcpd group or inline `if`, a Kea client
