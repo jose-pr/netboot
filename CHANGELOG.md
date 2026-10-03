@@ -40,6 +40,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is the iPXE chainload said once: `undionly.kpxe` for a PXE ROM,
   `boot.ipxe` for iPXE.
 
+  On Windows a condition becomes **two policies for that target** — one matched on
+  its MAC plus the test, one on the MAC alone — and the overridden option is
+  **kept off the reservation**, because a reservation's options outrank every
+  policy and would otherwise make the condition dead while the configuration
+  looked right. `conditions=shared` gives the other shape: one policy per
+  condition for the whole scope, which an administrator can create once on a host
+  where netboot cannot create policies at all.
+
   A backend that cannot create the construct **says exactly what to run**
   (`Add-DhcpServerv4Class`/`Add-DhcpServerv4Policy`, a `dhcpd.conf` `group`, the
   Kea `client-classes` JSON), and one that cannot express conditions at all

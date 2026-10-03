@@ -179,10 +179,42 @@ every backend can express. `options` takes the same option names as
 
 | Backend | Construct | netboot creates it | If it cannot |
 | ------- | --------- | ------------------ | ------------ |
-| `windhcp://` | a scope-level **policy** (plus the user/vendor **class** it references) | yes, through the cmdlets — **netsh has no policy support at all**, so this part ignores `method=` | prints the `Add-DhcpServerv4Class` / `Add-DhcpServerv4Policy` lines to run once as an admin |
+| `windhcp://` | a scope-level **policy** per target (plus the user/vendor **class** it references), and a base policy for the same target | yes, through the cmdlets — **netsh has no policy support at all**, so this part ignores `method=` | prints the `Add-DhcpServerv4Class` / `Add-DhcpServerv4Policy` lines to run once as an admin |
 | `dhcpd://` | an inline **`if`** in the host's statements (default), or a named **group** with `conditions=group` | yes — statements always, groups over OMAPI | prints the `group { }` block for `dhcpd.conf`, which also survives a restart where an OMAPI group does not |
 | `kea://` | a **client class**, named by the reservation | only with the `class_cmds` hook (`class-add`) | prints the `client-classes` JSON for `kea-dhcp4.conf` |
 | `dnsmasq://` | — | **no** | refuses, and prints the `dhcp-match`/`dhcp-option` pair for `dnsmasq.conf` |
+
+#### Windows: why a condition means two policies
+
+A Windows DHCP **reservation's options outrank every policy** — the order is
+reservation, scope policy, server policy, scope, server, applied per option. A
+client that takes option 67 from its reservation *ignores* option 67 from any
+policy. So netboot **keeps an option a condition overrides off the reservation**
+and serves it from policies instead: one matching the condition's test, and a base
+one carrying what the reservation would have said. Options no condition touches
+stay on the reservation, where that precedence is a feature.
+
+The two policies are matched on the target's **MAC** as well, because a policy is
+scope-level: without the MAC it would answer for every client in the scope.
+Processing order is set explicitly, conditional before base, or the base policy
+would answer an iPXE client and the chainload would never happen.
+
+`conditions=shared` is the other shape: one policy per condition name, matched on
+the test alone, for every client in the scope. netboot still keeps the option off
+the reservation, but the base value is then **not netboot's to serve** — a
+scope-wide base policy would answer for every client, so it comes from a scope
+option or a policy of your own. Use it where netboot cannot create policies at all
+(no PowerShell module, so `method=netsh`): an administrator creates one policy per
+condition **once**, rather than one per machine forever.
+
+```
+windhcp://dhcp01/?conditions=shared     # an admin pre-creates the policies
+windhcp://dhcp01/                       # netboot manages a pair per target
+```
+
+Creating a reservation already needs DHCP-administrator rights, so in the default
+`target` mode netboot creating the policies costs no privilege it did not already
+have.
 
 **A backend that cannot apply a condition fails rather than arming without it.** A
 target that silently misses its chainload boots the installer again, which is
