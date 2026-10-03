@@ -62,7 +62,7 @@ class dhcpd(DhcpServer):  # noqa: N801 - the class name is the URI scheme
     — never from the URI, which ends up in logs and config repositories.
     """
 
-    SETTINGS = frozenset({"keyname", "keyfile"})
+    SETTINGS = frozenset({"keyname", "keyfile", "conditions"})
 
     def __init__(self, uri: str):
         super().__init__(uri)
@@ -70,6 +70,14 @@ class dhcpd(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         self.hostname = parts.hostname or "localhost"
         self.port = parts.port or 7911
         self.keyname = self.settings.get("keyname")
+        self.conditions = str(self.settings.get("conditions", "if")).lower()
+        if self.conditions not in ("if", "group"):
+            from .. import PixieConfigError
+
+            raise PixieConfigError(
+                f"dhcpd: conditions must be 'if' or 'group', not "
+                f"{self.conditions!r}"
+            )
         self.keyfile = self.settings.get("keyfile")
 
     # -- transport --------------------------------------------------------
@@ -109,14 +117,94 @@ class dhcpd(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         target = netboot.target
         mac = _mac(target)
         options = self.options_for(netboot)
-        statements = render_statements(options, self.extras(netboot, "add"))
+        conditions = list(self.conditions_for(netboot).values())
+        extras = self.extras(netboot, "add")
+        group = None
+        if conditions and self.conditions == "group":
+            # A host belongs to exactly one group, so one group carries every
+            # condition that applies, named after them in declaration order.
+            group = "-".join(c.name for c in conditions)
+        elif conditions:
+            # Inline: the conditional statements live on the host itself. Always
+            # correct, needs no second OMAPI object, and the default for that
+            # reason.
+            extras = extras + [render_condition(c) for c in conditions]
+        statements = render_statements(options, extras)
         connection = self.connect()
         try:
+            if group is not None:
+                self._ensure_group(connection, group, conditions)
             connection.add_host_supersede(
                 str(target.ip),
                 mac,
                 str(target._id),
                 statements=statements or None,
+            )
+            if group is not None:
+                # Set after the host exists: `change_group` takes the host name.
+                connection.change_group(str(target._id), group)
+        finally:
+            _close(connection)
+
+    def _ensure_group(self, connection, group: str, conditions) -> None:
+        """Create the group carrying these conditions, unless it is already there.
+
+        OMAPI has no group lookup, so "already there" is what `add_group`
+        raising tells us -- and that is the step-1 case, not a failure. A group
+        created this way shares the caveat every OMAPI object has: it does not
+        survive a dhcpd restart, which is why `condition_recipe` prints the
+        `dhcpd.conf` block that does.
+        """
+        statements = " ".join(render_condition(c) for c in conditions)
+        try:
+            connection.add_group(group, statements)
+        except Exception as exc:  # noqa: BLE001 - the library raises its own types
+            if "exist" not in str(exc).lower() and type(exc).__name__ not in (
+                "OmapiError",
+                "OmapiErrorNotFound",
+            ):
+                raise
+            LOGGER.debug("dhcpd group %s already present (%s)", group, exc)
+
+    def ensure_condition(self, netboot: "_ty.Any", condition) -> str:
+        """dhcpd expresses a condition in the statements it already writes.
+
+        Nothing to create in `if` mode -- the statements go on the host, so the
+        name is only a label. In `group` mode the group is created with the
+        target, because `change_group` needs the host to exist first.
+        """
+        return condition.name
+
+    def condition_recipe(self, netboot: "_ty.Any", condition) -> str:
+        """The `dhcpd.conf` group an admin can add, as the durable alternative.
+
+        An OMAPI group vanishes on restart; this one does not. Printing it is the
+        recommended path for dhcpd rather than a fallback.
+        """
+        return (
+            f"# netboot: add to dhcpd.conf so {condition.name!r} survives a "
+            f"restart\n"
+            f'group "{condition.name}" {{\n'
+            f"  {render_condition(condition)}\n"
+            f"}}"
+        )
+
+    def remove_condition_member(self, netboot: "_ty.Any", condition) -> None:
+        """Drop the host out of its group, leaving the group for other hosts.
+
+        Superseding the host without a group is the way: OMAPI has no "unset the
+        group" operation, and `add_host_supersede` writes the host whole.
+        """
+        if self.conditions != "group":
+            return
+        target = netboot.target
+        connection = self.connect()
+        try:
+            connection.add_host_supersede(
+                str(target.ip),
+                _mac(target),
+                str(target._id),
+                statements=None,
             )
         finally:
             _close(connection)
@@ -154,6 +242,38 @@ def _mac(target) -> str:
     return mac
 
 
+#: `match` key -> the dhcpd expression that tests it. `exists` first, because
+#: testing an absent option is an error in dhcpd, not false.
+_CONDITION_TESTS = {
+    "user-class": "exists user-class and option user-class = {value}",
+    "vendor-class": (
+        "exists vendor-class-identifier and " "option vendor-class-identifier = {value}"
+    ),
+}
+
+
+def render_condition(condition) -> str:
+    """One condition as a dhcpd `if` statement, values escaped.
+
+    The body is the same renderer the host's own options go through, so a
+    conditional option cannot be escaped differently from an unconditional one.
+    """
+    from .. import PixieConfigError
+
+    tests = []
+    for key, value in condition.match.items():
+        text = str(value)
+        if any(ch in text for ch in '\r\n\x00"'):
+            # A quote would close the literal and the rest would be dhcpd source.
+            raise PixieConfigError(
+                f"dhcp_when.{condition.name} cannot match {key} on {text!r}: a "
+                "newline, NUL or quote cannot appear in a dhcpd test"
+            )
+        tests.append(_CONDITION_TESTS[key].format(value=_quote_text(text)))
+    body = render_statements(condition.options)
+    return "if " + " and ".join(tests) + " { " + body + " }"
+
+
 def render_statements(options, raw: "list[str]|None" = None) -> str:
     """Render options as a dhcpd config fragment, escaping every value.
 
@@ -180,6 +300,12 @@ def render_statements(options, raw: "list[str]|None" = None) -> str:
     return " ".join(parts)
 
 
+def _quote_text(text: str) -> str:
+    """A dhcpd string literal. The one place `"` and `\\` are escaped."""
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def _render(keyword: str, value) -> str:
     """One value, quoted or bare, never able to end its statement."""
     from .. import PixieConfigError
@@ -193,8 +319,7 @@ def _render(keyword: str, value) -> str:
             "cannot be written into a dhcpd statement: " + repr(text)
         )
     if keyword in _TEXT:
-        escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
+        return _quote_text(text)
     if not _BARE.match(text):
         raise PixieConfigError(
             f"dhcpd option {keyword!r} expects an address or number, got "

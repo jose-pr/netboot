@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 from ..logging import LOGGER
 from . import DhcpServer
+from .conditions import ConditionMissing
 
 #: Reservation *fields* in Kea's model: they are not `option-data` entries.
 _FIELDS = {
@@ -80,6 +81,11 @@ class kea(DhcpServer):  # noqa: N801 - the class name is the URI scheme
     # -- the DhcpServer contract ------------------------------------------
 
     def add_target(self, netboot: "_ty.Any"):
+        # Classes before the reservation: a reservation naming a class Kea does
+        # not know is accepted and then never matches, which is the silent
+        # failure this ordering avoids.
+        for condition in self.conditions_for(netboot).values():
+            self.ensure_condition(netboot, condition)
         from .. import PixieConfigError
 
         reservation = self._reservation(netboot)
@@ -111,6 +117,57 @@ class kea(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         if code in (0, 3):  # 3 = "not found", which is success for cleanup
             return
         raise PixieConfigError(_explain(command="reservation-del", result=result))
+
+    # -- conditions (client classes) ---------------------------------------
+
+    def ensure_condition(self, ctx, condition) -> str:
+        """Use the class if Kea has it, add it if the hook allows, else explain.
+
+        `class-get` answers step 1 without needing any hook at all, which matters:
+        a production Kea usually defines its classes in config management, and
+        netboot should arm against it without being able to write them.
+        """
+        from .. import PixieConfigError
+
+        existing = self.command("class-get", {"name": condition.name})
+        if existing.get("result") == 0:
+            return condition.name
+
+        added = self.command("class-add", {"client-classes": [_class(condition)]})
+        code = added.get("result")
+        if code == 0:
+            LOGGER.info("kea: created client class %s", condition.name)
+            return condition.name
+        if code == 2:  # unsupported command -- the class_cmds hook is not loaded
+            raise ConditionMissing(
+                f"kea has no client class {condition.name!r} and the "
+                f"`class_cmds` hook is not loaded, so netboot cannot add one. "
+                f"Either load that hook or add this to kea-dhcp4.conf:",
+                self.condition_recipe(ctx, condition),
+            )
+        raise PixieConfigError(_explain(command="class-add", result=added))
+
+    def condition_recipe(self, ctx, condition) -> str:
+        """The `client-classes` entry for `kea-dhcp4.conf`."""
+        import json
+
+        return (
+            f"// netboot: add to kea-dhcp4.conf under Dhcp4.client-classes\n"
+            + json.dumps(_class(condition), indent=2)
+        )
+
+    def remove_condition_member(self, ctx, condition) -> None:
+        """Rewrite the reservation without its classes, keeping the class itself.
+
+        Only reached when a completed target keeps its reservation; deleting the
+        reservation drops the membership on its own.
+        """
+        reservation = self._reservation(ctx)
+        reservation.pop("client-classes", None)
+        self.command(
+            "reservation-add",
+            {"reservation": reservation, "subnet-id": reservation.get("subnet-id")},
+        )
 
     # -- building the reservation -----------------------------------------
 
@@ -148,6 +205,11 @@ class kea(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         option_data.extend(self.extras(ctx, "add"))
         if option_data:
             reservation["option-data"] = option_data
+        conditions = self.conditions_for(ctx)
+        if conditions:
+            # Kea evaluates the class test per packet; the reservation only has
+            # to say which classes this host may be in.
+            reservation["client-classes"] = sorted(conditions)
         return reservation
 
     def _subnet_id(self, ctx) -> int:
@@ -188,6 +250,60 @@ class kea(DhcpServer):  # noqa: N801 - the class name is the URI scheme
 
 class keas(kea):  # noqa: N801 - the class name is the URI scheme
     """`keas://...` — the same backend, reached over https."""
+
+
+#: `match` key -> the DHCP option code Kea tests. `.text` compares the option's
+#: contents as a string, which is how both of these are sent.
+_TEST_CODES = {"user-class": 77, "vendor-class": 60}
+
+
+def _class(condition) -> dict:
+    """A Kea `client-classes` entry for this condition."""
+    tests = [
+        f"option[{_TEST_CODES[key]}].text == '{_escape_test(value)}'"
+        for key, value in condition.match.items()
+    ]
+    entry: "dict[str, _ty.Any]" = {
+        "name": condition.name,
+        "test": " and ".join(tests),
+    }
+    option_data = []
+    for name, value in condition.options.items():
+        field = _FIELDS.get(name)
+        if field:
+            # `boot-file-name`/`next-server` are reservation fields, not options,
+            # so a class carrying them has to use the option spelling instead.
+            option_data.append({"name": _CLASS_OPTIONS[name], "data": _value(value)})
+            continue
+        if name.startswith("option-") or name.isdigit():
+            code = name[len("option-") :] if name.startswith("option-") else name
+            option_data.append({"code": int(code), "data": _value(value)})
+        else:
+            option_data.append({"name": name, "data": _value(value)})
+    if option_data:
+        entry["option-data"] = option_data
+    return entry
+
+
+#: A reservation field's option-name equivalent, for a class (which has no
+#: reservation fields to set).
+_CLASS_OPTIONS = {
+    "boot-file-name": "boot-file-name",
+    "next-server": "tftp-server-name",
+    "tftp-server-name": "tftp-server-name",
+}
+
+
+def _escape_test(value) -> str:
+    """A value inside a Kea test expression's single quotes."""
+    from .. import PixieConfigError
+
+    text = str(value)
+    if "'" in text or any(ch in text for ch in "\r\n\x00"):
+        raise PixieConfigError(
+            f"a kea client class test cannot contain a quote or newline: {text!r}"
+        )
+    return text
 
 
 def _value(value) -> str:

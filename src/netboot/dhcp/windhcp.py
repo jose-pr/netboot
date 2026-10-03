@@ -36,6 +36,7 @@ from urllib.parse import urlsplit
 
 from ..logging import LOGGER
 from . import DhcpServer
+from .conditions import ConditionMissing
 
 #: Generic option name -> Windows DHCP option id.
 _OPTION_IDS = {
@@ -131,6 +132,60 @@ ConvertTo-Json @{{ ok = $true }}
 """
 
 
+#: Thrown by the policy script when the host has no `DhcpServer` module, so the
+#: Python side can turn it into a `ConditionMissing` carrying the recipe. A
+#: marker rather than a message match: the cmdlets' own errors are localised.
+_NO_POLICY_CMDLETS = "NETBOOT-NO-POLICY-CMDLETS"
+
+#: Creates the policy if it is absent, then sets its option values. Windows
+#: policies are **scope-level and matched by condition, not by member list**, so
+#: every target naming the same `dhcp_when` key converges on one policy -- which
+#: is why this is create-if-absent rather than create.
+#:
+#: `-Condition AND` is used even for a single test, because a policy with two
+#: conditions and no operator is rejected; AND is also the documented meaning of
+#: "all of these must match", which is what a multi-key `match` says.
+_POLICY_BODY = [
+    # netsh has **no policy verb at all** -- measured on Windows Server 2025,
+    # 2026-10-03: neither `netsh dhcp server scope <s> ?` nor `netsh dhcp server ?`
+    # lists one. Policies arrived with the DhcpServer module after netsh was
+    # frozen, so they are cmdlet-only whatever `method=` says, and a host without
+    # the module cannot have them created from here at all.
+    "if (-not (Get-Command Add-DhcpServerv4Policy -ErrorAction SilentlyContinue)) {",
+    f"  throw '{_NO_POLICY_CMDLETS}'",
+    "}",
+    "foreach ($pol in $p.Policies) {",
+    "  $common = @{}",
+    "  if ($p.ComputerName) { $common['ComputerName'] = $p.ComputerName }",
+    # A policy references a user/vendor class **by name**, and Windows refuses
+    # one that is not defined on the server: "The specified User class iPXE does
+    # not exist on DHCP server" (measured on Server 2025, 2026-10-03). So the
+    # class comes first, and is itself create-if-absent -- an estate that already
+    # defines `iPXE` keeps its own definition.
+    "  foreach ($cls in $pol.Classes) {",
+    "    $have = Get-DhcpServerv4Class -Name $cls.Name -Type $cls.Type @common"
+    " -ErrorAction SilentlyContinue",
+    "    if (-not $have) {",
+    "      Add-DhcpServerv4Class -Name $cls.Name -Type $cls.Type -Data $cls.Data"
+    " @common",
+    "    }",
+    "  }",
+    "  $existing = Get-DhcpServerv4Policy -ScopeId $p.ScopeId -Name $pol.Name"
+    " @common -ErrorAction SilentlyContinue",
+    "  if (-not $existing) {",
+    "    $new = @{ Name = $pol.Name; ScopeId = $p.ScopeId; Condition = 'AND' }",
+    "    if ($pol.UserClass)   { $new['UserClass']   = @('EQ', $pol.UserClass) }",
+    "    if ($pol.VendorClass) { $new['VendorClass'] = @('EQ', $pol.VendorClass) }",
+    "    Add-DhcpServerv4Policy @new @common",
+    "  }",
+    "  foreach ($o in $pol.Options) {",
+    "    Set-DhcpServerv4OptionValue -PolicyName $pol.Name -ScopeId $p.ScopeId"
+    " -OptionId $o.Id -Value $o.Value @common",
+    "  }",
+    "}",
+]
+
+
 class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
     """`windhcp://[user@]host/?transport=ssh|winrm&method=powershell|netsh&server=<dhcp server>`
 
@@ -167,6 +222,9 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
     # -- the DhcpServer contract ------------------------------------------
 
     def add_target(self, netboot: "_ty.Any"):
+        # Conditions first: a policy must exist before a reservation can rely on
+        # it, and a failure here must not leave a half-armed target behind.
+        self._apply_conditions(netboot)
         if self.method == "netsh":
             return self._add_target_netsh(netboot)
         target = netboot.target
@@ -224,6 +282,110 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
         ]
         body.extend(_script_lines(self.extras(netboot, "remove")))
         self.run(payload, body)
+
+    # -- conditions (scope-level policies) ---------------------------------
+
+    def _apply_conditions(self, netboot: "_ty.Any") -> None:
+        """Create or reuse one policy per condition, then set its options."""
+        conditions = self.conditions_for(netboot)
+        if not conditions:
+            return
+        scope = str(_scope(netboot))
+        policies = []
+        for condition in conditions.values():
+            policies.append(
+                {
+                    "Name": condition.name,
+                    "UserClass": condition.match.get("user-class", ""),
+                    "VendorClass": condition.match.get("vendor-class", ""),
+                    "Classes": _classes_for(condition),
+                    "Options": [
+                        {"Id": option_id, "Value": [str(v) for v in _values(value)]}
+                        for option_id, value in _option_ids(condition.options)
+                    ],
+                }
+            )
+        payload = {
+            "ScopeId": scope,
+            "ComputerName": self.server,
+            "Policies": policies,
+        }
+        try:
+            self.run(payload, list(_POLICY_BODY))
+        except Exception as exc:  # noqa: BLE001 - transport errors vary
+            if _NO_POLICY_CMDLETS not in str(exc):
+                raise
+            # Step 3 of the ladder: it cannot be created from here, so hand over
+            # what someone with the module (RSAT anywhere, `-ComputerName` this
+            # server) must run once. After that, arming needs none of this.
+            recipes = "\n\n".join(
+                self.condition_recipe(netboot, c) for c in conditions.values()
+            )
+            raise ConditionMissing(
+                f"{self.hostname} has no DhcpServer PowerShell module, and netsh "
+                f"has no policy support at all, so netboot cannot create the "
+                f"policy for "
+                f"{', '.join('dhcp_when.' + n for n in conditions)}. Run this "
+                f"once as a DHCP administrator, from any host with RSAT:",
+                recipes,
+            ) from exc
+
+    def ensure_condition(self, netboot: "_ty.Any", condition) -> str:
+        """Windows can create its own policies, so this is create-if-absent.
+
+        `_apply_conditions` does every condition in one script rather than one
+        round trip each; this method exists for a caller that wants just one
+        (`pixie dhcp-config`, and the tests).
+        """
+        self._apply_conditions_for(netboot, [condition])
+        return condition.name
+
+    def _apply_conditions_for(self, netboot: "_ty.Any", conditions) -> None:
+        payload_conditions = {c.name: c for c in conditions}
+        saved = self.conditions_for
+        try:
+            self.conditions_for = lambda ctx: payload_conditions
+            self._apply_conditions(netboot)
+        finally:
+            self.conditions_for = saved
+
+    def condition_recipe(self, netboot: "_ty.Any", condition) -> str:
+        """The PowerShell an admin runs to create this policy by hand.
+
+        netsh can attach a reservation to an existing policy but is not trusted
+        to create one (see the plan's probe), and an operator without DHCP-admin
+        rights cannot create one at all -- in both cases this is what they hand
+        to someone who can. Same text as the error, by construction.
+        """
+        scope = str(_scope(netboot))
+        lines = [
+            f"# netboot: create the DHCP policy {condition.name!r} once, as an admin",
+            f"$scope = '{scope}'",
+        ]
+        server = f" -ComputerName '{self.server}'" if self.server else ""
+        for cls in _classes_for(condition):
+            # Without the class the policy cannot be created at all.
+            lines.append(
+                f"if (-not (Get-DhcpServerv4Class -Name '{cls['Name']}' "
+                f"-Type {cls['Type']}{server} -ErrorAction SilentlyContinue)) {{ "
+                f"Add-DhcpServerv4Class -Name '{cls['Name']}' -Type {cls['Type']} "
+                f"-Data '{cls['Data']}'{server} }}"
+            )
+        args = [f"-Name '{condition.name}'", "-ScopeId $scope", "-Condition AND"]
+        if condition.match.get("user-class"):
+            args.append(f"-UserClass EQ,'{condition.match['user-class']}'")
+        if condition.match.get("vendor-class"):
+            args.append(f"-VendorClass EQ,'{condition.match['vendor-class']}'")
+        if self.server:
+            args.append(f"-ComputerName '{self.server}'")
+        lines.append("Add-DhcpServerv4Policy " + " ".join(args))
+        for option_id, value in _option_ids(condition.options):
+            rendered = ",".join(f"'{v}'" for v in _values(value))
+            lines.append(
+                f"Set-DhcpServerv4OptionValue -PolicyName '{condition.name}' "
+                f"-ScopeId $scope -OptionId {option_id} -Value {rendered}{server}"
+            )
+        return "\n".join(lines)
 
     # -- method=netsh ------------------------------------------------------
 
@@ -388,6 +550,25 @@ class windhcp(DhcpServer):  # noqa: N801 - the class name is the URI scheme
                 f"{_text(result.std_err) or _text(result.std_out)}"
             )
         return _text(result.std_out)
+
+
+#: `match` key -> the `-Type` of the Windows DHCP class that carries it.
+_CLASS_TYPES = {"user-class": "User", "vendor-class": "Vendor"}
+
+
+def _classes_for(condition) -> "list[dict]":
+    """The user/vendor classes this condition's policy needs to exist.
+
+    The class is named after the value the client sends, which is also its data:
+    an `iPXE` user class named `iPXE` is what an administrator would have created
+    by hand, and matching that means netboot reuses theirs instead of inventing a
+    parallel name.
+    """
+    return [
+        {"Name": str(value), "Type": _CLASS_TYPES[key], "Data": str(value)}
+        for key, value in condition.match.items()
+        if key in _CLASS_TYPES
+    ]
 
 
 def _split_extras(extras: "list") -> "tuple[list[dict], list[str]]":

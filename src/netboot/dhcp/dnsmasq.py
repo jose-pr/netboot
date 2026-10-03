@@ -21,6 +21,7 @@ import typing as _ty
 from ..logging import LOGGER
 from ..utils.misc import parse_path
 from . import DhcpServer
+from .conditions import ConditionUnsupported
 
 #: Generic option name -> dnsmasq option number.
 _CODES = {
@@ -89,7 +90,43 @@ class dnsmasq(DhcpServer):  # noqa: N801 - the class name is the URI scheme
 
     # -- the DhcpServer contract ------------------------------------------
 
+    def ensure_condition(self, netboot: "_ty.Any", condition) -> str:
+        """dnsmasq cannot express a condition in the files netboot owns.
+
+        The tag half is `dhcp-match=set:<tag>,77,iPXE`, and that is a **main
+        config** directive: `--dhcp-optsfile` accepts `dhcp-option` lines only,
+        and netboot does not own dnsmasq's config. So the `dhcp-option=tag:...`
+        half could be written and the match that creates the tag could not --
+        which would arm the target with a condition that never fires, and a
+        machine that reinstalls itself. Refusing is the honest answer.
+        """
+        raise ConditionUnsupported(
+            f"dnsmasq cannot serve dhcp_when.{condition.name}: the tag needs a "
+            f"`dhcp-match` line in dnsmasq's own config, which netboot does not "
+            f"write (--dhcp-optsfile takes dhcp-option lines only). Put this in "
+            f"dnsmasq.conf and use `raw.dnsmasq=` for the option half:\n"
+            f"  {self.condition_recipe(netboot, condition)}"
+        )
+
+    def condition_recipe(self, netboot: "_ty.Any", condition) -> str:
+        """The `dhcp-match`/`dhcp-option` pair for dnsmasq.conf."""
+        from .conditions import MATCH_KEYS
+
+        lines = [
+            f"dhcp-match=set:{condition.name},{MATCH_KEYS[key]},{value}"
+            for key, value in condition.match.items()
+        ]
+        lines.extend(
+            f"dhcp-option=tag:{condition.name},{code},{_value(value)}"
+            for code, value in _codes(condition.options)
+        )
+        return "\n  ".join(lines)
+
     def add_target(self, netboot: "_ty.Any"):
+        # Refuse before writing anything: a half-applied condition is a target
+        # that boots the installer again.
+        for condition in self.conditions_for(netboot).values():
+            self.ensure_condition(netboot, condition)
         options = self.options_for(netboot)
         target = netboot.target
         tag = _tag(target)
@@ -253,6 +290,17 @@ def _option_lines(tag: str, options, extras: "list[str]|None" = None) -> "list[s
     # to the options' own raw lines keeps this usable without a server.
     lines.extend(extras if extras is not None else options.raw_for("dnsmasq"))
     return lines
+
+
+def _codes(options) -> "list[tuple[str, object]]":
+    """Options as (dnsmasq option code, value), the same mapping a tag line uses."""
+    pairs = []
+    for name, value in options.items():
+        code = _CODES.get(name)
+        if code is None:
+            code = name[len("option-") :] if name.startswith("option-") else name
+        pairs.append((str(code), value))
+    return pairs
 
 
 def _value(value) -> str:

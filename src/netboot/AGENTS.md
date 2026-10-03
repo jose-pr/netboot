@@ -237,6 +237,30 @@ options from the URI query (see below) and translates them.
 Each raises `PixieLookupError` for a target with no MAC — every one of these
 servers identifies a reservation by it.
 
+- **Conditions** (`netboot.dhcp.conditions`) — `dhcp_when:` is a **mapping keyed
+  by name**, and the key is the backend's own construct name.
+  **`build_conditions(ctx) -> dict[str, DhcpCondition]`** layers zone → image →
+  target by name; **`DhcpCondition`** carries `.name`, `.match`, `.options` and
+  `.option_codes`; **`MATCH_KEYS`** is `user-class` (77) and `vendor-class` (60),
+  the tests every backend can express.
+  The backend contract is a ladder: **`ensure_condition(ctx, condition) -> str`**
+  uses the construct if it exists, creates it if it can, raises
+  **`ConditionMissing`** (carrying `.recipe`) if it cannot, and raises
+  **`ConditionUnsupported`** if the backend has no such concept at all — the base
+  implementation. **`condition_recipe(ctx, condition) -> str`** is that recipe,
+  and the same text the error carries. **`remove_condition_member(ctx, condition)`**
+  detaches a target that *keeps* its reservation, never deleting the shared
+  construct. Neither exception is a `PixieError` (the engine imports this
+  package), and both are caught by best-effort arming, so one backend refusing
+  leaves the others armed.
+  Per backend: `windhcp` creates a scope-level policy **plus the user/vendor
+  class it references** (Windows refuses a policy naming an undefined class) and
+  always does so through the cmdlets, because **netsh has no policy verb at all**;
+  `dhcpd` inlines an `if` (default) or writes a named group with
+  `conditions=group`; `kea` adds a client class with `class-add` when the
+  `class_cmds` hook is loaded and names it in the reservation's
+  `client-classes`; `dnsmasq` **refuses**, because the tag needs a `dhcp-match`
+  line in a config file netboot does not own.
 - **`DhcpServer.extras(ctx, phase="add") -> list`** — the extension point for
   anything netboot does not model: an extra statement, an extra command, or a
   condition (the iPXE chainload is the usual one). The default returns the

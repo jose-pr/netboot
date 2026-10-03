@@ -13,6 +13,12 @@ if _ty.TYPE_CHECKING:
 
 from urllib.parse import urlparse
 
+from .conditions import (
+    ConditionMissing,
+    ConditionUnsupported,
+    DhcpCondition,
+    build_conditions,
+)
 from .options import PHASES, DhcpOptions, build_options, split_query
 
 #: Backends netboot ships, and the extra each needs. Used only to turn "no
@@ -114,6 +120,50 @@ class DhcpServer:
     def options_for(self, ctx) -> DhcpOptions:
         """The client options for this target on this server, fully merged."""
         return build_options(ctx, self)
+
+    def conditions_for(self, ctx) -> "dict[str, DhcpCondition]":
+        """The named conditions that apply to this target, layered by name."""
+        return build_conditions(ctx)
+
+    def ensure_condition(self, ctx, condition: DhcpCondition) -> str:
+        """The name of the construct serving `condition`, creating it if needed.
+
+        The ladder every backend walks, in this order:
+
+        1. **it exists** (by name) -- use it, and attempt nothing else. This is
+           the normal state after the first target is armed, and it is also what
+           makes netboot usable on a server it has no rights to manage.
+        2. **it is absent and this backend can create it** -- create, then use.
+        3. **it is absent and cannot be created** -- raise `ConditionMissing`
+           carrying `condition_recipe()`, so the error *is* the fix.
+        4. **this backend cannot express a condition at all** -- raise
+           `ConditionUnsupported`, which is this base implementation.
+
+        Arming is best effort per server, so either exception leaves the other
+        servers in the zone armed and fails the run only if none succeeded.
+        """
+        raise ConditionUnsupported(
+            f"{type(self).__name__} cannot serve conditional options, so "
+            f"dhcp_when.{condition.name} cannot be applied on {self.uri}"
+        )
+
+    def condition_recipe(self, ctx, condition: DhcpCondition) -> str:
+        """What a privileged operator must apply, in this server's own syntax.
+
+        Returned as text, not run. It is the body of a `ConditionMissing` error
+        **and** what `pixie dhcp-config` prints, deliberately the same string so
+        the two can never drift.
+        """
+        return ""
+
+    def remove_condition_member(self, ctx, condition: DhcpCondition) -> None:
+        """Detach this target from `condition`, leaving the construct alone.
+
+        Called when a completed target **keeps** its reservation: the construct is
+        shared by every target that names it, so removing it would break them.
+        A backend whose construct has no member list (a Windows policy matches a
+        condition, it does not hold members) has nothing to do here.
+        """
 
     def extras(self, ctx, phase: str = "add") -> "list":
         """Backend-native fragments to apply along with the reservation.
