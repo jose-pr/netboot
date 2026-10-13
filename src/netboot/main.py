@@ -22,6 +22,7 @@ from importlib import import_module as _import_module
 from duho import Arg, Cli, Extend, LoggingArgs, app, parse_globals
 from jinja2 import TemplateError as _TemplateError
 from duho.discovery import ModuleCommand, discover_commands
+from duho.parsers import command_name
 from duho.env import Env
 from pathlib_next import LocalPath, Path, UriPath
 
@@ -75,7 +76,8 @@ def _discover(argv: "_ty.Sequence[str] | None") -> "list":
 
     Built-ins first, then ``--cmdspath`` entries, which have to be honoured
     pre-parse and so cannot be left to duho. Later sources win on a name clash
-    (a user command shadows a built-in).
+    (a user command shadows a built-in and keeps its place), then new
+    names follow in discovery order.
 
     ``PIXIE_CMDS_PATH`` is deliberately *not* read here: since duho 0.4.1 the
     env-derived ``CMDS_PATH`` is a layer :func:`duho.app` always merges on top
@@ -85,7 +87,16 @@ def _discover(argv: "_ty.Sequence[str] | None") -> "list":
     globals_ = parse_globals(Pixie_, argv)
     sources: "list[str]" = [_BUILTIN_COMMANDS]
     sources += list(globals_.cmdspath or [])
-    return discover_commands([source for source in sources if source])
+    # One discovery per source, merged by name: duho's own multi-source call
+    # returns the merged set sorted by name, which would list a --cmdspath
+    # command among the built-ins in --help instead of after them.
+    by_name: "dict[str, object]" = {}
+    for source in sources:
+        if not source:
+            continue
+        for command in discover_commands(source):
+            by_name[command_name(command)] = command  # later source wins
+    return list(by_name.values())
 
 
 def _load_config(args: "Pixie_") -> dict:

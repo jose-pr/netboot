@@ -125,3 +125,15 @@ def test_a_cmdspath_command_shadows_the_builtin_of_the_same_name(tmp_path):
     ]
     assert len(found) == 1
     assert "cmds" in str(found[0].module.__file__)
+
+
+def test_cmdspath_commands_follow_the_builtins_in_discovery_order(tmp_path):
+    cmds = tmp_path / "cmds"
+    _write_command(cmds, "aaa", tmp_path / "m1")
+    _write_command(cmds, "zzz", tmp_path / "m2")
+    _write_command(cmds, "initiate", tmp_path / "m3")
+    names = [
+        getattr(c, "_parsername_", None)
+        for c in _main._discover(["--cmdspath", str(cmds)])
+    ]
+    assert names == ["complete", "dhcp-config", "initiate", "aaa", "zzz"]
