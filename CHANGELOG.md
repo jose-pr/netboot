@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `duho` floor moves to `>=0.7.3,<0.8` (pre-1.0 minor, documented API break).
+  The `pixie` command line is unchanged: same flags, exit statuses and output.
+- Built-in and `--cmdspath` commands are merged by duho's own discovery, with the
+  same precedence: a later source shadows a command of the same name.
+
 ## [0.3.2] - 2026-10-03
 
 ### Added
