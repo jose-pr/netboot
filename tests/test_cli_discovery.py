@@ -113,3 +113,15 @@ def test_a_command_whose_body_is_main_gets_the_netboot_contract(tmp_path, monkey
     from netboot.main import main as pixie_main
 
     assert pixie_main(argv=["--cmdspath", str(cmds), "viamain"]) == 0
+
+
+def test_a_cmdspath_command_shadows_the_builtin_of_the_same_name(tmp_path):
+    cmds = tmp_path / "cmds"
+    _write_command(cmds, "initiate", tmp_path / "marker")
+    found = [
+        c
+        for c in _main._discover(["--cmdspath", str(cmds)])
+        if getattr(c, "_parsername_", None) == "initiate"
+    ]
+    assert len(found) == 1
+    assert "cmds" in str(found[0].module.__file__)
