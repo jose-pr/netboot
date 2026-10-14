@@ -34,18 +34,6 @@ from .utils.misc import parse_path  # re-exported: the CLI's documented helper
 _BUILTIN_COMMANDS = "netboot.cmds"
 
 
-def yaml_error() -> "type[BaseException]":
-    """``yaml.YAMLError`` if PyYAML is installed, else an unraisable placeholder."""
-    try:
-        import yaml
-    except ImportError:  # pragma: no cover - only without the config extra
-
-        class _NoYamlError(Exception): ...
-
-        return _NoYamlError
-    return yaml.YAMLError
-
-
 #: Exceptions an operator can trigger with bad input. Reported as one line;
 #: anything else keeps its traceback, because it is netboot's bug to fix.
 #: `TemplateError` covers both a broken template and the sandbox refusing an
@@ -60,7 +48,7 @@ _USER_ERRORS = (
 
 #: Maps each of those to exit status 2 for duho, which reports it through
 #: :func:`_report_error`.
-_ERROR_STATUS = {exc_type: 2 for exc_type in (*_USER_ERRORS, yaml_error())}
+_ERROR_STATUS = {exc_type: 2 for exc_type in _USER_ERRORS}
 
 
 def _report_error(message: str, code: int, error: BaseException) -> None:
@@ -68,11 +56,7 @@ def _report_error(message: str, code: int, error: BaseException) -> None:
 
     The traceback goes to DEBUG, so ``-v`` still shows it.
     """
-    if isinstance(error, yaml_error()):
-        # malformed YAML: the file and line are in `error`
-        LOGGER.error("could not parse the configuration: %s", error)
-    else:
-        LOGGER.error("%s", message)
+    LOGGER.error("%s", message)
     LOGGER.debug("%s", message, exc_info=error)
 
 
@@ -184,7 +168,10 @@ def _load_config(args: "Pixie_") -> dict:
     # yaconfiglib auto-registers !include/!load on the active loader class during
     # load(); a manual yaml.add_constructor is redundant (and since yaconfiglib
     # 0.10.0 it warns that it overrides the built-in handler).
-    conf = loader.load(*configs)
+    try:
+        conf = loader.load(*configs)
+    except yaml.YAMLError as exc:  # the file and line are in `exc`
+        raise PixieConfigError(f"could not parse the configuration: {exc}") from exc
 
     # An empty or comment-only file loads as None, and a file whose top level
     # is a list or a scalar is a config mistake: say so here instead of

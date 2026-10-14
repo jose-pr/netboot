@@ -205,3 +205,20 @@ def test_duho_traceback_lets_an_operator_error_propagate(in_tmp_cwd, monkeypatch
 def test_help_returns_zero_instead_of_raising(capsys):
     assert main(argv=["--help"]) == 0
     assert "usage" in capsys.readouterr().out.lower()
+
+
+def test_malformed_yaml_is_a_config_error_chained_to_the_yaml_error(in_tmp_cwd):
+    import yaml
+
+    from netboot import PixieConfigError
+    from netboot.main import Pixie_, _load_config
+
+    path = in_tmp_cwd / "bad.yaml"
+    path.write_text("a: [1\n", encoding="utf-8")
+    args = Pixie_()
+    args.config = str(path)
+    with pytest.raises(
+        PixieConfigError, match="could not parse the configuration"
+    ) as info:
+        _load_config(args)
+    assert isinstance(info.value.__cause__, yaml.YAMLError)
