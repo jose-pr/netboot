@@ -7,22 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
-- `duho` floor moves to `>=0.7.4,<0.8` (pre-1.0 minor, documented API break;
+- `duho` floor moves to `>=0.7.5,<0.8` (pre-1.0 minor, documented API break;
   0.7.4 adds the unsorted multi-source command discovery that `--cmdspath`
-  now uses).
+  now uses, 0.7.5 the `exit="parse"` mode of `duho.run`).
   The `pixie` command line is unchanged: same flags, exit statuses and output,
   with one exception in `--help`: the commands of one `--cmdspath` directory are
   listed by file name, then in the order a file defines them, where they were
   sorted by command name. The two differ only for a file that defines several
   commands or is named differently from its command.
-- `pixie` runs through `duho.run(..., exit=False)` and reports operator errors
+- `pixie` runs through `duho.run(..., exit="parse")` and reports operator errors
   through duho's `_errors_` / `_report_error_`: the same one-line log record and
   the same status 2 as before. New with it: Ctrl-C ends with status 130 and a
   broken pipe with status 1, both without a traceback; a plain `run(args)`
   command's returned value (not `None` or an `int`) is printed to standard
   output, where it was handed to `sys.exit`; with `DUHO_TRACEBACK` set an
-  operator error propagates with its traceback instead of being logged;
-  `main(argv=["--help"])` returns 0 instead of raising `SystemExit`.
+  operator error also prints its traceback to standard error, and the status
+  stays 2. `--help`, `--version` and a usage error still raise `SystemExit`
+  from `main`, as before.
 
 ## [0.3.2] - 2026-10-03
 
