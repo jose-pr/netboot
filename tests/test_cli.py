@@ -183,3 +183,25 @@ def test_wants_netboot_signature_detection():
     assert _wants_netboot(netboot_run) is True
     assert _wants_netboot(duho_run) is False
     assert _wants_netboot(None) is False
+
+
+def test_a_plain_command_returning_a_value_has_it_printed(in_tmp_cwd, capsys):
+    cmds = in_tmp_cwd / "cmds"
+    cmds.mkdir()
+    (cmds / "plaincmd.py").write_text(
+        "def register(parser, args):\n    pass\n\ndef run(args):\n    return 'hello'\n",
+        encoding="utf-8",
+    )
+    assert main(argv=["--cmdspath", str(cmds), "plaincmd"]) == 0
+    assert capsys.readouterr().out.strip() == "hello"
+
+
+def test_duho_traceback_lets_an_operator_error_propagate(in_tmp_cwd, monkeypatch):
+    monkeypatch.setenv("DUHO_TRACEBACK", "1")
+    with pytest.raises(FileNotFoundError):
+        main(argv=["-c", "nosuch.yaml", "initiate", "web01"])
+
+
+def test_help_returns_zero_instead_of_raising(capsys):
+    assert main(argv=["--help"]) == 0
+    assert "usage" in capsys.readouterr().out.lower()

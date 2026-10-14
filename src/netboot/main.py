@@ -19,7 +19,8 @@ import typing as _ty
 from copy import deepcopy as _deepcopy
 from importlib import import_module as _import_module
 
-from duho import Arg, Cli, Extend, LoggingArgs, app, parse_globals
+from duho import Arg, Cli, Extend, LoggingArgs, parse_globals
+from duho import run as _run
 from jinja2 import TemplateError as _TemplateError
 from duho.discovery import ModuleCommand, discover_commands
 from duho.env import Env
@@ -31,6 +32,48 @@ from .utils.misc import parse_path  # re-exported: the CLI's documented helper
 
 #: Package import path to the built-in command modules.
 _BUILTIN_COMMANDS = "netboot.cmds"
+
+
+def yaml_error() -> "type[BaseException]":
+    """``yaml.YAMLError`` if PyYAML is installed, else an unraisable placeholder."""
+    try:
+        import yaml
+    except ImportError:  # pragma: no cover - only without the config extra
+
+        class _NoYamlError(Exception): ...
+
+        return _NoYamlError
+    return yaml.YAMLError
+
+
+#: Exceptions an operator can trigger with bad input. Reported as one line;
+#: anything else keeps its traceback, because it is netboot's bug to fix.
+#: `TemplateError` covers both a broken template and the sandbox refusing an
+#: expression in a config value (`SecurityError`).
+_USER_ERRORS = (
+    PixieError,
+    FileNotFoundError,
+    NotADirectoryError,
+    PermissionError,
+    _TemplateError,
+)
+
+#: Maps each of those to exit status 2 for duho, which reports it through
+#: :func:`_report_error`.
+_ERROR_STATUS = {exc_type: 2 for exc_type in (*_USER_ERRORS, yaml_error())}
+
+
+def _report_error(message: str, code: int, error: BaseException) -> None:
+    """Report an operator error through netboot's logger, not duho's stderr line.
+
+    The traceback goes to DEBUG, so ``-v`` still shows it.
+    """
+    if isinstance(error, yaml_error()):
+        # malformed YAML: the file and line are in `error`
+        LOGGER.error("could not parse the configuration: %s", error)
+    else:
+        LOGGER.error("%s", message)
+    LOGGER.debug("%s", message, exc_info=error)
 
 
 class PixieArgs(LoggingArgs):
@@ -68,6 +111,9 @@ class Pixie_(PixieArgs, Cli):
     #: netboot's own logger, or the verbosity flags adjust a logger nothing
     #: in this package ever writes to.
     _logger_name_ = "netboot"
+    #: Operator errors a command lets escape end with status 2.
+    _errors_ = _ERROR_STATUS
+    _report_error_ = staticmethod(_report_error)
 
 
 def _discover(argv: "_ty.Sequence[str] | None") -> "list":
@@ -235,19 +281,6 @@ def _dispatch(command: object, instance: "Pixie_") -> int:
     return 0
 
 
-#: Exceptions an operator can trigger with bad input. Reported as one line;
-#: anything else keeps its traceback, because it is netboot's bug to fix.
-#: `TemplateError` covers both a broken template and the sandbox refusing an
-#: expression in a config value (`SecurityError`).
-_USER_ERRORS = (
-    PixieError,
-    FileNotFoundError,
-    NotADirectoryError,
-    PermissionError,
-    _TemplateError,
-)
-
-
 def main(
     name: "str | None" = None,
     argv: "_ty.Sequence[str] | None" = None,
@@ -259,6 +292,8 @@ def main(
     variables (and an optional ``pixie_env`` companion module of defaults) apply.
     The resolved ``Env`` is attached to the dispatched instance as ``_env_``.
 
+    Goes through :func:`duho.run` with ``exit=False``, so it returns the status
+    (``--help`` and ``--version`` return 0) and never raises ``SystemExit``.
     A configuration or lookup error is reported as a single line and exits 2;
     the traceback is logged at DEBUG, so ``-v`` still shows it. Other
     exceptions propagate untouched.
@@ -269,35 +304,21 @@ def main(
     # the library does not do this for its host.
     quiet_noisy_dependencies()
     try:
-        return app(
-            Pixie_,
-            commands=_discover(argv),
-            argv=argv,
-            name=name,
-            description=Pixie_.__doc__,
-            env=env,
-            dispatch=_dispatch,
-        )
+        commands = _discover(argv)
     except _USER_ERRORS as exc:
-        LOGGER.error("%s", exc)
-        LOGGER.debug("%s", exc, exc_info=True)
+        # Discovery happens before duho dispatches, so duho does not see this.
+        _report_error(str(exc), 2, exc)
         return 2
-    except yaml_error() as exc:  # malformed YAML: the file and line are in `exc`
-        LOGGER.error("could not parse the configuration: %s", exc)
-        LOGGER.debug("%s", exc, exc_info=True)
-        return 2
-
-
-def yaml_error() -> "type[BaseException]":
-    """``yaml.YAMLError`` if PyYAML is installed, else an unraisable placeholder."""
-    try:
-        import yaml
-    except ImportError:  # pragma: no cover - only without the config extra
-
-        class _NoYamlError(Exception): ...
-
-        return _NoYamlError
-    return yaml.YAMLError
+    return _run(
+        Pixie_,
+        argv,
+        exit=False,
+        commands=commands,
+        name=name,
+        description=Pixie_.__doc__,
+        env=env,
+        dispatch=_dispatch,
+    )
 
 
 if __name__ == "__main__":
