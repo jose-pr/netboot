@@ -12,7 +12,6 @@ import netboot
 from netboot.content import Repository, Resource
 from netboot.dhcp import DhcpServer, DhcpZone
 from netboot.utils import flatten
-from netboot.utils.net import Host
 
 
 def test_resource_division_joins_the_path_and_keeps_the_repo():
@@ -21,48 +20,6 @@ def test_resource_division_joins_the_path_and_keeps_the_repo():
     assert str(joined.path) == "images/vmlinuz"
     assert joined.src == "mirror"
     assert str(resource.path) == "images", "the original must not be mutated"
-
-
-def test_host_equality_and_hashing_use_the_text():
-    # netimps' implementation: comparison and hashing reach a plain string too,
-    # where netboot's own class returned NotImplemented.
-    assert Host("mirror.example") == Host("mirror.example")
-    assert Host("mirror.example") != Host("other.example")
-    assert len({Host("a"), Host("a"), Host("b")}) == 2
-    assert Host("a") == "a"
-    assert hash(Host("a")) == hash("a")
-
-
-def test_host_keeps_the_names_netboot_published():
-    import netimps
-
-    # A netimps Host, so anything typed against the library accepts it.
-    assert isinstance(Host("a"), netimps.Host)
-    # ... and the two names netboot's own class published still work.
-    assert Host(Host("wrapped")).address == "wrapped"
-    assert Host(netimps.Host("bare")).address == "bare"
-    assert Host(None).address == ""
-    assert Host().address == ""
-    assert Host("10.0.0.7").try_ip() == netimps.parse("10.0.0.7")
-    assert Host("a.b").value == Host("a.b").address
-
-
-def test_assigning_address_drops_the_cached_resolution(monkeypatch):
-    # `.address` was writable on netboot's class. Keeping it writable means the
-    # cache has to go with it, or `.ip()` keeps answering for the old host.
-    import netimps
-
-    monkeypatch.setattr(
-        netimps, "get_ip", lambda name, *a, **kw: netimps.parse("192.0.2.1")
-    )
-    host = Host("first.example")
-    assert str(host.try_ip()) == "192.0.2.1"
-    monkeypatch.setattr(
-        netimps, "get_ip", lambda name, *a, **kw: netimps.parse("192.0.2.2")
-    )
-    host.address = "second.example"
-    assert host.address == "second.example"
-    assert str(host.try_ip()) == "192.0.2.2"
 
 
 def test_dhcpserver_default_scheme_handles_a_schemeless_uri(dhcp_backend):

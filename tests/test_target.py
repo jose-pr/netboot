@@ -1,5 +1,7 @@
 """Tests for PixieTarget id/hostname/ip/mac resolution."""
 
+import netimps
+
 import netboot
 
 
@@ -12,14 +14,14 @@ def test_target_id_is_ip_sets_ip():
 
 def test_target_id_is_mac_sets_mac():
     target = netboot.PixieTarget(_id="aa:bb:cc:dd:ee:ff")
-    assert target.mac.as_str() == "aa:bb:cc:dd:ee:ff"
+    assert target.mac.format() == "aa:bb:cc:dd:ee:ff"
 
 
 def test_target_id_is_hostname_resolves_ip(monkeypatch):
     monkeypatch.setattr(
-        netboot.netutils,
+        netimps,
         "resolve",
-        lambda name, *a, **kw: [netboot.netutils.parse("192.0.2.10")],
+        lambda name, *a, **kw: [netimps.parse("192.0.2.10")],
     )
     target = netboot.PixieTarget(_id="host1")
     assert target.hostname == "host1"
@@ -46,7 +48,7 @@ def test_unresolvable_hostname_makes_exactly_one_lookup(monkeypatch):
         calls.append(name)
         return []
 
-    monkeypatch.setattr(netboot.netutils, "resolve", _empty)
+    monkeypatch.setattr(netimps, "resolve", _empty)
     target = netboot.PixieTarget(_id="newhost")
     assert calls == ["newhost"]
     assert target.hostname == "newhost"
@@ -54,7 +56,7 @@ def test_unresolvable_hostname_makes_exactly_one_lookup(monkeypatch):
 
 
 def test_unresolvable_hostname_does_not_block_other_targets(monkeypatch):
-    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
+    monkeypatch.setattr(netimps, "resolve", lambda name, *a, **kw: [])
     engine = netboot.Pixie(
         targets={
             "newhost": {"image": "debian"},
@@ -68,5 +70,5 @@ def test_malformed_hostname_does_not_abort_construction(monkeypatch):
     def _raises(name, *a, **kw):
         raise ValueError(f"malformed query: {name!r}")
 
-    monkeypatch.setattr(netboot.netutils, "resolve", _raises)
+    monkeypatch.setattr(netimps, "resolve", _raises)
     assert not netboot.PixieTarget(_id="not a hostname").ip

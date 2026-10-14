@@ -6,6 +6,7 @@ selection keeps the *highest* comparable `match` return and falls back to `{}`
 result back onto the target.
 """
 
+import netimps
 import pytest
 
 import netboot
@@ -194,7 +195,7 @@ def test_mac_less_targets_are_not_all_matched_by_the_null_mac():
 def test_zone_lookup_without_an_ip_returns_none_instead_of_raising(monkeypatch):
     # A MAC-keyed target whose hostname never resolved has ip == "", and
     # `"" in network` used to raise AttributeError from ipaddress.
-    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
+    monkeypatch.setattr(netimps, "resolve", lambda name, *a, **kw: [])
     p = netboot.Pixie(
         images={"debian": {}},
         dhcpzones={"lan": {"network": "10.0.0.0/24"}},

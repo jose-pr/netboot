@@ -2,11 +2,11 @@ import importlib as _importlib
 import typing as _ty
 from argparse import Namespace
 
-from ..utils import net as netutils
+import netimps
+from netimps import IPAddress, IPInterface, IPNetwork
 from yaconfiglib import OpaqueMerge
 
 from ..logging import LOGGER
-from ..utils.net import IPAddress, IPInterface, IPNetwork
 
 if _ty.TYPE_CHECKING:
     from .. import PixieContext
@@ -282,7 +282,7 @@ class DhcpZone(Namespace, OpaqueMerge):
         if isinstance(servers, (str, bytes)) or not isinstance(servers, (list, tuple)):
             servers = [servers]
         for server in servers:
-            address = netutils.try_parse(server, IPAddress)
+            address = netimps.try_parse(server, IPAddress)
             if address is None:
                 LOGGER.warning("ignoring unparseable server address %r", server)
                 continue
@@ -295,7 +295,7 @@ class DhcpZone(Namespace, OpaqueMerge):
         _network = kwargs.get("network")
         _netmask = kwargs.get("netmask")
         if _gateway and not _network:
-            gw: netutils.IPv4Interface = netutils.parse(_gateway, IPInterface)
+            gw: netimps.IPv4Interface = netimps.parse(_gateway, IPInterface)
             if not _netmask and isinstance(_gateway, str) and "/" in _gateway:
                 _netmask = gw.netmask.exploded
                 kwargs["gateway"] = gw.ip.exploded
@@ -303,7 +303,7 @@ class DhcpZone(Namespace, OpaqueMerge):
                 _network = gw.network.network_address.exploded
 
         if isinstance(_network, str) and "/" in _network:
-            net = netutils.parse(_network, IPNetwork)
+            net = netimps.parse(_network, IPNetwork)
             _network = net.network_address.exploded
             _netmask = net.netmask.exploded
         if _network:
@@ -318,9 +318,9 @@ class DhcpZone(Namespace, OpaqueMerge):
             server if isinstance(server, DhcpServer) else DhcpServer(server)
             for server in (self.dhcpservers or [])
         ]
-        self.network = netutils.try_parse(self.network, IPNetwork)
+        self.network = netimps.try_parse(self.network, IPNetwork)
         for prop, ctr in [
-            ("nameservers", lambda v: netutils.try_parse(v, IPAddress)),
+            ("nameservers", lambda v: netimps.try_parse(v, IPAddress)),
             ("search", str),
         ]:
             value = getattr(self, prop, None)
@@ -352,4 +352,4 @@ class DhcpZone(Namespace, OpaqueMerge):
                 setattr(self, prop, None)
 
         if self.gateway:
-            self.gateway = netutils.try_parse(self.gateway, IPAddress)
+            self.gateway = netimps.try_parse(self.gateway, IPAddress)

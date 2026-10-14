@@ -14,6 +14,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Mapping, Union, get_type_hints
 
+import netimps
+from netimps import IPAddress, MACAddress
 from yaconfiglib import OpaqueMerge
 from yaconfiglib import typed_merge as mergeObjects
 
@@ -22,8 +24,7 @@ from .content import Repository, Resource
 from .dhcp import DhcpZone
 from .logging import LOGGER
 from .templates import JINJA_UNDEFINED, UNDEFINED_MODES, Loader, Renderer
-from .utils import IPAddress, MACAddress, T
-from .utils import net as netutils
+from .utils import T
 from .utils.misc import import_
 
 # Compat: StrEnum introduced in Python 3.11; emulate for older Pythons
@@ -90,7 +91,7 @@ class PixieTarget(Namespace, OpaqueMerge):
         # If no MAC was given but the id itself is a MAC, adopt it; otherwise
         # fall back to the null MAC so downstream `.mac` is always a MACAddress.
         if not self.mac or str(self.mac) == self._NULL_MAC:
-            if MACAddress._VALID_MAC.match(str(self._id)):
+            if MACAddress.is_valid(str(self._id)):
                 self.mac = self._id
             else:
                 self.mac = self._NULL_MAC
@@ -102,15 +103,15 @@ class PixieTarget(Namespace, OpaqueMerge):
         # and every target is built at startup, so one unresolvable entry used
         # to hang every command.
         id_str = str(getattr(self, "_id", "") or "")
-        id_is_mac = bool(MACAddress._VALID_MAC.match(id_str))
-        id_is_ip = netutils.is_valid(id_str, netutils.IPAddress)
+        id_is_mac = MACAddress.is_valid(id_str)
+        id_is_ip = netimps.is_valid(id_str, IPAddress)
         if not self.ip and id_is_ip:
             self.ip = id_str
         if not self.hostname and not id_is_mac and not id_is_ip:
             self.hostname = id_str
         if not self.ip and self.hostname:
             try:
-                _resolved = netutils.resolve(self.hostname)
+                _resolved = netimps.resolve(self.hostname)
             except ValueError as exc:  # malformed name: not worth killing the run
                 _resolved = None
                 LOGGER.warning(
@@ -125,7 +126,7 @@ class PixieTarget(Namespace, OpaqueMerge):
                     self.hostname,
                 )
         if self.ip:
-            self.ip = netutils.try_parse(self.ip, netutils.IPAddress)
+            self.ip = netimps.try_parse(self.ip, IPAddress)
         self.hostname = self.hostname.lower()
 
 
@@ -259,9 +260,9 @@ class PixieContext(Namespace):
         # `is_wildcard` knows every spelling of "every local address", a
         # `%zone` suffix and `None` included; the literal tuple this replaced
         # knew two of them.
-        ip_name = "" if netutils.is_wildcard(ip) else str(ip)
+        ip_name = "" if netimps.is_wildcard(ip) else str(ip)
         mac = self.target.mac
-        mac_name = mac.as_str("-") if str(mac) != PixieTarget._NULL_MAC else ""
+        mac_name = mac.format("-") if str(mac) != PixieTarget._NULL_MAC else ""
         names = []
         for version in [
             mac_name,
@@ -513,10 +514,10 @@ class Pixie:
             return exact
 
         lower = query.lower()
-        mac = netutils.try_parse(query, MACAddress)
+        mac = netimps.try_parse(query, MACAddress)
         if mac is not None and str(mac) == PixieTarget._NULL_MAC:
             mac = None  # the "unset" MAC must not match every MAC-less target
-        ip = netutils.try_parse(query, netutils.IPAddress)
+        ip = netimps.try_parse(query, IPAddress)
         matches = [
             candidate
             for candidate in self.targets.values()

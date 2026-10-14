@@ -6,6 +6,7 @@ them back whole rather than asserting on substrings.
 
 import logging
 
+import netimps
 import pytest
 
 import netboot
@@ -195,7 +196,7 @@ def test_a_local_reload_runs_directly(tmp_path, engine_factory, monkeypatch):
 
 
 def test_a_target_without_a_mac_is_named(tmp_path, engine_factory, monkeypatch):
-    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
+    monkeypatch.setattr(netimps, "resolve", lambda name, *a, **kw: [])
     hosts, opts = _dirs(tmp_path)
     engine = engine_factory(
         _uri(hosts, opts),

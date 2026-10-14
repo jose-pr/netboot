@@ -2,13 +2,13 @@ import importlib.util as _importlib_util
 import typing as _ty
 from typing import Union
 
+from netimps import Host, split_host
 from pathlib_next import Pathname
 from pathlib_next import PosixPathname as RepoPath
 from pathlib_next.uri import Source, UriPath
 
 from ..logging import LOGGER
 from ..utils.config import Namespace as _NS
-from ..utils.net import Host, normalize_host
 
 #: Schemes whose pathlib_next handler needs the ``http`` extra (``requests``).
 _HTTP_SCHEMES = ("http", "https")
@@ -134,7 +134,7 @@ class Repository(_NS):
         address as configured. Other schemes use the resolved IP, because a PXE
         client often has no working DNS when it fetches its boot files.
 
-        The split is netimps' `normalize_host`, which netboot duplicated for a
+        The split is netimps' `split_host`, which netboot duplicated for a
         while. It returns a v6 literal **unbracketed**, which is what
         `pathlib_next`'s `Source` wants -- it brackets one itself.
         """
@@ -148,7 +148,7 @@ class Repository(_NS):
             )
             return "", None
         try:
-            host, port = normalize_host(address)
+            host, port = split_host(address)
         except ValueError as exc:
             # `mirror.example:http` is a config mistake. The duplicate this
             # replaced treated it as a hostname, so it reached DNS as one.
@@ -159,10 +159,9 @@ class Repository(_NS):
             ) from exc
         if scheme == "https":
             return host, port
-        # `try_ip()` is netimps' `.ip()` with the configured text as fallback:
-        # an unresolvable name still has to build a URL. Cached, so a repo asked
-        # for several services resolves once.
-        return str(Host(host).try_ip()), port
+        # An unresolvable name still has to build a URL, so it is used as written.
+        ip = Host(host).ip()
+        return (str(ip) if ip else host), port
 
     def service(self, name: str):
         """The base URI for a service name, `None` for `.local` when unset.

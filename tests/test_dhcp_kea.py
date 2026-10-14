@@ -6,6 +6,7 @@ answers with the shapes Kea really returns (`result` 0/1/2/3).
 
 import types
 
+import netimps
 import pytest
 
 import netboot
@@ -190,7 +191,7 @@ def test_an_unmatched_zone_refuses_rather_than_guessing(kea_server):
 
 
 def test_a_target_without_a_mac_is_named(kea_server, monkeypatch):
-    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
+    monkeypatch.setattr(netimps, "resolve", lambda name, *a, **kw: [])
     server, _ = kea_server()
     engine = _engine(
         targets={"nomac": {"ip": "10.0.0.11", "image": "debian", "dhcpzone": "lan"}}

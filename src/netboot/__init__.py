@@ -23,7 +23,6 @@ from .engine import (
     PixieTarget,
 )
 from .logging import LOGGER
-from .utils import net as netutils
 
 __all__ = [
     "Pixie",
@@ -39,6 +38,5 @@ __all__ = [
     "Repository",
     "Resource",
     "LOGGER",
-    "netutils",
     "__version__",
 ]

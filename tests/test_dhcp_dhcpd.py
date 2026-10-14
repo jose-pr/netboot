@@ -4,6 +4,7 @@
 are about values that must not be able to end a statement and start another.
 """
 
+import netimps
 import pytest
 
 import netboot
@@ -201,7 +202,7 @@ def test_a_keyname_without_a_secret_is_reported(monkeypatch):
 
 
 def test_a_target_without_a_mac_is_named(stub, monkeypatch):
-    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
+    monkeypatch.setattr(netimps, "resolve", lambda name, *a, **kw: [])
     server = stub()
     engine = _engine(
         targets={"nomac": {"ip": "10.0.0.11", "image": "debian", "dhcpzone": "lan"}}

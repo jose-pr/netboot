@@ -10,10 +10,10 @@ import inspect
 import textwrap
 import types
 
+import netimps
 import pytest
 
 from netboot.main import _load_config
-from netboot.utils import net as netutils
 
 
 def _write(path, text):
@@ -84,7 +84,7 @@ def test_resolve_auto_selects_the_record_type():
     because 0.2.1 auto-selects one ("ptr" for an address literal, "a"
     otherwise). A signature check, not a lookup: no test here touches DNS.
     """
-    rdtype = inspect.signature(netutils.resolve).parameters.get("rdtype")
+    rdtype = inspect.signature(netimps.resolve).parameters.get("rdtype")
     assert rdtype is not None, "netimps.resolve lost its rdtype parameter"
     assert rdtype.default is None, (
         "netimps.resolve no longer defaults rdtype to None (auto-select); "
@@ -100,7 +100,7 @@ def test_resolve_is_not_strict_by_default():
     with a warning, but a raise would escape its construction -- and every
     target is built at startup, so one outage would fail every command.
     """
-    strict = inspect.signature(netutils.resolve).parameters.get("strict")
+    strict = inspect.signature(netimps.resolve).parameters.get("strict")
     assert strict is not None, (
         "netimps.resolve has no strict parameter: an unreachable resolver "
         "raises instead of answering [] (netimps >= 0.3.1)"

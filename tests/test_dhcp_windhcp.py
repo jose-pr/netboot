@@ -6,6 +6,7 @@ the JSON payload inside it — including with values that try to break out of it
 
 import json
 
+import netimps
 import pytest
 
 import netboot
@@ -222,7 +223,7 @@ def test_an_unknown_transport_is_refused():
 
 
 def test_a_target_without_a_mac_is_named(stub, monkeypatch):
-    monkeypatch.setattr(netboot.netutils, "resolve", lambda name, *a, **kw: [])
+    monkeypatch.setattr(netimps, "resolve", lambda name, *a, **kw: [])
     server, _ = stub()
     engine = _engine(
         targets={"nomac": {"ip": "10.0.0.11", "image": "debian", "dhcpzone": "lan"}}

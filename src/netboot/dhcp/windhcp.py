@@ -893,7 +893,7 @@ def _require_mac(target):
 
 def _client_id(target) -> str:
     """Windows identifies a reservation by MAC, in its hyphen spelling."""
-    return _require_mac(target).as_str("-")
+    return _require_mac(target).format("-")
 
 
 def _netsh_client_id(target) -> str:
