@@ -19,8 +19,7 @@ project overview, install instructions and CLI usage, see the shipped
 
 The engine lives in `netboot.engine`; the package root re-exports it, so
 `from netboot import Pixie` is the supported import and `netboot.engine.Pixie`
-is the same object. `netboot.netutils` remains an alias for
-`netboot.utils.net`.
+is the same object.
 
 - **`Pixie(hooks=(), **config)`** — the engine. `config` is the merged config
   mapping: `targets`, `images`, `dhcpzones`, `repos` (each a `dict[id, ...]`
@@ -79,8 +78,8 @@ is the same object. `netboot.netutils` remains an alias for
     -> PixieContext`** — resolves image + dhcp zone for `target`, merges
     `[self.globals, *globals, image.globals, dhcpzone.globals, target.globals]`
     (image/dhcpzone/target objects are shared across targets and never
-    mutated) into a fresh `PixieContext`, attaches a new `Renderer`/`Loader`
-    over `config["templates"]`, and sets `.version`. Globals named `target`,
+    mutated) into a fresh `PixieContext`, attaches a `tplx.Loader` over
+    `config["templates"]`, and sets `.version`. Globals named `target`,
     `image`, `dhcpzone`, `repos` or `resources` are **dropped with a warning**:
     they would replace the context's own fields. Raises `PixieLookupError`
     naming the target and what was configured if the image or dhcp zone cannot
@@ -109,7 +108,7 @@ is the same object. `netboot.netutils` remains an alias for
   `00:00:00:00:00:00`); an `_id` that looks like an IP fills `ip`, otherwise a
   non-MAC `_id` fills `hostname`; then, if `ip` is still unset and a hostname
   is known, **exactly one** forward lookup
-  (`netboot.utils.net.resolve`, no reverse lookup) fills it. A name that does
+  (`netimps.resolve`, no reverse lookup) fills it. A name that does
   not resolve — including when no resolver is reachable at all — leaves `ip`
   unset and logs a warning; it is never retried, and never raises. `hostname`
   is lower-cased. The `dns` extra is optional: without it netimps still
@@ -127,15 +126,16 @@ is the same object. `netboot.netutils` remains an alias for
   `Pixie.make_context`, not constructed directly. Fields: `target`, `image`,
   `dhcpzone`, `repos` (`dict[str, Repository]`), `resources`
   (`dict[str, Resource]`), `generated` (`datetime`, set at construction),
-  `version` (`str`), `_renderer` (a `templates.Renderer`). **`resources` starts
+  `version` (`str`), `_loader` (a `tplx.Loader`). **`resources` starts
   empty**: there is no `resources:` config key, so it is a slot for a hook (or
   a caller) to fill before rendering — `.resource()` returns `None` until
   something does. Template search paths are `.searchpaths` (target then image
   `template_path`), not a `templates` field.
-  - **`.render(filename: str, strict=True) -> str | None`** — render a
-    template found by name/suffix search (see `templates.Loader` below)
-    against this context. `strict=True` (default) re-raises render errors;
-    `strict=False` logs at DEBUG and returns `None`.
+  - **`.render(filename: str, strict=True) -> str | bytes | None`** — render
+    the template found for `filename` (see "Templates" below) against this
+    context; `bytes` for a file the copy engine claims. `strict=True`
+    (default) re-raises render errors; `strict=False` logs at DEBUG and
+    returns `None`.
   - **`.resource(name: str | Resource, service: str = None) -> UriPath | None`**
     — resolve a resource (by id, looked up in `.resources`, or a `Resource`
     directly) to a fetchable URI via its repo's `service`. `None` if the repo
@@ -343,7 +343,7 @@ servers identifies a reservation by it.
 
 - **`Resource(**kwargs)`** — `path` (`Pathname`, coerced via `_parse_path`),
   `src` (repo id string). `resource / "sub"` joins the path, same `src`.
-- **`Repository(**kwargs)`** — `address` (`Host`), `services`
+- **`Repository(**kwargs)`** — `address` (`netimps.Host`), `services`
   (`dict[str, UriPath]`), `local` (`UriPath | None`, a filesystem/local
   service; a Windows drive path such as `C:\tftp` is read as a path and becomes
   a `file:` URI, not URI scheme `c`). `repo / "sub"` (`.joinpath`) returns a **new** `Repository` with
@@ -352,10 +352,11 @@ servers identifies a reservation by it.
   named service's base URI (`service=None` → `.local`, scheme `"file"`);
   `None` if that service isn't defined. **`.service(name) -> UriPath | None`**
   — the base URI for `name`. For a *relative* service path the authority is
-  filled in from `.address`: resolved to an IP (`try_ip()`) for every scheme
+  filled in from `.address`: resolved to an IP (`Host.ip()`, or the name as
+  written when it does not resolve) for every scheme
   except `https`, which keeps the configured name so TLS validation and
   name-based virtual hosts still work. An `address` of the form `host:port` or
-  `[v6]:port` becomes a real host and port (**`netimps.normalize_host`**; a v6
+  `[v6]:port` becomes a real host and port (**`netimps.split_host`**; a v6
   literal comes back unbracketed, which is what `pathlib_next`'s `Source` wants,
   and a malformed port raises `PixieConfigError` naming the repo) rather than a
   hostname containing an
@@ -367,152 +368,37 @@ servers identifies a reservation by it.
   `ImportError` naming the extra; `file`/`tftp` services and rendering need
   nothing extra.
 
-## Templates (`netboot.templates`)
+## Templates (`tplx`)
 
-- **`Loader(searchpaths, template_types=None, undefined="strict")`** — a
-  Jinja2 `BaseLoader`. Search-path entries are parsed the same way as config
-  paths, so a `http://...` entry stays a URI instead of becoming a directory
-  named `http:`. Without a `ctx` in the environment globals the loader still
-  resolves a plain name (it just has no target to name candidates after).
-  `template_types=None` means **every registered engine** (`TEMPLATE_TYPES`),
-  and either way the list is ordered by `PRIORITY` (highest first, stable within
-  a priority) and **snapshotted at construction** -- importing a plugin later
-  never changes a Loader already built.
-  **Name specificity outranks search-path order**: the
-  loader walks the candidate names `ctx._template_names(...)` yields (MAC,
-  hostname, IP, then the bare name — an unset IP and the null MAC are skipped,
-  so MAC-less targets do not all share a `00-00-00-00-00-00.<name>` candidate)
-  and, for each one, scans every search path
-  (`ctx.searchpaths` then `searchpaths`) before moving to the next name — so a
-  MAC-named file in the *last* search path beats a bare-named file in the
-  first. Within one directory an exact filename match wins; otherwise a
-  *stem* match does (`boot` matches `boot.j2`), resolved lowest-name-first so
-  the choice never depends on filesystem listing order. Templates are read as
-  UTF-8. A name may carry `k=v;flag:` options before the final `:` (parsed but
-  not currently consulted by name selection). Picks the first
-  `template_types` entry whose `.can_process(path, source)` is true; raises
-  `jinja2.TemplateNotFound` if no file matches the name, or
-  **`TemplateEngineError`** -- naming the file and every engine with its
-  suffixes -- if a file was found that no engine claims. With the default
-  `template_types` that cannot happen: the list ends in the catch-all
-  `CopyTemplate`. **`get_source()` returns text (the jinja2 contract) and
-  decodes UTF-8; `find_source()` is the same search returning `bytes`** and is
-  what `load()` uses, so decoding happens only for an engine that needs text --
-  and raises `TemplateEngineError` naming the file when such an engine claims a
-  file that is not UTF-8.
-- **`UNDEFINED_MODES`** / **`JINJA_UNDEFINED`** (`netboot.templates`) — the
-  three mode names and the `jinja2` undefined class each maps to.
-- **`Renderer`** — alias for `jinja2.Environment`; `make_context` builds it
-  with the configured `undefined=` class and `keep_trailing_newline=True`, so a rendered artifact keeps the
-  template's final newline (the shell engine always did). One is created per
-  `PixieContext` (never share one across contexts — `globals["ctx"]` is
-  mutated per render).
-- **`Template`** — minimal base (`.render(**globals)`, classmethod
-  `.can_process(file, template) -> bool`, which matches the suffixes in the
-  class attribute **`EXT`** -- `()` on the base, so it claims nothing -- plus
-  **`BINARY`** (`False`; `True` to be constructed from the file's raw bytes and
-  to return bytes) and **`PRIORITY`** (`DEFAULT_PRIORITY`; higher is consulted
-  first)),
-  plus **`.is_up_to_date`** — a property that calls the loader's freshness
-  check, so an edited shell template is reloaded rather than served from cache
-  forever.
-  A Jinja template can only `{% include %}` or `{% import %}` **another Jinja
-  template**: the shell engine is not a Jinja loader, so including a
-  `%{NAME}`-style file raises `TemplateNotFound`. An imported macro file does
-  not see `shell_quote`/`Path`/`Uri` unless imported `with context`.
+Rendering is done by [`tplx`](https://pypi.org/project/tplx/); netboot keeps
+no template code of its own. What netboot decides is what a template sees and
+where it is looked for:
 
-- **`JinjaTemplate`** (`EXT = (".j2", ".jinja", ".jinja2")`) — a real
-  `jinja2.Template`; `.render()` additionally injects `shell_quote`, `Path`
-  (**`pathlib_next.Path`**, not the stdlib's — it accepts URI paths too) and
-  `Uri` (`pathlib_next.uri.UriPath`) into the render globals. These reach the
-  rendered template only; a `{% import %}`ed macro file does not see them
-  unless imported `with context`.
-- **`ShellTemplate`** (`EXT = (".shtpl",)` since 0.3.0 — it claimed *any*
-  suffix before) — `%`-delimited placeholders; `.render()` flattens the context
-  (`utils.flatten`, keys joined with `_`, list items by index) into `UPPERCASE`
-  substitution variables (`None` → `""`, `bool` → `"true"`/`"false"`).
-  **Only the braced form `%{NAME}` is substituted**: a bare `%word` is literal
-  text, which is what lets kickstart files (`%packages`, `%pre`, `%post`,
-  `%end`) and `date +%Y` render untouched. `%%` yields a literal `%`. An
-  unknown `%{NAME}` follows `templates_undefined`: `KeyError` under `strict`
-  (the default), an empty string under `lenient`, and the untouched placeholder
-  under `debug`.
-  **Defaults**: `%{NAME:-fallback}` substitutes `fallback` when the value is
-  unset *or* empty, `%{NAME-fallback}` only when it is unset; one layer of
-  `'`/`"` quotes is stripped; the fallback is literal (no nesting, no `}`); a
-  placeholder *with* a default never raises in any mode. `:=`, `:?` and `:+`
-  are not implemented and stay literal text.
-  **Configured by subclassing**, three class attributes: `EXT` (a string, a
-  sequence, dots optional, case-insensitive; `None` or `"*"` claims any suffix
-  — keep such a class **last** in `template_types`), `DELIMITER` (default
-  `"%"`; doubling it escapes it) and `PATTERN` — `"braced"` (default, `%{NAME}`
-  only), `"unbraced"` (`%NAME` only) or `"all"`; anything else raises
-  `ValueError` on first render. The compiled pattern is cached per class, so a
-  subclass never inherits its parent's delimiter. Module constants:
-  `PATTERNS`, `DEFAULT_OPERATORS`.
-- **Optional engines**, all registered unconditionally (a claimed file must
-  report its missing dependency, never be copied) and importing nothing until a
-  file claims them:
-  - **`MakoTemplate`** (`.mako`, `netboot[mako]`) -- Python expressions like
-    Jinja: gets `ctx`, `shell_quote`, `Path`, `Uri`. `strict` ->
-    mako's `strict_undefined`; `lenient` renders an empty string via a `Context`
-    subclass; **`debug` behaves as `lenient`** (a compiled mako template cannot
-    re-emit its `${...}`). Keeps the file's own newlines, unlike Jinja, whose
-    lexer normalises them. Names mako reserves (`self`, `next`, `context`, ...)
-    are dropped from the namespace with a warning.
-  - **`LiquidTemplate`** (`.liquid`, `netboot[liquid]`) -- the only optional
-    engine honouring all three modes (python-liquid ships an undefined class for
-    each; `debug` names the variable in the output).
-  - **`HandlebarsTemplate`** (`.hbs`/`.handlebars`, `netboot[handlebars]`, via
-    pybars3) and **`MustacheTemplate`** (`.mustache`, `netboot[mustache]`, via
-    chevron) -- **always lenient**: neither library can fail on an undefined
-    name. Mustache turns on chevron's `warn` under `strict`; handlebars logs
-    that the mode does not apply. Use another engine for an artifact that must
-    fail rather than ship a blank.
-  - **`ERBTemplate`** (`.erb`) and **`EppTemplate`** (`.epp`) -- render through
-    the real `ruby` / `puppet epp render` as a subprocess, so an existing
-    template behaves as its author tested it. They need the **program**, not a
-    Python package: `PIXIE_RUBY` / `PIXIE_PUPPET` override the lookup, a missing
-    one raises `TemplateEngineError` naming it, a non-zero exit carries the
-    program's stderr, and a render that exceeds `TIMEOUT` (60s) is abandoned.
-    ERB sets `@context` plus one instance variable per top-level name; EPP
-    receives each as a parameter (`$target`). `templates_undefined` does not
-    reach either -- missing data is `nil`/`undef`.
-- **`SubprocessTemplate`** -- the base for the two above: `COMMAND`, `ENV_VAR`,
-  `TIMEOUT`, `BASENAME`, `VALUES_NAME` (JSON contents; `puppet` insists on a
-  `.yaml` name) and `command(program, template_path, values_path)`.
-- **`template_data(globals, extras)`** / **`DataView`** / **`jsonable(value)`**
-  (`netboot.templates`) -- the namespace the non-Python engines get: `ctx` as a
-  lazy `Mapping` view plus the context's own attributes at the top level, so
-  `{{ target.hostname }}` works beside `{{ ctx.target.hostname }}`. Views wrap on
-  access and copy nothing. `jsonable()` is the serialisable form for the
-  subprocess engines: scalars stay, structures recurse, everything else is
-  stringified, `_`-prefixed keys are dropped (**except `_id`**) and a depth and
-  cycle guard keeps `ctx._netboot_` -- which reaches the whole program -- out.
-- **`CopyTemplate`** (`EXT = None`, so it claims **any** suffix -- keep it
-  **last**; `BINARY = True`) -- the default catch-all: `.render()` returns the
-  file's **`bytes`**, unchanged and undecoded, which is what a static
-  `grub.cfg`, an EFI binary or a license file needs. A caller writing that out
-  wants `write_bytes`, and `ctx.render()` yields `bytes` rather than `str` for
-  such a file. If the source still holds `%{NAME}` placeholders it logs a
-  **warning** naming the `.shtpl` rename, since a silent copy of what used to be
-  a shell template is the one way the fallback can ship the wrong file.
-- **`register_template_type(cls=None, *, priority=None)`** /
-  **`unregister_template_type(cls) -> bool`** / **`TEMPLATE_TYPES`** /
-  **`by_priority(types) -> tuple`** -- the engine registry. `register...` works
-  bare or as a decorator, returns the class, is idempotent, and `priority=` sets
-  `PRIORITY` on a class you do not own. **Priority, not registration order,
-  decides**: a plugin is registered after the shipped engines, so ordering by
-  registration would put every plugin behind the catch-all. Constants:
-  **`DEFAULT_PRIORITY`** (0, an ordinary engine -- already enough to outrank the
-  copy engine) and **`FALLBACK_PRIORITY`** (-100, `CopyTemplate`); above 0 takes
-  a suffix off a shipped engine. `TEMPLATE_TYPES` is the live list, mutated only
-  through those two functions.
-- **`TemplateEngineError`** / **`template_extensions(cls)`** / **`ANY_SUFFIX`**
-  (`netboot.templates`) — the no-engine error, the `EXT` normaliser (returns a
-  lowercase tuple of suffixes, or `None` for "any"), and the `"*"` spelling of
-  "any". `TemplateEngineError` is **not** a `PixieError`: `netboot.engine`
-  imports this package, so the error cannot live there.
+- **Data**: every engine sees `ctx` (the `PixieContext`) and each of its
+  fields at the top level (`target`, `image`, `dhcpzone`, `repos`,
+  `resources`, `generated`, `version`, and every merged global), plus the
+  helpers `shell_quote`, `Path` (**`pathlib_next.Path`**) and `Uri`
+  (`pathlib_next.uri.UriPath`). The engines that cannot evaluate Python get it
+  through a `tplx.DataEncoder(expose=["_id"])`, so `_id` reaches them
+  (`%{IMAGE__ID}`, `@image['_id']`) while other `_`-prefixed names do not.
+- **Names**: `ctx._template_names(name)` gives the candidates (MAC, hostname,
+  IP, then the bare name; an unset IP and the null MAC are skipped) and
+  `.searchpaths` the search paths, both passed to `tplx` for the template
+  **and for every include inside it**. Name specificity outranks search-path
+  order: a MAC-named file in the last search path beats a bare-named file in
+  the first. The roots are `config["templates"]`, `./templates` by default.
+- **The engine is chosen by suffix**: `.j2`/`.jinja`/`.jinja2` Jinja, `.mako`,
+  `.liquid`, `.hbs`/`.handlebars`, `.mustache`, `.erb` (ruby), `.epp`
+  (puppet), `.shtpl` the `%{NAME}` shell engine, anything else is copied as
+  `bytes`. `templates_undefined` is tplx's `undefined`. The optional engines'
+  libraries are netboot's extras of the same name, which install tplx's;
+  `TPLX_RUBY` / `TPLX_PUPPET` name the programs when they are not on `PATH`.
+- **Errors** are tplx's (`tplx.TemplateNotFound`, `tplx.UndefinedError`,
+  `tplx.RenderError`, ...); the `pixie` CLI reports every `tplx.TplxError` as
+  one line and exits 2.
+- **A custom engine** is a `tplx.Template` subclass registered with
+  `tplx.register_engine` (a `--load-module` plugin can do it); see tplx's own
+  documentation for the contract.
 
 ## Utils (`netboot.utils`)
 
@@ -521,27 +407,6 @@ servers identifies a reservation by it.
   `_parse_<prop>` coercers at construction, and marks the built object as
   merge-opaque — a later config layer replaces it wholesale rather than
   merging field-by-field).
-- **`Host(address: str | Host | None = None)`** — a **subclass of
-  `netimps.Host`** (netboot reimplemented that type once, on the claim that a
-  host was a netboot concept; it is not). `isinstance(h, netimps.Host)` holds, so
-  anything typed against the library accepts it.
-  From netimps: **`.ip(refresh=False) -> IPAddress | None`** resolves (a literal
-  as-is, a name through one forward lookup) and **caches the result, failures
-  included**; `.value` is the configured text, `str(host)` the same;
-  `.is_address` answers without DNS; equality and hashing are by text and reach
-  a plain `str` too (netboot's own class returned `NotImplemented` there).
-  Added by netboot, and the reason for the subclass — these are the names it
-  published before adopting netimps, kept so nothing breaks:
-  **`.try_ip() -> IPAddress | str`** (`.ip()` with the configured text as the
-  fallback, which is what a caller building a URL regardless wants; netimps keeps
-  `.ip()` `Optional` on purpose, and this is that one `or`), **`.address`** (the
-  old name for `.value`, writable — assigning it drops the cached resolution, or
-  `.ip()` would answer for the previous host), and a **default argument**, which
-  netimps requires.
-  The `dns` extra is optional — without it netimps resolves through its
-  system/`nslookup` backends. **Faking resolution in a test means patching
-  `netimps.get_ip`**, which `.ip()` imports at call time; patching netboot's own
-  `resolve` re-export no longer reaches it.
 - **`flatten(map, _prefix="") -> dict`** — recursively flattens a
   dict/`Namespace`/list into a single-level dict, joining keys with `_`
   (`{"a": {"b": 1}}` → `{"a_b": 1}`) and using list indices as keys. Two
@@ -559,33 +424,13 @@ servers identifies a reservation by it.
   range.
 - **`import_(name: str) -> object`** — import `"pkg.mod.attr"` and return
   `attr` (splits on the last dot).
-- **IP/MAC re-exports** from [`netimps`](https://pypi.org/project/netimps/),
-  available as `netboot.utils.net.*`. `netboot.netutils` is the same module
-  bound as an **attribute** of the package (what tests monkeypatch), not an
-  importable path: use `from netboot.utils import net as netutils`, since
-  `import netboot.netutils` raises `ModuleNotFoundError`.
-  - `IPAddress`, `IPInterface`, `IPNetwork` — the v4/v6 **union types** you
-    annotate with. They are not callable; build values with
-    `parse(value, IPNetwork)`.
-  - `parse(value, type, **kw)` raises on bad input; `try_parse(value, type)`
-    returns `None` instead; `is_valid(value, type)` returns a bool. Networks
-    parse non-strict, so `"10.0.0.5/24"` normalises rather than raising.
-  - `MACAddress` — colon/hyphen/per-octet-dot/Cisco-dot/bare text (one
-    separator per address), `int` or `bytes`; `.as_str(sep)`, `.packed`,
-    `.oui`, hashable and ordered. It equals only another `MACAddress`, never a
-    `str` — compare text with `MACAddress.try_parse(text) == mac`.
-  - `resolve(query, rdtype=None)` → a list of **native** records (`A`/`AAAA`
-    are `IPv4Address`/`IPv6Address`, not strings); `[]` on a genuine lookup
-    failure, but a malformed query or unknown record type raises `ValueError`
-    rather than looking like "no such record". `rdtype=None` auto-selects:
-    `"ptr"` when `query` is an address literal, `"a"` otherwise. Backends are
-    tried until one answers non-empty, so hosts-file and NSS-only names
-    resolve too. An unreachable resolver also answers `[]`; netimps'
-    `strict=True` raises `netimps.ResolutionError` instead.
-  - `ping(dst)` → a `PingResult` that is truthy on success and also carries
-    `.rtt_ms`/`.ttl`.
-  - `get_interfaces()` / `iter_addresses()` — real adapter enumeration with
-    true prefix lengths and MTU.
+- **Network values are [`netimps`](https://pypi.org/project/netimps/)'s**,
+  imported from it directly; netboot re-exports none of them. `PixieTarget.mac`
+  is a `netimps.MACAddress` (`.format(sep=":", *, upper=False)`, `.hex()`;
+  equal only to another `MACAddress`), `PixieTarget.ip` an `ipaddress`
+  address, and `Repository.address` a `netimps.Host`. To fake DNS in a test,
+  patch `netimps.resolve` (target hostnames) and `netimps.Host.ip` (repository
+  addresses).
 
   The `dns` extra installs the `dnspython` resolver backend (`pip install
   netboot[dns]`) — best coverage, every record type, explicit `ns=`/`search=`

@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Mapping, Union, get_type_hints
 
 import netimps
+import pathlib_next
+import tplx
 from netimps import IPAddress, MACAddress
+from pathlib_next.uri import UriPath
+from tplx import UNDEFINED_MODES
 from yaconfiglib import OpaqueMerge
 from yaconfiglib import typed_merge as mergeObjects
 
@@ -23,9 +27,8 @@ from ._version import __version__
 from .content import Repository, Resource
 from .dhcp import DhcpZone
 from .logging import LOGGER
-from .templates import JINJA_UNDEFINED, UNDEFINED_MODES, Loader, Renderer
-from .utils import T
-from .utils.misc import import_
+from .utils import T, shell_quote
+from .utils.misc import import_, parse_path
 
 # Compat: StrEnum introduced in Python 3.11; emulate for older Pythons
 try:
@@ -169,7 +172,7 @@ class PixieContext(Namespace):
     generated: datetime.datetime
     resources: dict[str, Resource]
     version: str
-    _renderer: Renderer
+    _loader: tplx.Loader
 
     def __init__(self, **kwargs) -> None:
         self.generated = datetime.datetime.now()
@@ -287,21 +290,26 @@ class PixieContext(Namespace):
         return [*self.target.template_path, *self.image.template_path]
 
     def render(self, filename: str, strict=True):
-        # Each PixieContext owns its own Renderer (built in make_context), so
-        # setting globals["ctx"] here is per-context; do not share one Renderer
-        # across contexts or nested renders would clobber this.
         """Render `filename` against this context and return the result.
 
         The name is resolved by the template search (MAC, hostname, IP, then the
-        bare name). Text for a Jinja or shell template; **`bytes`** for a file
-        the copy engine claims, which is every suffix no other engine owns -- it
-        is a byte-exact copy, so it is never decoded. `strict=False` logs the
-        failure at DEBUG and returns `None` instead of raising.
+        bare name), through `tplx`, and so are the includes inside it. The
+        template sees `ctx` and each of the context's fields (`target`, `image`,
+        ...). Text, or **`bytes`** for a file the copy engine claims, which is
+        every suffix no other engine owns -- it is a byte-exact copy, so it is
+        never decoded. `strict=False` logs the failure at DEBUG and returns
+        `None` instead of raising.
         """
-        self._renderer.globals["ctx"] = self
+        data = dict(vars(self))
+        data["ctx"] = self
+        paths = [
+            path if isinstance(path, pathlib_next.Path) else parse_path(str(path))
+            for path in self.searchpaths
+        ]
         try:
-            template = self._renderer.get_template(filename)
-            return template.render()
+            return self._loader.render(
+                filename, data, candidates=self._template_names, paths=paths
+            )
         except Exception as e:
             if strict:
                 raise e
@@ -678,13 +686,20 @@ class Pixie:
                 f"templates_undefined must be one of {', '.join(UNDEFINED_MODES)}, "
                 f"not {undefined!r}"
             )
-        ctx._renderer = Renderer(
-            loader=Loader(self._config.get("templates", []), undefined=undefined),
-            undefined=JINJA_UNDEFINED[undefined],
-            # Boot artifacts are line-oriented files: a kickstart or iPXE
-            # script whose last line lost its newline is a different file. The
-            # shell engine already kept it, so the two engines disagreed.
-            keep_trailing_newline=True,
+        roots = [
+            root if isinstance(root, pathlib_next.Path) else parse_path(str(root))
+            for root in self._config.get("templates", [])
+        ]
+        ctx._loader = tplx.Loader(
+            roots,
+            undefined=undefined,
+            globals={
+                "shell_quote": shell_quote,
+                "Path": pathlib_next.Path,
+                "Uri": UriPath,
+            },
+            # `_id` names an image or a target, and templates use it.
+            encoder=tplx.DataEncoder(expose=["_id"]),
         )
         ctx.version = f"netboot-v{self.VERSION}"
         # DHCP backends fire BuildDhcpOptions through the engine, and they only

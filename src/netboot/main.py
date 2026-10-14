@@ -25,6 +25,7 @@ from jinja2 import TemplateError as _TemplateError
 from duho.discovery import ModuleCommand, discover_commands
 from duho.env import Env
 from pathlib_next import LocalPath, Path, UriPath
+from tplx import TplxError as _TplxError
 
 from . import Pixie, PixieConfigError, PixieError, __version__
 from .logging import LOGGER, quiet_noisy_dependencies
@@ -36,14 +37,16 @@ _BUILTIN_COMMANDS = "netboot.cmds"
 
 #: Exceptions an operator can trigger with bad input. Reported as one line;
 #: anything else keeps its traceback, because it is netboot's bug to fix.
-#: `TemplateError` covers both a broken template and the sandbox refusing an
-#: expression in a config value (`SecurityError`).
+#: `TemplateError` is jinja2's, for the sandbox refusing an expression in a
+#: config value (`SecurityError`); `TplxError` is a template that cannot be
+#: found or rendered.
 _USER_ERRORS = (
     PixieError,
     FileNotFoundError,
     NotADirectoryError,
     PermissionError,
     _TemplateError,
+    _TplxError,
 )
 
 #: Maps each of those to exit status 2 for duho, which reports it through

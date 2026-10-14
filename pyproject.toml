@@ -41,9 +41,13 @@ dependencies = [
     # Declaring the real floor keeps the pair honest instead of leaving pip to
     # discover it. tests/test_config_discovery.py fails below it.
     "pathlib_next[uri]>=0.9.9,<0.10",
+    # Templates are rendered by tplx; `.j2` is the engine netboot's own
+    # examples and docs use, so it is always installed.
+    "tplx[jinja]>=0.1.0,<0.2",
     # 3.0 is the floor that can actually be imported: 2.x calls
     # markupsafe.soft_unicode, removed in MarkupSafe 2.1, so an unpinned
-    # resolve can install a jinja2/markupsafe pair that fails on import.
+    # resolve can install a jinja2/markupsafe pair that fails on import. The
+    # CLI reports jinja2's errors from config interpolation itself.
     "jinja2>=3.0,<4",
     "yaconfiglib>=0.13.0,<0.14",
 ]
@@ -51,15 +55,12 @@ dependencies = [
 [project.optional-dependencies]
 # Config-file loading for the CLI (YAML with !include).
 config = ["pyyaml"]
-# The mako template engine (`*.mako`). netboot.templates registers the engine
-# either way, so a .mako file without the extra raises ImportError naming it
-# rather than falling through to the copy engine.
-mako = ["mako"]
-# Further optional template engines, same deal: the engine is always registered,
-# the library is imported only when a file claims it.
-liquid = ["python-liquid"]
-handlebars = ["pybars3"]
-mustache = ["chevron"]
+# The optional template engines are tplx's; each extra installs that one's
+# library. A file whose engine is missing fails naming tplx's extra.
+mako = ["tplx[mako]"]
+liquid = ["tplx[liquid]"]
+handlebars = ["tplx[handlebars]"]
+mustache = ["tplx[mustache]"]
 # http/https repository services. pathlib_next's uri scheme handler for
 # http(s) imports `requests` at module import, and nothing else installs it --
 # pathlib_next[uri] does not. Repos served over file/tftp, and rendering in

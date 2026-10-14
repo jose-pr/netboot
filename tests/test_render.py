@@ -5,9 +5,9 @@ Jinja2 and shell template engines against a temporary search path.
 """
 
 import pytest
+import tplx
 
 import netboot
-from netboot.templates.shell import ShellTemplate
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ def test_shell_engine_raises_for_an_unknown_braced_name(templates_dir):
     (templates_dir / "bad.shtpl").write_text("X=%{NOSUCHVARIABLE}")
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
-    with pytest.raises(KeyError):
+    with pytest.raises(tplx.UndefinedError, match="NOSUCHVARIABLE"):
         ctx.render("bad.shtpl")
 
 
@@ -175,33 +175,30 @@ def test_mac_less_targets_do_not_share_a_null_mac_candidate(templates_dir):
     assert ctx.render("boot.shtpl") == "HOST=host1"
 
 
-def test_a_uri_search_path_is_not_turned_into_a_local_directory():
-    from netboot.templates import Loader
+def test_a_uri_template_root_is_not_turned_into_a_local_directory(tmp_path):
+    p = netboot.Pixie(
+        templates=["http://boot.example/templates"],
+        images={"debian": {"template_path": []}},
+        dhcpzones={"lan": {"network": "10.0.0.0/24"}},
+        targets={"host1": {"hostname": "host1", "ip": "10.0.0.5", "image": "debian"}},
+    )
+    ctx = p.make_context(p.lookup_target("host1"))
+    root = ctx._loader.roots[0]
+    assert str(root).startswith("http://boot.example")
 
-    loader = Loader(["http://boot.example/templates", "templates"])
-    assert str(loader.searchpaths[0]).startswith("http://")
 
-
-def test_shell_templates_notice_an_edited_file(templates_dir):
-    # `is_up_to_date` was assigned the checker function itself, which is always
-    # truthy, so a cached template never reloaded.
-    from netboot.templates import Loader
-    from netboot.templates.common import Renderer
+def test_an_edited_template_is_rendered_again(templates_dir):
+    import os
+    import time
 
     (templates_dir / "cached.shtpl").write_text("v1")
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
-    renderer = Renderer(loader=Loader([templates_dir]))
-    renderer.globals["ctx"] = ctx
-    template = renderer.get_template("cached.shtpl")
-    assert template.is_up_to_date is True
-    import os
-    import time
-
-    time.sleep(0.01)
+    assert ctx.render("cached.shtpl") == "v1"
     (templates_dir / "cached.shtpl").write_text("v2")
-    os.utime(templates_dir / "cached.shtpl", (time.time() + 1, time.time() + 1))
-    assert template.is_up_to_date is False
+    later = time.time() + 5
+    os.utime(templates_dir / "cached.shtpl", (later, later))
+    assert ctx.render("cached.shtpl") == "v2"
 
 
 def test_template_names_accepts_options(tmp_path):
@@ -239,21 +236,10 @@ def test_template_names_skips_an_unset_ip(unset_ip):
     assert names == ["aa-bb-cc-dd-ee-ff.boot.j2", "boot.j2"]
 
 
-def test_shell_template_renders_none_as_empty():
-    # Regression: None must render as '' not the literal 'None'.
-    from argparse import Namespace
-
-    t = ShellTemplate("D=%{DOMAIN} B=%{FLAG}")
-    t._globals_ = {"ctx": Namespace(domain=None, flag=True)}
-    assert t.render() == "D= B=true"
-
-
 def test_a_template_name_cannot_escape_the_search_paths(templates_dir):
-    from jinja2 import TemplateNotFound
-
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
-    with pytest.raises(TemplateNotFound):
+    with pytest.raises(tplx.TemplateNotFound):
         ctx.render("../../../etc/passwd")
 
 
@@ -309,12 +295,10 @@ def _netboot_with_undefined(templates_dir, mode):
 
 
 def test_undefined_is_strict_by_default(templates_dir):
-    from jinja2 import UndefinedError
-
     (templates_dir / "typo.j2").write_text("kernel={{ ctx.image.kernl }}")
     ctx = _netboot_with_undefined(templates_dir, None)
     # A typo used to ship a boot artifact with a blank where a path belongs.
-    with pytest.raises(UndefinedError):
+    with pytest.raises(tplx.UndefinedError):
         ctx.render("typo.j2")
 
 
@@ -343,7 +327,7 @@ def test_the_shell_engine_follows_the_same_switch(templates_dir, mode, expected)
 def test_the_shell_engine_is_strict_by_default(templates_dir):
     (templates_dir / "u.shtpl").write_text("X=%{NOSUCHVAR}")
     ctx = _netboot_with_undefined(templates_dir, "strict")
-    with pytest.raises(KeyError):
+    with pytest.raises(tplx.UndefinedError):
         ctx.render("u.shtpl")
 
 
