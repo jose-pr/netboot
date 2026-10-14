@@ -616,7 +616,7 @@ command against it.
 
 - **`main(name=None, argv=None) -> int`** — build the app, parse `argv`,
   dispatch; returns the status, except that `--help`, `--version` and a usage error
-  raise `SystemExit` (0, 0, 2), as the entry did before `run`; Ctrl-C returns
+  raise `SystemExit` (0, 0, 2); Ctrl-C returns
   130, a broken pipe 1. `name` defaults to `"pixie"` — the CLI's identity: it is the prog
   name **and** the `duho.env.Env` prefix, so `PIXIE_<KEY>` env vars (and an
   optional `pixie_env` companion module of defaults, autoloaded from
