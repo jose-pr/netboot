@@ -10,7 +10,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `duho` floor moves to `>=0.7.4,<0.8` (pre-1.0 minor, documented API break;
   0.7.4 adds the unsorted multi-source command discovery that `--cmdspath`
   now uses).
-  The `pixie` command line is unchanged: same flags, exit statuses and output.
+  The `pixie` command line is unchanged: same flags, exit statuses and output,
+  with one exception in `--help`: the commands of one `--cmdspath` directory are
+  listed by file name, then in the order a file defines them, where they were
+  sorted by command name. The two differ only for a file that defines several
+  commands or is named differently from its command.
 
 ## [0.3.2] - 2026-10-03
 
