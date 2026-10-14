@@ -7,7 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
-- `duho` floor moves to `>=0.7.3,<0.8` (pre-1.0 minor, documented API break).
+- `duho` floor moves to `>=0.7.4,<0.8` (pre-1.0 minor, documented API break;
+  0.7.4 adds the unsorted multi-source command discovery that `--cmdspath`
+  now uses).
   The `pixie` command line is unchanged: same flags, exit statuses and output.
 
 ## [0.3.2] - 2026-10-03
