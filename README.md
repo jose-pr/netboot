@@ -46,16 +46,16 @@ Optional extras:
 
 `*.erb` and `*.epp` templates need no extra, but do need `ruby` or `puppet`
 installed: they render through the real program, so an existing template behaves
-as its author tested it. `PIXIE_RUBY` / `PIXIE_PUPPET` name it when it is not on
+as its author tested it. `TPLX_RUBY` / `TPLX_PUPPET` name it when it is not on
 `PATH`. Jinja2 (`.j2`) and the `%{NAME}` shell engine (`.shtpl`) are built in, and
-a file no engine claims is copied unchanged.
+a file no engine claims is copied unchanged. The engines are
+[`tplx`](https://pypi.org/project/tplx/)'s; the template extras install its.
 
 Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),
 [`pathlib_next`](https://github.com/jose-pr/pathlib-next) (URI-aware paths),
 [`yaconfiglib`](https://github.com/jose-pr/yaconfiglib) (layered YAML), and
-Jinja2. IP/MAC/DNS helpers come from
-[`netimps`](https://pypi.org/project/netimps/), re-exported as
-`netboot.utils.net`.
+[`tplx`](https://github.com/jose-pr/tplx) (templates in any engine). IP/MAC/DNS helpers come from
+[`netimps`](https://pypi.org/project/netimps/).
 
 ## CLI
 

@@ -337,23 +337,29 @@ not a mapping is an error naming the file.
 for a file named by the target's MAC (`aa-bb-cc-...`), hostname, or IP — falling
 back to the bare template name.
 
+An include inside a template (`{% include %}`, `<%include/>`, `{{> partial}}`, ...)
+is found the same way, per target, and rendered by the engine its own suffix
+names: a Jinja page can include a `.shtpl` fragment, which the shell engine
+renders with the same context.
+
 **The suffix picks the engine, and the stem names the artifact.** A `.j2` /
 `.jinja` / `.jinja2` file is rendered with Jinja2; a `.shtpl` file with the
 `%`-delimited shell engine, whose `%{UPPER_SNAKE}` placeholders come from the
 flattened context. Seven more engines ship for template trees that already exist
-in another language:
+in another language. They are [`tplx`](https://jose-pr.github.io/tplx/)'s, which
+netboot renders through:
 
 | Engine | Suffixes | Needs | `templates_undefined` |
 | ------ | -------- | ----- | --------------------- |
-| `JinjaTemplate` | `.j2` `.jinja` `.jinja2` | — | all three |
-| `MakoTemplate` | `.mako` | `netboot[mako]` | `strict`, `lenient`; `debug` behaves as `lenient` |
-| `LiquidTemplate` | `.liquid` | `netboot[liquid]` | all three (`debug` names the variable in the output) |
-| `HandlebarsTemplate` | `.hbs` `.handlebars` | `netboot[handlebars]` | **always lenient** — the library cannot fail |
-| `MustacheTemplate` | `.mustache` | `netboot[mustache]` | **always lenient** (logs under `strict`) |
-| `ERBTemplate` | `.erb` | `ruby` on `PATH` (or `PIXIE_RUBY`) | n/a — missing data is Ruby's `nil` |
-| `EppTemplate` | `.epp` | `puppet` on `PATH` (or `PIXIE_PUPPET`) | n/a — missing data is Puppet's `undef` |
-| `ShellTemplate` | `.shtpl` | — | all three |
-| `CopyTemplate` | anything else | — | n/a — nothing is substituted |
+| `tplx.JinjaTemplate` | `.j2` `.jinja` `.jinja2` | — | all three |
+| `tplx.MakoTemplate` | `.mako` | `netboot[mako]` | `strict`, `lenient`; `debug` behaves as `lenient` |
+| `tplx.LiquidTemplate` | `.liquid` | `netboot[liquid]` | all three (`debug` names the variable in the output) |
+| `tplx.HandlebarsTemplate` | `.hbs` `.handlebars` | `netboot[handlebars]` | **always lenient** — the library cannot fail |
+| `tplx.MustacheTemplate` | `.mustache` | `netboot[mustache]` | **always lenient** (logs under `strict`) |
+| `tplx.ERBTemplate` | `.erb` | `ruby` on `PATH` (or `TPLX_RUBY`) | n/a — missing data is Ruby's `nil` |
+| `tplx.EPPTemplate` | `.epp` | `puppet` on `PATH` (or `TPLX_PUPPET`) | n/a — missing data is Puppet's `undef` |
+| `tplx.ShellTemplate` | `.shtpl` | — | all three |
+| `tplx.CopyTemplate` | anything else | — | n/a — nothing is substituted |
 
 Every optional engine is **registered whether or not its library is installed**,
 so a `.liquid` file tells you to `pip install netboot[liquid]` instead of being
@@ -363,15 +369,15 @@ that uses none pays nothing.
 Jinja and mako evaluate Python, so a template reaches into `ctx` directly. The
 data languages (liquid, handlebars, mustache) and the external ones (ERB, EPP)
 get a **mapping view** of the same context instead: `{{ ctx.target.hostname }}`
-and `{{ target.hostname }}` both resolve, an address or a path arrives as the
-string a template would have printed, and the engine's own machinery
-(`ctx._netboot_`, the renderer) is left out. ERB additionally sets each top-level
+and `{{ target.hostname }}` both resolve, and an address, a MAC or a path arrives
+as the string a template would have printed. ERB and EPP receive JSON in which
+`_`-prefixed names are left out, except `_id`. ERB additionally sets each top-level
 name as an instance variable (`@target`), and EPP as a parameter (`$target`).
 
 ERB and EPP run the real `ruby` and `puppet` as a subprocess, with the context
 marshalled to JSON — which is the point: an existing `.erb` renders the way its
-author tested it, rather than the way a reimplementation guesses. Set `PIXIE_RUBY`
-or `PIXIE_PUPPET` if the program is installed but not on `PATH`. Because a template is also found by its stem, the file behind
+author tested it, rather than the way a reimplementation guesses. Set `TPLX_RUBY`
+or `TPLX_PUPPET` if the program is installed but not on `PATH`. Because a template is also found by its stem, the file behind
 an artifact called `boot.cfg` is `boot.cfg.shtpl` and `ctx.render("boot.cfg")`
 still finds it.
 
@@ -403,7 +409,7 @@ The engine is configured by subclassing, not by config, for a tree that uses
 another convention:
 
 ```python
-from netboot.templates.shell import ShellTemplate
+from tplx import ShellTemplate
 
 class DollarTemplate(ShellTemplate):
     EXT = (".tpl", ".cfg")   # a single string is fine; `None` claims any suffix
@@ -411,14 +417,10 @@ class DollarTemplate(ShellTemplate):
     PATTERN = "all"          # 'braced' (default), 'unbraced', or 'all'
 ```
 
-Register the class with `netboot.templates.register_template_type` (see
-[Extending](extending.md#custom-template-engines)) or pass it in
-`Loader(..., template_types=[...])`. Engines are consulted in `PRIORITY` order,
-highest first, so a registered engine is asked before the catch-all
-`CopyTemplate` whatever order they were registered in. The default is every
-registered engine: `JinjaTemplate`, `ShellTemplate`, then `CopyTemplate`. Narrow
-it — dropping the copy engine, or giving it a suffix list of its own — and a file
-nothing claims raises `netboot.templates.TemplateEngineError`, naming the file and
-what each engine handles. A file that is not valid UTF-8 raises the same error when the engine
-that claims it needs text; set `BINARY = True` on an engine to be handed the raw
-bytes instead, as `CopyTemplate` does.
+Register the class with `tplx.register_engine` (see
+[Extending](extending.md#custom-template-engines)). Engines are consulted in
+`PRIORITY` order, highest first, so a registered engine is asked before the
+catch-all `CopyTemplate` whatever order they were registered in. A file that is
+not valid UTF-8 raises `tplx.NoEngineError` when the engine that claims it needs
+text; set `BINARY = True` on an engine to be handed the raw bytes instead, as
+`CopyTemplate` does.

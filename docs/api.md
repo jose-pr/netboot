@@ -35,31 +35,12 @@ The engine and its context objects. Rendered from source via
 
 ## Templates
 
-::: netboot.templates.Loader
-
-::: netboot.templates.JinjaTemplate
-
-::: netboot.templates.MakoTemplate
-
-::: netboot.templates.LiquidTemplate
-
-::: netboot.templates.HandlebarsTemplate
-
-::: netboot.templates.MustacheTemplate
-
-::: netboot.templates.ERBTemplate
-
-::: netboot.templates.EppTemplate
-
-::: netboot.templates.ShellTemplate
-
-::: netboot.templates.CopyTemplate
+Rendering is [tplx](https://jose-pr.github.io/tplx/)'s; its API reference covers
+the loader, the engines and the engine contract.
 
 ## Utilities
 
 ::: netboot.utils.dicts
-
-::: netboot.utils.net.Host
 
 ## CLI entry point
 

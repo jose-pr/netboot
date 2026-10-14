@@ -49,76 +49,33 @@ def only_on_lookup(event, netboot, value, kwargs):
 
 ## Custom template engines
 
-An engine is a class with two things: the suffixes it claims (`EXT`) and
-`render()`. Register it and it joins the engines every `Loader` consults.
+Templates are rendered by [`tplx`](https://jose-pr.github.io/tplx/), so an engine
+is a `tplx.Template` subclass: the suffixes it claims (`EXT`) and
+`render_values()`. Register it and every render, includes included, can use it.
 
 ```python
-from netboot.templates import Template, register_template_type
+import tplx
 
-@register_template_type
-class MakoTemplate(Template):
-    EXT = ".mako"                      # a string, or a sequence of them
+@tplx.register_engine
+class ShoutyTemplate(tplx.Template):
+    EXT = ".shouty"                     # a string, or a sequence of them
 
-    def __init__(self, template: str) -> None:
-        self._source = template
-
-    def render(self, **extras):
-        ctx = self._globals_["ctx"]    # the PixieContext being rendered
-        return my_mako_render(self._source, ctx)
+    def render_values(self, values):
+        # `values` holds `ctx` and each of its fields (`target`, `image`, ...).
+        return self.source.upper()
 ```
 
 Import the module before anything renders — `--load-module your.plugin`, the same
-flag a DHCP backend plugin needs.
+flag a DHCP backend plugin needs. A package can instead declare the class under
+the `tplx.engines` entry-point group, and installing it is enough.
 
-**Priority, not registration order, decides who gets a file.** Engines are
-consulted highest `PRIORITY` first, and a plugin is necessarily registered
-*after* the shipped engines — if order decided, every plugin would sit behind the
-catch-all `CopyTemplate` and never see a file. So:
-
-| `PRIORITY` | Meaning |
-| ---------- | ------- |
-| `DEFAULT_PRIORITY` (`0`) | an ordinary engine claiming its own suffixes — the default, and enough to outrank the copy engine |
-| above `0` | override a shipped engine on a suffix it also claims (`priority=10` to take `.j2` from `JinjaTemplate`) |
-| `FALLBACK_PRIORITY` (`-100`) | a last resort, where `CopyTemplate` sits |
-
-Engines of *equal* priority keep the order they were given, so an explicit
-`Loader(..., template_types=[...])` still means what it says. Set the priority on
-the class, or at registration for a class you do not own:
-
-```python
-register_template_type(SomeonesEngine, priority=10)
-```
-
-`unregister_template_type(cls)` removes one again, and a `Loader` snapshots the
-registry when it is built, so importing a plugin halfway through a run never
-changes an engine already in use.
-
-Other attributes on the contract: **`BINARY = True`** to be handed the file's raw
-`bytes` instead of decoded text (and to return bytes, as `CopyTemplate` does),
-and `EXT = None` to claim *every* suffix — which only makes sense together with a
-low priority.
-
-The shipped engines are the worked examples, and they cover the three shapes an
-engine takes:
-
-- **evaluates Python** (`JinjaTemplate`, `MakoTemplate`) — hand the engine `ctx`
-  itself and let the template reach into it.
-- **reads data only** (`LiquidTemplate`, `HandlebarsTemplate`,
-  `MustacheTemplate`) — build the namespace with
-  `netboot.templates.template_data(self._globals_, extras)`, which returns a lazy
-  mapping view of the context. liquid cannot traverse attributes at all, so this
-  is not optional for that class of engine.
-- **shells out** (`ERBTemplate`, `EppTemplate`) — subclass
-  `SubprocessTemplate`, set `COMMAND`, `ENV_VAR` and `EXT`, and implement
-  `command(program, template_path, values_path)`. The base marshals the context
-  with `jsonable()`, writes template and values into a temporary directory, runs
-  the program with a timeout, and turns a non-zero exit into a
-  `TemplateEngineError` carrying the program's own stderr.
-
-An engine that needs an optional library imports it in a helper, not at module
-scope, and raises `ImportError` naming the extra — that way the class can be
-registered unconditionally, and a file it claims reports what is missing rather
-than falling through to the copy engine.
+**Priority, not registration order, decides who gets a file**: a plugin is
+registered after the shipped engines, so `DEFAULT_PRIORITY` (`0`) already puts it
+ahead of the catch-all copy engine, and `register_engine(cls, priority=10)` takes
+a suffix from a shipped engine. `BINARY = True` hands the engine the file's raw
+bytes. tplx documents the whole contract, the data helpers an engine for a data
+language or an external program uses, and `tplx.testing.EngineContract`, the
+test suite every engine passes.
 
 ## Custom DHCP backends
 

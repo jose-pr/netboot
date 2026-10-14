@@ -40,11 +40,12 @@ tests skip rather than run, and `pytest -rs` is how you see that happen. The
 `dev` extra pulls in the optional template engines' libraries (`mako`,
 `python-liquid`, `pybars3`, `chevron`) for the same reason.
 
-`tests/test_external_engines.py` needs **`ruby`** and **`puppet`**, which this
-Windows box does not have: those cases skip here and run under WSL
-(`FedoraLinux-44` has both). A change to `.erb`/`.epp` rendering is unverified
-until the suite has run there — the engine-shape cases (registration, suffixes,
-the missing-program error) do run everywhere.
+Templates are rendered by [`tplx`](https://github.com/jose-pr/tplx), which has
+its own engine tests; `tests/test_templates.py` pins what netboot hands it. Its
+`erb` and `epp` cases need **`ruby`** and **`puppet`** installed and skip
+without them, so a change to what those engines receive is unverified until the
+suite has run where both exist. To work against an unreleased tplx, install a
+checkout over the released one: `pip install --no-deps -e ../tplx`.
 
 ## Commands
 

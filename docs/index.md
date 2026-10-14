@@ -40,8 +40,7 @@ Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),
 [`pathlib_next`](https://github.com/jose-pr/pathlib-next) (URI-aware paths),
 [`yaconfiglib`](https://github.com/jose-pr/yaconfiglib) (layered YAML), and
 Jinja2. IP/MAC/DNS helpers come from
-[`netimps`](https://pypi.org/project/netimps/), re-exported as
-`netboot.utils.net`.
+[`netimps`](https://pypi.org/project/netimps/).
 
 ## Where next
 
