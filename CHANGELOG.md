@@ -15,6 +15,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   listed by file name, then in the order a file defines them, where they were
   sorted by command name. The two differ only for a file that defines several
   commands or is named differently from its command.
+- `pixie` runs through `duho.run(..., exit=False)` and reports operator errors
+  through duho's `_errors_` / `_report_error_`: the same one-line log record and
+  the same status 2 as before. New with it: Ctrl-C ends with status 130 and a
+  broken pipe with status 1, both without a traceback; a plain `run(args)`
+  command's returned value (not `None` or an `int`) is printed to standard
+  output, where it was handed to `sys.exit`; with `DUHO_TRACEBACK` set an
+  operator error propagates with its traceback instead of being logged;
+  `main(argv=["--help"])` returns 0 instead of raising `SystemExit`.
 
 ## [0.3.2] - 2026-10-03
 

@@ -609,13 +609,14 @@ servers identifies a reservation by it.
 
 ## CLI driver (`netboot.main`)
 
-Thin driver over `duho.app`; `duho` owns command discovery, parser build,
+Thin driver over `duho.run(..., exit=False)` (so `duho.app`); `duho` owns command discovery, parser build,
 config/env layering and parsing. Netboot overrides only *dispatch*: it loads
 the layered YAML config into one `Pixie` object, then runs the selected
 command against it.
 
 - **`main(name=None, argv=None) -> int`** — build the app, parse `argv`,
-  dispatch. `name` defaults to `"pixie"` — the CLI's identity: it is the prog
+  dispatch; returns the status and never raises `SystemExit` (`--help` and
+  `--version` return 0; Ctrl-C returns 130, a broken pipe 1). `name` defaults to `"pixie"` — the CLI's identity: it is the prog
   name **and** the `duho.env.Env` prefix, so `PIXIE_<KEY>` env vars (and an
   optional `pixie_env` companion module of defaults, autoloaded from
   `sys.path`/CWD) supply app settings; the resolved `Env` is attached to the
@@ -650,9 +651,12 @@ command against it.
   `YACONFIGLIB_CONFINE_TO` to also restrict which directories `!include` may
   read from.
 - **Exit codes**: 0 success, 1 the command reported failure (target not found,
-  ambiguous), 2 a configuration or lookup error (reported as one line; `-v`
-  adds the traceback at DEBUG). A command returning a non-int, non-None value
-  is warned about and treated as success rather than crashing after its work.
+  ambiguous), 2 a configuration or lookup error (reported as one line through
+  the `netboot` logger; `-v` adds the traceback at DEBUG; with `DUHO_TRACEBACK`
+  set the exception propagates instead). A netboot-contract command returning
+  a non-int, non-None value is warned about and treated as success rather than
+  crashing after its work; a plain `run(args)` command's returned value is
+  printed to standard output.
 
 ## Built-in commands (`netboot.cmds`)
 
