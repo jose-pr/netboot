@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-10-14
 
 ### Changed
 - `duho` floor moves to `>=0.7.5,<0.8` (pre-1.0 minor, documented API break;
@@ -24,6 +24,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   operator error also prints its traceback to standard error, and the status
   stays 2. `--help`, `--version` and a usage error still raise `SystemExit`
   from `main`, as before.
+- `netimps` moves to `>=0.4.0,<0.5` (pre-1.0 minor, documented API break).
+  The network values netboot hands out are netimps', so its renames reach
+  templates: `target.mac.as_str("-")` is now `target.mac.format("-")`.
+- **Templates are rendered by [`tplx`](https://pypi.org/project/tplx/)**
+  (`tplx[jinja]>=0.1.0,<0.2`), with the same engines, suffixes, search order and
+  `templates_undefined` modes; the `mako`, `liquid`, `handlebars` and
+  `mustache` extras install tplx's. The same templates render the same, with
+  these differences:
+  - An include goes through the per-target names and the image's
+    `template_path`, and a file of another engine is rendered by that engine
+    and inserted: a Jinja `{% include "net" %}` of `net.shtpl` works, where it
+    failed with `AttributeError`. mako, Liquid, Handlebars and Mustache
+    includes and partials search the template roots too.
+  - Every engine sees each context field at the top level (`target`,
+    `image`, ...) beside `ctx`; Jinja and mako saw only `ctx`.
+  - A MAC address in a Liquid, Handlebars or Mustache template renders as
+    `aa:bb:cc:dd:ee:ff`, where it rendered as `DataView(MACAddress(...))`.
+  - An `.epp` template's output no longer gains a trailing newline the
+    template did not write.
+  - The shell engine leaves out `_`-prefixed context names other than `_id`.
+  - Errors are tplx's: `tplx.TemplateNotFound` (was `jinja2.TemplateNotFound`),
+    `tplx.UndefinedError` (was `jinja2.UndefinedError`, or `KeyError` from the
+    shell engine), `tplx.NoEngineError`, `tplx.EngineUnavailableError` and
+    `tplx.RenderError` (was `netboot.templates.TemplateEngineError`, or an
+    `ImportError` naming `netboot[mako]`). `pixie` reports every
+    `tplx.TplxError` as one line and exits 2.
+  - `PIXIE_RUBY` and `PIXIE_PUPPET` are now `TPLX_RUBY` and `TPLX_PUPPET`.
+
+### Removed
+- **`netboot.templates`**: use `tplx` (`Loader`, the engine classes,
+  `register_engine` for `register_template_type`, `unregister_engine`,
+  `registered_engines` for `TEMPLATE_TYPES`, `DataEncoder` for
+  `template_data`/`jsonable`). A plugin engine subclasses `tplx.Template` and
+  implements `render_values(values)`, where `values` holds `ctx` and the context
+  fields. `PixieContext._renderer` is gone; the context's `tplx.Loader` is
+  `_loader`.
+- **`netboot.utils.net`, `netboot.netutils` and the network names
+  `netboot.utils` re-exported** (`Host`, `IPAddress`, `IPInterface`,
+  `IPNetwork`, `MACAddress`, `parse`, `try_parse`, `is_valid`, `is_wildcard`,
+  `resolve`, `ping`, `get_interfaces`, `iter_addresses`, `normalize_host`):
+  import them from `netimps`. netboot's `Host` subclass goes with them, and
+  with it `.try_ip()` (use `host.ip() or str(host)`), `.address` (use
+  `.value`, and build a new `Host` rather than assigning) and `Host()` with no
+  argument (`Host(None)`). `Repository.address` is a `netimps.Host`.
+  A test that faked DNS through `netboot.netutils.resolve` patches
+  `netimps.resolve`.
 
 ## [0.3.2] - 2026-10-03
 
@@ -777,7 +823,7 @@ First packaged release: the `netboot` library with the `pixie` command line.
   config value construction no longer swallows non-`TypeError` errors; repo
   `joinpath` keeps `.local` a path so chained joins work.
 
-[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.3.2...HEAD
+[0.4.0]: https://github.com/jose-pr/netboot/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/jose-pr/netboot/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/jose-pr/netboot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jose-pr/netboot/compare/v0.2.4...v0.3.0
