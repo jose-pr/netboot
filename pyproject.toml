@@ -29,7 +29,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "duho>=0.7.4,<0.8",
+    "duho>=0.7.5,<0.8",
     # Three symbols set this floor, all new in 0.3.3: `is_wildcard` (the unset
     # -address check in PixieContext._template_names), `normalize_host`'s loose
     # union (it takes a `Host`, and raises on a malformed port instead of

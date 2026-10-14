@@ -196,15 +196,28 @@ def test_a_plain_command_returning_a_value_has_it_printed(in_tmp_cwd, capsys):
     assert capsys.readouterr().out.strip() == "hello"
 
 
-def test_duho_traceback_lets_an_operator_error_propagate(in_tmp_cwd, monkeypatch):
+def test_duho_traceback_prints_the_traceback_and_keeps_the_status(
+    in_tmp_cwd, monkeypatch, capsys, caplog
+):
     monkeypatch.setenv("DUHO_TRACEBACK", "1")
-    with pytest.raises(FileNotFoundError):
-        main(argv=["-c", "nosuch.yaml", "initiate", "web01"])
+    with caplog.at_level(logging.ERROR, logger="netboot"):
+        assert main(argv=["-c", "nosuch.yaml", "initiate", "web01"]) == 2
+    assert "Traceback" in capsys.readouterr().err
+    assert "nosuch.yaml" in caplog.text
 
 
-def test_help_returns_zero_instead_of_raising(capsys):
-    assert main(argv=["--help"]) == 0
+def test_help_raises_system_exit_zero(capsys):
+    with pytest.raises(SystemExit) as info:
+        main(argv=["--help"])
+    assert info.value.code == 0
     assert "usage" in capsys.readouterr().out.lower()
+
+
+def test_a_usage_error_raises_system_exit_two(capsys):
+    with pytest.raises(SystemExit) as info:
+        main(argv=["--no-such-option"])
+    assert info.value.code == 2
+    assert "usage" in capsys.readouterr().err.lower()
 
 
 def test_malformed_yaml_is_a_config_error_chained_to_the_yaml_error(in_tmp_cwd):

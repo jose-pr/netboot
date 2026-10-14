@@ -279,8 +279,8 @@ def main(
     variables (and an optional ``pixie_env`` companion module of defaults) apply.
     The resolved ``Env`` is attached to the dispatched instance as ``_env_``.
 
-    Goes through :func:`duho.run` with ``exit=False``, so it returns the status
-    (``--help`` and ``--version`` return 0) and never raises ``SystemExit``.
+    Goes through :func:`duho.run` with ``exit="parse"``: it returns the status,
+    except that ``--help``, ``--version`` and a usage error raise ``SystemExit``.
     A configuration or lookup error is reported as a single line and exits 2;
     the traceback is logged at DEBUG, so ``-v`` still shows it. Other
     exceptions propagate untouched.
@@ -299,7 +299,7 @@ def main(
     return _run(
         Pixie_,
         argv,
-        exit=False,
+        exit="parse",
         commands=commands,
         name=name,
         description=Pixie_.__doc__,
