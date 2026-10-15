@@ -25,8 +25,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `Source.parse()` / `str()`.
   - `file:///x` and `file:/x` are different URIs. netboot still writes the
     service of `.local` as `file:/srv/tftp`.
-- **`yaconfiglib` moves to `>=0.14.0,<0.15`**, the series built on `pathapi`
-  (pre-1.0 minor, documented API break). Configuration loading, `!include`
+- **`yaconfiglib` floor moves to `>=0.13.1,<0.14`**, the first release built on
+  `pathapi`; 0.13.0 needs `pathlib-next`. Configuration loading, `!include`
   globs and merging behave as before.
 - **The `http` extra is removed.** `http`/`https` repository services are sent
   on the standard library by `uripath`, so they need no extra and

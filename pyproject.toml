@@ -48,9 +48,9 @@ dependencies = [
     # resolve can install a jinja2/markupsafe pair that fails on import. The
     # CLI reports jinja2's errors from config interpolation itself.
     "jinja2>=3.0,<4",
-    # 0.14 is the series built on pathapi; 0.13 is built on pathlib-next, whose
-    # path classes are not the ones netboot passes it.
-    "yaconfiglib>=0.14.0,<0.15",
+    # 0.13.1 is the first release built on pathapi; 0.13.0 is built on
+    # pathlib-next, whose path classes are not the ones netboot passes it.
+    "yaconfiglib>=0.13.1,<0.14",
 ]
 
 [project.optional-dependencies]
