@@ -52,7 +52,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `tplx.TplxError` as one line and exits 2.
   - `PIXIE_RUBY` and `PIXIE_PUPPET` are now `TPLX_RUBY` and `TPLX_PUPPET`.
 
+- `shell_quote` is `shlex.quote`: a value with nothing special to the shell
+  is no longer quoted (`{{ shell_quote("web01") }}` renders `web01`, was
+  `'web01'`), and an embedded `'` is written `'"'"'` (was `'\''`). Both read
+  back as the same word in a POSIX shell. The `quote=` argument and its
+  double-quote form are gone.
+
 ### Removed
+- `netboot.utils.flatten`, `netboot.utils.arr_get` and the
+  `netboot.utils.dicts` module; `shell_quote` and `T` are in
+  `netboot.utils.misc` and still importable from `netboot.utils`.
 - **`netboot.templates`**: use `tplx` (`Loader`, the engine classes,
   `register_engine` for `register_template_type`, `unregister_engine`,
   `registered_engines` for `TEMPLATE_TYPES`, `DataEncoder` for
