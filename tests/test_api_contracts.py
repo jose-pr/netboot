@@ -4,14 +4,11 @@ Everything here is promised by the shipped header (`src/netboot/AGENTS.md`)
 and was never exercised, so a change would have broken a consumer silently.
 """
 
-import logging
-
 import pytest
 
 import netboot
 from netboot.content import Repository, Resource
 from netboot.dhcp import DhcpServer, DhcpZone
-from netboot.utils import flatten
 
 
 def test_resource_division_joins_the_path_and_keeps_the_repo():
@@ -75,15 +72,6 @@ def test_zone_derives_its_network_from_a_cidr_gateway():
     zone = DhcpZone(gateway="10.0.5.1/24")
     assert str(zone.network) == "10.0.5.0/24"
     assert str(zone.gateway) == "10.0.5.1"
-
-
-def test_flatten_warns_when_two_sources_collide(caplog):
-    # `{"target": {"ip": x}}` and a global `target_ip` both flatten to
-    # `target_ip`, and the last one silently won.
-    with caplog.at_level(logging.WARNING, logger="netboot"):
-        flat = flatten({"target": {"ip": "10.0.0.5"}, "target_ip": "192.0.2.1"})
-    assert flat["target_ip"] == "192.0.2.1"
-    assert "target_ip" in caplog.text
 
 
 def test_repository_getitem_is_get_with_the_service():

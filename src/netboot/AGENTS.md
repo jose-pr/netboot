@@ -407,21 +407,12 @@ where it is looked for:
   `_parse_<prop>` coercers at construction, and marks the built object as
   merge-opaque — a later config layer replaces it wholesale rather than
   merging field-by-field).
-- **`flatten(map, _prefix="") -> dict`** — recursively flattens a
-  dict/`Namespace`/list into a single-level dict, joining keys with `_`
-  (`{"a": {"b": 1}}` → `{"a_b": 1}`) and using list indices as keys. Two
-  sources that flatten to one key (a global `target_ip` beside
-  `target.ip`) log a warning naming both values; the later one wins.
-- **`shell_quote(text: str | list[str], quote="'") -> str | list[str]`** —
-  quote value(s) so a POSIX shell reads them as literal text. `str` in → `str`
-  out, `list` in → `list` out (element-wise); non-strings are stringified and
-  `None` becomes `''`. The default single-quote form escapes an embedded `'`
-  by closing/escaping/reopening, so nothing inside is special to the shell;
-  `quote='"'` escapes only `"`, `\`, `` ` `` and `$`, leaving the shell's own
-  expansion active — use it only when the template wants that. Any other
-  `quote` raises `ValueError`.
-- **`arr_get(arr, pos, default=None)`** — `arr[pos]` or `default` if out of
-  range.
+- **`shell_quote(value) -> str | list[str]`** — `shlex.quote`, so a POSIX
+  shell reads the result as literal text; also a template global. A value
+  with nothing special to the shell comes back as it is (`web01` stays
+  `web01`), anything else single-quoted. A list or tuple is quoted
+  element-wise and returns a list; a non-string is stringified; `None` is
+  `''`.
 - **`import_(name: str) -> object`** — import `"pkg.mod.attr"` and return
   `attr` (splits on the last dot).
 - **Network values are [`netimps`](https://pypi.org/project/netimps/)'s**,

@@ -1,8 +1,12 @@
+import shlex
 from importlib import import_module
+from typing import Any, List, TypeVar, Union
 
 from pathlib_next import LocalPath, Path, UriPath
 
-__all__ = ["import_", "parse_path"]
+__all__ = ["T", "import_", "parse_path", "shell_quote"]
+
+T = TypeVar("T")
 
 
 def import_(name: str):
@@ -27,3 +31,16 @@ def parse_path(path: "str | Path") -> Path:
     if not sep or len(scheme) < 2 or not scheme.isalnum():
         return LocalPath(text)
     return UriPath(text)
+
+
+def shell_quote(value: Any) -> "Union[str, List[str]]":
+    """`shlex.quote` for a template: a POSIX shell reads the result as literal text.
+
+    A list or tuple is quoted element-wise and comes back as a list; anything
+    else gives a `str`. A value that is not a string is stringified first, and
+    ``None`` is the empty string (``''``). A value with nothing special to the
+    shell comes back as it is.
+    """
+    if isinstance(value, (list, tuple)):
+        return [shell_quote(item) for item in value]
+    return shlex.quote("" if value is None else str(value))

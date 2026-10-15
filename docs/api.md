@@ -40,7 +40,7 @@ the loader, the engines and the engine contract.
 
 ## Utilities
 
-::: netboot.utils.dicts
+::: netboot.utils.misc
 
 ## CLI entry point
 
