@@ -33,7 +33,6 @@ Optional extras:
 | ----- | ------- |
 | `netboot[config]` | YAML config loading for the CLI (`pyyaml`) |
 | `netboot[dns]` | The `dnspython` resolver backend (best coverage; without it hostname targets still resolve via the system/`nslookup` fallbacks) |
-| `netboot[http]` | `http`/`https` repository services (`requests`); `file`/`tftp` repos and rendering need nothing extra |
 | `netboot[kea]` | The `kea://` DHCP backend (`requests`) |
 | `netboot[mako]` | `*.mako` templates (`mako`) |
 | `netboot[liquid]` | `*.liquid` templates (`python-liquid`) |
@@ -41,7 +40,7 @@ Optional extras:
 | `netboot[mustache]` | `*.mustache` templates (`chevron`) |
 | `netboot[dhcpd]` | The `dhcpd://` DHCP backend over OMAPI (`pypureomapi`) |
 | `netboot[winrm]` | `windhcp://` over WinRM (`pywinrm`); over ssh it needs nothing |
-| `netboot[ssh]` | `dnsmasq://` with remote `sftp://` paths (`pathlib_next[sftp]`) |
+| `netboot[ssh]` | `dnsmasq://` with remote `sftp://` paths (`sftppath[uri,paramiko]`) |
 | `netboot[docs]`   | Build the documentation site (`mkdocs`) |
 
 `*.erb` and `*.epp` templates need no extra, but do need `ruby` or `puppet`
@@ -52,7 +51,7 @@ a file no engine claims is copied unchanged. The engines are
 [`tplx`](https://pypi.org/project/tplx/)'s; the template extras install its.
 
 Built on [`duho`](https://github.com/jose-pr/duho) (CLI/args/command discovery),
-[`pathlib_next`](https://github.com/jose-pr/pathlib-next) (URI-aware paths),
+[`pathapi`](https://github.com/jose-pr/pathapi) and `uripath` (URI-aware paths),
 [`yaconfiglib`](https://github.com/jose-pr/yaconfiglib) (layered YAML), and
 [`tplx`](https://github.com/jose-pr/tplx) (templates in any engine). IP/MAC/DNS helpers come from
 [`netimps`](https://pypi.org/project/netimps/).

@@ -4,6 +4,43 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The path layer is `pathapi` and `uripath`, not `pathlib-next`.** netboot
+  depends on `pathapi>=0.1.0,<0.2` and `pathapi-uri>=0.1.0,<0.2` (import
+  package `uripath`) and no longer installs `pathlib-next` or `uritools`. The
+  paths netboot returns are their classes: `Repository.service()`, `.get()`
+  and `.local` are `uripath.URIPath` (were `pathlib_next.uri.UriPath`),
+  `parse_path()` returns `pathapi.LocalPath` or `URIPath`, and a template's
+  `Path` and `Uri` globals are `pathapi.Path` and `uripath.URIPath`. What to
+  do: import them from there in a command module, hook or template that used
+  `pathlib_next`; a `pathlib_next` path handed to netboot is not a `Path`.
+  The URLs netboot builds are the same, but `uripath` differs in these ways a
+  hook or template can see:
+  - A join keeps the query and fragment of the service URI it starts from
+    (`http://h/boot?sig=1` joined with `a` is `http://h/boot/a?sig=1`); it
+    dropped both.
+  - `Query` is no longer a `str`, and `Source.from_str()` / `as_str()` are
+    `Source.parse()` / `str()`.
+  - `file:///x` and `file:/x` are different URIs. netboot still writes the
+    service of `.local` as `file:/srv/tftp`.
+- **`yaconfiglib` moves to `>=0.14.0,<0.15`**, the series built on `pathapi`
+  (pre-1.0 minor, documented API break). Configuration loading, `!include`
+  globs and merging behave as before.
+- **The `http` extra is removed.** `http`/`https` repository services are sent
+  on the standard library by `uripath`, so they need no extra and
+  `Repository.service()` no longer raises an `ImportError` naming
+  `netboot[http]`. What to do: drop `[http]` from the install line (pip warns
+  about the unknown extra and installs the rest). `netboot[kea]` still installs
+  `requests`; install `pathapi-requests` yourself only to send `http`/`https`
+  services through a `requests.Session`.
+- **The `ssh` extra is `sftppath[uri,paramiko]>=0.1.0,<0.2`** (was
+  `pathlib_next[sftp]`): remote `dnsmasq://` paths are `sftp://` paths of
+  `sftppath`, over paramiko. `SFTPPATH_BACKEND` replaces
+  `PATHLIB_NEXT_SFTP_BACKEND` to choose paramiko or asyncssh; the old name is
+  not read.
+
 ## [0.4.0] - 2026-10-14
 
 ### Changed
@@ -832,6 +869,7 @@ First packaged release: the `netboot` library with the `pixie` command line.
   config value construction no longer swallows non-`TypeError` errors; repo
   `joinpath` keeps `.local` a path so chained joins work.
 
+[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/jose-pr/netboot/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/jose-pr/netboot/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/jose-pr/netboot/compare/v0.3.0...v0.3.1

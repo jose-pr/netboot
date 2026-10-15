@@ -57,7 +57,7 @@ Expected output for `initiate web01`: the backend line, then the rendered
   rather than to the connection.
 - **Repo URLs.** `ctx.repos["mirror"].service("tftp")` builds
   `tftp://10.0.0.2/debian` from the repo's address and service path. An
-  `http`/`https` service would additionally need `pip install netboot[http]`.
+  `http`/`https` service is built the same way and needs no extra.
 - **Quoting.** `shell_quote("$6$salt$hash")` renders `'$6$salt$hash'` — the `$`
   sequences reach the installer intact instead of being expanded by the shell
   that reads the file.
