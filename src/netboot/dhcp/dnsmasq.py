@@ -243,17 +243,19 @@ class dnsmasq(DhcpServer):  # noqa: N801 - the class name is the URI scheme
 
 
 def _require_sftp(uri: str) -> None:
-    """Fail with netboot's own extra name before pathlib_next names its own.
+    """Fail with netboot's own extra name before sftppath names its own.
 
-    pathlib_next reaches `sftp://` through paramiko (or asyncssh), neither of
-    which netboot installs; its message names *its* extras, which is not what an
-    operator of netboot has to install.
+    A `sftp://` path needs `sftppath` and an SSH library (paramiko or asyncssh);
+    their errors name sftppath's extras, which is not what an operator of
+    netboot has to install.
     """
     if not uri.startswith("sftp://"):
         return
     import importlib.util as _util
 
-    if _util.find_spec("paramiko") is None and _util.find_spec("asyncssh") is None:
+    if _util.find_spec("sftppath") is None or (
+        _util.find_spec("paramiko") is None and _util.find_spec("asyncssh") is None
+    ):
         raise ImportError(
             "a remote dnsmasq path (sftp://) requires netboot's 'ssh' extra: "
             "pip install netboot[ssh]"

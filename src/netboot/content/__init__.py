@@ -1,39 +1,13 @@
-import importlib.util as _importlib_util
 import typing as _ty
 from typing import Union
 
 from netimps import Host, split_host
-from pathlib_next import Pathname
-from pathlib_next import PosixPathname as RepoPath
-from pathlib_next.uri import Source, UriPath
+from pathapi import Pathname
+from pathapi import PosixPathname as RepoPath
+from uripath import Source, URIPath
 
 from ..logging import LOGGER
 from ..utils.config import Namespace as _NS
-
-#: Schemes whose pathlib_next handler needs the ``http`` extra (``requests``).
-_HTTP_SCHEMES = ("http", "https")
-
-
-def _scheme_of(value: object) -> str:
-    """The scheme of a configured service URI, or ``""`` for a bare path."""
-    text = str(value)
-    return text.split("://", 1)[0].lower() if "://" in text else ""
-
-
-def _require_scheme_support(*schemes: str) -> None:
-    """Raise an actionable :class:`ImportError` for a scheme we cannot serve.
-
-    pathlib_next reaches http(s) through ``requests``, which neither netboot
-    nor ``pathlib_next[uri]`` installs. Without it the scheme handler dies with
-    a bare ``ModuleNotFoundError`` raised from inside the library, which says
-    nothing about how to fix it.
-    """
-    for scheme in schemes:
-        if scheme in _HTTP_SCHEMES and _importlib_util.find_spec("requests") is None:
-            raise ImportError(
-                f"{scheme}:// repository services require netboot's 'http' extra: "
-                "pip install netboot[http]"
-            )
 
 
 class Resource(_NS):
@@ -61,8 +35,8 @@ class Repository(_NS):
     """
 
     address: Host
-    services: dict[str, UriPath]
-    local: "_ty.Optional[UriPath]"
+    services: dict[str, URIPath]
+    local: "_ty.Optional[URIPath]"
 
     def __init__(self, **kwargs) -> None:
         self.services = {}
@@ -71,17 +45,17 @@ class Repository(_NS):
         super().__init__(**kwargs)
         if not isinstance(self.address, Host):
             self.address = Host(self.address)
-        if self.local and not isinstance(self.local, UriPath):
+        if self.local and not isinstance(self.local, URIPath):
             text = str(self.local)
             if len(text) > 1 and text[1] == ":" and text[0].isalpha():
                 # A drive letter is not a URI scheme: "C:\\tftp" parsed as
                 # scheme "c" produced a path nothing could read. Spell it as
                 # the file URI it is.
-                self.local = UriPath("file:///" + text.replace("\\", "/"))
+                self.local = URIPath("file:///" + text.replace("\\", "/"))
             else:
-                self.local = UriPath(text)
+                self.local = URIPath(text)
 
-    def __getitem__(self, key: tuple[str, str]) -> UriPath:
+    def __getitem__(self, key: tuple[str, str]) -> URIPath:
         rel_path, service = key
         return self.get(rel_path, service=service)
 
@@ -110,7 +84,7 @@ class Repository(_NS):
             repo.local = RepoPath(sub) if sub else None
         return repo
 
-    def get(self, *path: Union[RepoPath, str], service: str = None) -> UriPath:
+    def get(self, *path: Union[RepoPath, str], service: str = None) -> URIPath:
         """Join `path` onto a service's base URI, or `None` if undefined."""
         path: RepoPath = RepoPath(
             *[(p if isinstance(p, Pathname) else RepoPath(p)).as_posix() for p in path]
@@ -136,7 +110,7 @@ class Repository(_NS):
 
         The split is netimps' `split_host`, which netboot duplicated for a
         while. It returns a v6 literal **unbracketed**, which is what
-        `pathlib_next`'s `Source` wants -- it brackets one itself.
+        uripath's `Source` wants -- it brackets one itself.
         """
         address = str(self.address)
         if not address:
@@ -177,15 +151,16 @@ class Repository(_NS):
             baseuri = self.services.get(name, None)
             if baseuri is None:
                 return None
-            _require_scheme_support(name, _scheme_of(baseuri))
             host, port = self._service_host(name)
         if baseuri is None:
             return None
-        if not isinstance(baseuri, UriPath):
-            baseuri = UriPath(baseuri)
+        if not isinstance(baseuri, URIPath):
+            baseuri = URIPath(baseuri)
         if not baseuri.source:
+            # host=None writes `file:/srv/tftp`; "" would write an empty
+            # authority (`file:///srv/tftp`) and change every URL built here.
             baseuri = baseuri.with_source(
-                Source(scheme=name, userinfo=None, host=host, port=port)
+                Source(scheme=name, userinfo=None, host=host or None, port=port)
             )
 
         return baseuri

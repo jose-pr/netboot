@@ -183,6 +183,19 @@ def test_a_remote_path_without_the_extra_names_it(monkeypatch):
         DhcpServer("dnsmasq://dhcp01/etc/dnsmasq.d/hosts.d/")
 
 
+def test_a_remote_path_without_an_ssh_library_names_the_extra(monkeypatch):
+    import importlib.util
+
+    real = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *a: None if name in ("paramiko", "asyncssh") else real(name, *a),
+    )
+    with pytest.raises(ImportError, match=r"netboot\[ssh\]"):
+        DhcpServer("dnsmasq://dhcp01/etc/dnsmasq.d/hosts.d/")
+
+
 def test_a_local_reload_runs_directly(tmp_path, engine_factory, monkeypatch):
     hosts, opts = _dirs(tmp_path)
     recorded = []

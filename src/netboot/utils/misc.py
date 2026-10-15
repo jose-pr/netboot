@@ -2,7 +2,8 @@ import shlex
 from importlib import import_module
 from typing import Any, List, TypeVar, Union
 
-from pathlib_next import LocalPath, Path, UriPath
+from pathapi import LocalPath, Path
+from uripath import URIPath
 
 __all__ = ["T", "import_", "parse_path", "shell_quote"]
 
@@ -30,7 +31,7 @@ def parse_path(path: "str | Path") -> Path:
     scheme, sep, _ = text.partition(":")
     if not sep or len(scheme) < 2 or not scheme.isalnum():
         return LocalPath(text)
-    return UriPath(text)
+    return URIPath(text)
 
 
 def shell_quote(value: Any) -> "Union[str, List[str]]":

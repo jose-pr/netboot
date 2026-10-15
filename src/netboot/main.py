@@ -24,7 +24,7 @@ from duho import run as _run
 from jinja2 import TemplateError as _TemplateError
 from duho.discovery import ModuleCommand, discover_commands
 from duho.env import Env
-from pathlib_next import LocalPath, Path, UriPath
+from pathapi import LocalPath, Path
 from tplx import TplxError as _TplxError
 
 from . import Pixie, PixieConfigError, PixieError, __version__

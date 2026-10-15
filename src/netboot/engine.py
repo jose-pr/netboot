@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Mapping, Union, get_type_hints
 
 import netimps
-import pathlib_next
+import pathapi
 import tplx
 from netimps import IPAddress, MACAddress
-from pathlib_next.uri import UriPath
 from tplx import UNDEFINED_MODES
+from uripath import URIPath
 from yaconfiglib import OpaqueMerge
 from yaconfiglib import typed_merge as mergeObjects
 
@@ -303,7 +303,7 @@ class PixieContext(Namespace):
         data = dict(vars(self))
         data["ctx"] = self
         paths = [
-            path if isinstance(path, pathlib_next.Path) else parse_path(str(path))
+            path if isinstance(path, pathapi.Path) else parse_path(str(path))
             for path in self.searchpaths
         ]
         try:
@@ -687,7 +687,7 @@ class Pixie:
                 f"not {undefined!r}"
             )
         roots = [
-            root if isinstance(root, pathlib_next.Path) else parse_path(str(root))
+            root if isinstance(root, pathapi.Path) else parse_path(str(root))
             for root in self._config.get("templates", [])
         ]
         ctx._loader = tplx.Loader(
@@ -695,8 +695,8 @@ class Pixie:
             undefined=undefined,
             globals={
                 "shell_quote": shell_quote,
-                "Path": pathlib_next.Path,
-                "Uri": UriPath,
+                "Path": pathapi.Path,
+                "Uri": URIPath,
             },
             # `_id` names an image or a target, and templates use it.
             encoder=tplx.DataEncoder(expose=["_id"]),

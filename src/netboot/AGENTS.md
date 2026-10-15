@@ -136,7 +136,7 @@ is the same object.
     context; `bytes` for a file the copy engine claims. `strict=True`
     (default) re-raises render errors; `strict=False` logs at DEBUG and
     returns `None`.
-  - **`.resource(name: str | Resource, service: str = None) -> UriPath | None`**
+  - **`.resource(name: str | Resource, service: str = None) -> URIPath | None`**
     — resolve a resource (by id, looked up in `.resources`, or a `Resource`
     directly) to a fetchable URI via its repo's `service`. `None` if the repo
     or resource can't be found.
@@ -198,7 +198,7 @@ options from the URI query (see below) and translates them.
 - **`dnsmasq://[host]/?hostsfile=&optsfile=&reload=&pidfile=`**
   (`netboot.dhcp.dnsmasq`) — writes `dhcp-host`/`dhcp-option`/`dhcp-boot`
   entries. Paths may carry their own scheme; a bare path is local when the URI
-  has no host and `sftp://<host>/<path>` when it does (`netboot[ssh]`). A
+  has no host and `sftp://<host>/<path>` when it does (`netboot[ssh]`: `sftppath` with paramiko). A
   **directory** gets one file per target; a **file** gets a marked region netboot
   owns. `reload=` runs a command, over ssh when the URI names a host — omit it
   for a `--dhcp-hostsdir`, which dnsmasq re-reads by itself; a plain file
@@ -344,29 +344,30 @@ servers identifies a reservation by it.
 - **`Resource(**kwargs)`** — `path` (`Pathname`, coerced via `_parse_path`),
   `src` (repo id string). `resource / "sub"` joins the path, same `src`.
 - **`Repository(**kwargs)`** — `address` (`netimps.Host`), `services`
-  (`dict[str, UriPath]`), `local` (`UriPath | None`, a filesystem/local
+  (`dict[str, URIPath]`), `local` (`URIPath | None`, a filesystem/local
   service; a Windows drive path such as `C:\tftp` is read as a path and becomes
   a `file:` URI, not URI scheme `c`). `repo / "sub"` (`.joinpath`) returns a **new** `Repository` with
   every service (and `.local`) suffixed by `sub` — the original is untouched.
-  **`.get(*path, service=None) -> UriPath | None`** — join `path` onto the
+  **`.get(*path, service=None) -> URIPath | None`** — join `path` onto the
   named service's base URI (`service=None` → `.local`, scheme `"file"`);
-  `None` if that service isn't defined. **`.service(name) -> UriPath | None`**
+  `None` if that service isn't defined. **`.service(name) -> URIPath | None`**
   — the base URI for `name`. For a *relative* service path the authority is
   filled in from `.address`: resolved to an IP (`Host.ip()`, or the name as
   written when it does not resolve) for every scheme
   except `https`, which keeps the configured name so TLS validation and
   name-based virtual hosts still work. An `address` of the form `host:port` or
   `[v6]:port` becomes a real host and port (**`netimps.split_host`**; a v6
-  literal comes back unbracketed, which is what `pathlib_next`'s `Source` wants,
+  literal comes back unbracketed, which is what uripath's `Source` wants,
   and a malformed port raises `PixieConfigError` naming the repo) rather than a
   hostname containing an
   escaped colon, and a repo with no address warns. A service written as a full
   URI keeps its own authority untouched. `repo[path, service]` is sugar for `.get(path, service=service)`.
-  An `http`/`https` service needs the **`http` extra** (`pip install
-  netboot[http]`): pathlib_next reaches those schemes through `requests`, which
-  `pathlib_next[uri]` does not install. Without it `.service()`/`.get()` raise
-  `ImportError` naming the extra; `file`/`tftp` services and rendering need
-  nothing extra.
+  `http`/`https` services need nothing extra: `uripath` sends them on the
+  standard library (`pathapi-requests` swaps in a `requests` transport and is
+  never required). A service with no authority, such as `.local`, is written
+  `file:/srv/tftp`, with no empty `//`. `tftp` is not a scheme `uripath`
+  implements: such a URI is built, joined and printed, which is all netboot does
+  with it.
 
 ## Templates (`tplx`)
 
@@ -377,8 +378,8 @@ where it is looked for:
 - **Data**: every engine sees `ctx` (the `PixieContext`) and each of its
   fields at the top level (`target`, `image`, `dhcpzone`, `repos`,
   `resources`, `generated`, `version`, and every merged global), plus the
-  helpers `shell_quote`, `Path` (**`pathlib_next.Path`**) and `Uri`
-  (`pathlib_next.uri.UriPath`). The engines that cannot evaluate Python get it
+  helpers `shell_quote`, `Path` (**`pathapi.Path`**) and `Uri`
+  (`uripath.URIPath`). The engines that cannot evaluate Python get it
   through a `tplx.DataEncoder(expose=["_id"])`, so `_id` reaches them
   (`%{IMAGE__ID}`, `@image['_id']`) while other `_`-prefixed names do not.
 - **Names**: `ctx._template_names(name)` gives the candidates (MAC, hostname,
@@ -467,7 +468,7 @@ command against it.
 - **`Pixie_`** (`PixieArgs` + `duho.Cli`) — the runnable app root;
   `_version_` is `netboot.__version__`.
 - **`parse_path(path: str | Path) -> Path`** — a bare path → `LocalPath`; a
-  path containing `:` (a URI scheme) → `UriPath`.
+  path containing `:` (a URI scheme) → `URIPath`.
 - Command-module contract (built-ins in `netboot.cmds`; discovered the same
   way via `--cmdspath` / `PIXIE_CMDS_PATH`, `os.pathsep`-separated): a module
   exposing `register(parser, args)` (add its argparse arguments) and

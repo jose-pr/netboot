@@ -6,8 +6,8 @@ either way.
 """
 
 # Imported for its side effect: importing the scheme modules is what registers
-# `http://`, `file://`, `tftp://` and friends with pathlib_next's URI parser.
-import pathlib_next.uri.schemes  # noqa: F401
+# `http://`, `file://`, `ftp://` and friends with uripath's URI parser.
+import uripath.schemes  # noqa: F401
 
 from ._version import __version__
 from .content import Repository, Resource
