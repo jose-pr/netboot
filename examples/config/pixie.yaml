@@ -1,5 +1,8 @@
 # A complete, runnable netboot config. See examples/README.md.
 
+# Relative to this file's directory; without it the root is ./templates here.
+templates: ../templates
+
 globals:
   domain: example.com
 

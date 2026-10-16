@@ -129,8 +129,8 @@ def _load_config(args: "Pixie_") -> dict:
     """Load and merge the netboot YAML config into a dict.
 
     Mirrors the original loader: an explicit ``--config`` file, else ``pixie.yaml``
-    under ``--baseconfig`` (default ``./config``). ``conf['templates']`` gets the
-    CWD ``templates`` dir prepended and every entry coerced to a :class:`Path`.
+    under ``--baseconfig`` (default ``./config``). ``conf['templates']`` becomes
+    a list of :class:`Path` roots (see :func:`_template_roots`).
     """
     try:
         import yaml
@@ -190,17 +190,28 @@ def _load_config(args: "Pixie_") -> dict:
             f"{type(conf).__name__}: {baseconfig}/{configs[0]}"
         )
 
-    templates = conf.setdefault("templates", [])
-    if templates is None:
-        templates = conf["templates"] = []
-    elif not isinstance(templates, list):
-        # `templates: some/dir` is the obvious way to write a single path.
-        templates = conf["templates"] = [templates]
-    templates.insert(0, cwd / "templates")
-    for idx, template in enumerate(templates):
-        if not isinstance(template, Path):
-            templates[idx] = parse_path(template)
+    conf["templates"] = _template_roots(conf.get("templates"), baseconfig)
     return conf
+
+
+def _template_roots(declared, baseconfig: Path) -> "list[Path]":
+    """The template roots a config names, else `<config dir>/templates`.
+
+    A relative root is resolved against the config's directory, as `!include`
+    is, so a config means the same thing whichever directory pixie runs from.
+    """
+    if not declared:
+        return [baseconfig / "templates"]
+    if not isinstance(declared, list):
+        # `templates: some/dir` is the obvious way to write a single path.
+        declared = [declared]
+    roots = []
+    for root in declared:
+        path = root if isinstance(root, Path) else parse_path(root)
+        if not path.is_absolute():
+            path = baseconfig / path
+        roots.append(path)
+    return roots
 
 
 def _wants_netboot(run: "_ty.Callable | None") -> bool:
