@@ -160,7 +160,7 @@ is the same object.
 
 ## DHCP (`netboot.dhcp`)
 
-The servers are **dhcpctl**'s (`dhcpctl>=0.1.0,<0.2`, its own shipped
+The servers are **dhcpctl**'s (distribution `pydhcpctl>=0.1.0,<0.2`, its own shipped
 `AGENTS.md` documents the backends, options, conditions and completion). This
 module is what is about targets: zones, the layering of `dhcp_options` /
 `dhcp_when` / `dhcp_complete`, and the secrets netboot reads. It re-exports

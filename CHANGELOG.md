@@ -8,7 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - **The DHCP backends are `dhcpctl`'s.** netboot depends on
-  `dhcpctl>=0.1.0,<0.2`, and `netboot.dhcp` is a module that builds each
+  `pydhcpctl>=0.1.0,<0.2` (imported as `dhcpctl`), and `netboot.dhcp` is a module that builds each
   target's reservation for it: `DhcpZone`, `connect(uri)`, `build_options`,
   `build_conditions`, `build_completion`, `reservation_for(ctx, server)`,
   `arm` and `disarm`. What a server is sent is unchanged, byte for byte,
