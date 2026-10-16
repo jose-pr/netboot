@@ -79,32 +79,36 @@ test suite every engine passes.
 
 ## Custom DHCP backends
 
-`netboot.dhcp.DhcpServer` dispatches on the URI scheme of a zone's `dhcpservers`
-entry: a subclass whose lowercased class name equals the scheme handles it.
+The DHCP backends are [dhcpctl](https://github.com/jose-pr/dhcpctl)'s, and a
+zone's `dhcpservers` URIs are built with `dhcpctl.connect`, which picks the
+backend by scheme. A new scheme is a `dhcpctl.DHCPServer` subclass, registered
+under it:
 
 ```python
-from netboot.dhcp import DhcpServer
+import dhcpctl
 
-class dnsmasq(DhcpServer):        # handles dnsmasq://...
-    def add_target(self, ctx):
-        ...                       # arm DHCP for ctx.target
-    def remove_target(self, ctx):
-        ...                       # disarm it
+class Recorder(dhcpctl.DHCPServer):
+    def add(self, reservation):
+        ...        # arm DHCP for reservation.target
+    def remove(self, reservation):
+        ...        # disarm it
+
+dhcpctl.register_backend("recorder", Recorder)   # handles recorder://...
 ```
 
-netboot ships four backends — `netboot.dhcp.dnsmasq`, `.kea`, `.dhcpd` and
-`.windhcp` — and they are the worked examples: one writes files (locally or over
-`sftp://`), one speaks a REST API, one a binary protocol, and one runs
-PowerShell over ssh or WinRM. A backend gets its client options from
-`self.options_for(ctx)` and translates them; see the configuration guide for
-what an operator writes.
+netboot hands every backend a `dhcpctl.Reservation`: the target (`name`, `mac`,
+`ip`, `hostname`), the zone as its `scope`, the options netboot layered for it,
+its `dhcp_when` conditions and `dhcp_complete` completion, and the netboot
+context as `reservation.context` — so a backend can render a template or read
+the image. dhcpctl documents the rest of the contract (`keep`,
+`ensure_condition`, `condition_recipe`, ...) and its four shipped backends are
+the worked examples.
 
-Subclassing at any depth is honoured, so a backend may share an intermediate
-base. Import your plugin module before the config builds the zones — pass
-`--load-module your.plugin` (repeat or colon-separate for several) so the
-`DhcpServer` subclass is registered when `dnsmasq://...` is resolved.
-
-An unknown scheme raises a clear `ValueError` rather than silently doing nothing.
+Register before the config builds the zones: import your plugin module with
+`--load-module your.plugin` (repeat or colon-separate for several), or declare it
+in the `dhcpctl.backends` entry-point group of an installed package, which needs
+no flag at all. An unknown scheme is a configuration error naming the schemes
+that are registered.
 
 ### Extra commands and conditions
 
@@ -124,17 +128,21 @@ dhcpservers:
 
 ```python
 # from code, which is the one that can look at the target
-from netboot.dhcp.dhcpd import dhcpd
+import dhcpctl
+from dhcpctl.backends import DHCPDBackend
 
-class dhcpd(dhcpd):                      # still handles dhcpd://
-    def extras(self, ctx, phase="add"):
-        lines = super().extras(ctx, phase)   # keep the config's own fragments
+class IPXEDHCPD(DHCPDBackend):
+    def extras(self, reservation, phase="add"):
+        lines = super().extras(reservation, phase)  # keep the config's own
+        ctx = reservation.context                   # netboot's context
         if phase == "add" and ctx.image.globals.get("ipxe"):
             lines.append(
                 'if exists user-class and option user-class = "iPXE" '
                 '{ filename "boot.ipxe"; } else { filename "undionly.kpxe"; }'
             )
         return lines
+
+dhcpctl.register_backend("dhcpd", IPXEDHCPD, replace=True)  # now serves dhcpd://
 ```
 
 `phase` is `add` or `remove`. A bare `raw.<backend>=` belongs to `add`;
@@ -165,8 +173,6 @@ Order is defined: modelled options first, then `extras()`, in the order given
 overrides an option therefore comes after the thing it overrides, which is what
 both dhcpd's last-write-wins statements and a Windows policy need.
 
-A declarative, cross-backend way to say "serve this file to iPXE and that one to
-a PXE ROM" is not here yet, because the backends disagree about where a condition
-lives — dhcpd puts it on the host, Windows in a scope-level policy, dnsmasq in a
-tag, Kea in a client class. `extras()` is what makes it expressible today.
+For the iPXE chainload itself there is also a declarative way, `dhcp_when:`
+(see the configuration guide), which each backend turns into its own construct.
 

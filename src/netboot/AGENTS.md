@@ -159,150 +159,67 @@ is the same object.
 
 ## DHCP (`netboot.dhcp`)
 
-- **`DhcpServer(uri: str)`** — base class for DHCP backends, dispatched by
-  URI scheme: `DhcpServer("dnsmasq://...")` returns an instance of whichever
-  registered subclass has a matching lowercased class name (any subclass
-  depth, so a plugin may subclass an intermediate base). Raises `ValueError`
-  if no subclass matches the scheme — import the plugin module first (e.g.
-  via CLI `--load-module`). `.uri` holds the original URI.
-  - **`.add_target(ctx: PixieContext)`** / **`.remove_target(ctx)`** — no-ops
-    on the base class; a backend overrides these to actually arm/disarm.
-  When two registered subclasses claim the same scheme, the most recently
-  defined one wins and a warning names both — silently picking one makes the
-  other plugin look broken. **`.get_local_server(servers, default)`** accepts
-  the strings config and globals actually hold as well as parsed addresses,
-  skips anything unparseable with a warning, and returns `default` when no
-  server lies inside the zone's network.
-
-- **`DhcpServer.SETTINGS`** — the query keys a backend reads as *connection*
-  settings. Every other key in a `dhcpservers` URI query is a **client option**
-  (see `netboot.dhcp.options`), so the two vocabularies must stay disjoint.
-- **`DhcpServer.options_for(ctx) -> DhcpOptions`** — the merged client options
-  for this target on this server.
+The servers are **dhcpctl**'s (`dhcpctl>=0.1.0,<0.2`, its own shipped
+`AGENTS.md` documents the backends, options, conditions and completion). This
+module is what is about targets: zones, the layering of `dhcp_options` /
+`dhcp_when` / `dhcp_complete`, and the secrets netboot reads. It re-exports
+nothing from dhcpctl.
 
 - **`DhcpZone(**kwargs)`** (`Namespace` + `OpaqueMerge`) — `network`
   (`IPNetwork`), `gateway` (`IPAddress | None`), `domain` (`str | None`),
   `search` (`list[str]`), `nameservers` (`list[IPAddress]`), `globals`,
-  `dhcpservers` (`list[DhcpServer]`, strings coerced via `DhcpServer(uri)`).
-  Accepts `gateway`+`netmask`, or a CIDR `network`/`gateway` string, and
-  derives the rest. **`.nameserver`** — first of `.nameservers`, or `""`.
-  **`.get_local_server(servers, default)`** — first `server` contained in
-  `.network`, else `default`.
+  `dhcpservers` (`list[dhcpctl.DHCPServer]`; a string is built with
+  `connect(uri)`, a server object is kept), and optionally `subnet_id` (Kea)
+  and `scope` (Windows scope id). Accepts `gateway`+`netmask`, or a CIDR
+  `network`/`gateway` string, and derives the rest. **`.nameserver`** — first of
+  `.nameservers`, or `""`. **`.get_local_server(servers, default)`** — first
+  server inside `.network`, else `default`; accepts strings and skips
+  unparseable ones with a warning.
+- **`connect(uri) -> dhcpctl.DHCPServer`** — `dhcpctl.connect` with
+  `owner="netboot"` (**`OWNER`**: dnsmasq region markers, Windows policy names
+  `netboot-<mac>[-<name>]`, recipe comments). A secret comes from the URI's
+  user/password when it has them, else from the environment, read **when the
+  backend asks**: windhcp `password` ← **`WINDHCP_PASSWORD_ENV_VAR`**
+  (`PIXIE_WINDHCP_PASSWORD`), `user` ← **`WINDHCP_USER_ENV_VAR`**
+  (`PIXIE_WINDHCP_USER`); dhcpd `omapi_key` ← **`DHCPD_OMAPI_KEY_ENV_VAR`**
+  (`PIXIE_DHCPD_OMAPI_KEY`; a `keyfile=` outranks both). Logs, errors and
+  `pixie dhcp-config` show a server as its URI with the password masked
+  (`str(server)`). An unknown scheme or an unusable URI raises
+  `PixieConfigError`. A backend for a new scheme is registered with
+  `dhcpctl.register_backend(scheme, cls)` (e.g. from a `--load-module` plugin)
+  or the `dhcpctl.backends` entry-point group.
+- **`scope_for(zone) -> dhcpctl.Scope`** — `name` is the zone id, `network`,
+  `subnet_id`, `scope_id` from the zone's `scope`.
+- **`zone_defaults(zone) -> dhcpctl.DHCPOptions`** — `router`,
+  `domain-name-servers`, `domain-name`, `domain-search`, `subnet-mask`,
+  `broadcast-address`, from what the zone knows.
+- **`build_options(ctx, server) -> dhcpctl.DHCPOptions`** — merges, later
+  winning: zone defaults → the server URI's query options → `image.dhcp_options`
+  → `target.dhcp_options` → the server's `options_builder=` (an import path or
+  callable, `fn(ctx, options) -> options`) → the `PixieEvent.BuildDhcpOptions`
+  hook (`target=`, `server=` kwargs). An unknown option name, or a builder/hook
+  not returning a mapping, raises `PixieConfigError`. A builder returning a
+  plain dict keeps the URI's `raw.*` fragments.
+- **`build_conditions(ctx) -> dict[str, dhcpctl.Condition]`** — `dhcp_when:`
+  from zone → image → target, layered **by name** (a target redeclaring `ipxe`
+  replaces the image's). **`build_completion(ctx) -> dhcpctl.Completion`** —
+  `dhcp_complete:`, the most specific declaration wins; default removes the
+  entry. A malformed block raises `PixieConfigError` naming the object.
+- **`reservation_for(ctx, server) -> dhcpctl.Reservation`** — the target
+  (`name` = `_id`, the null MAC becomes `None`, an unset ip `None`), the zone's
+  scope, `build_options`, `build_conditions`, `build_completion`, and
+  `context=ctx`, so a backend subclass overriding `extras(reservation, phase)`
+  can decide per target from `reservation.context`.
+- **`arm(ctx, server)`** / **`disarm(ctx, server)`** — `server.add` /
+  `server.complete` with that reservation (`complete` removes the entry, or
+  keeps it per `dhcp_complete:`). A target with no MAC on a backend that keys by
+  one raises `PixieLookupError`. The engine's `pxe_init` / `pxe_complete` call
+  these per server: arming is best effort (raises the first error only when no
+  server armed), disarming never raises. `BuildDhcpOptions` therefore fires once
+  per server per arm/disarm.
 
-## DHCP backends (`netboot.dhcp.*`)
-
-Four ship, each imported only when a config names its scheme — so importing
-`netboot.dhcp` pulls in none of their dependencies. Every one takes its client
-options from the URI query (see below) and translates them.
-
-- **`dnsmasq://[host]/?hostsfile=&optsfile=&reload=&pidfile=`**
-  (`netboot.dhcp.dnsmasq`) — writes `dhcp-host`/`dhcp-option`/`dhcp-boot`
-  entries. Paths may carry their own scheme; a bare path is local when the URI
-  has no host and `sftp://<host>/<path>` when it does (`netboot[ssh]`: `sftppath` with paramiko). A
-  **directory** gets one file per target; a **file** gets a marked region netboot
-  owns. `reload=` runs a command, over ssh when the URI names a host — omit it
-  for a `--dhcp-hostsdir`, which dnsmasq re-reads by itself; a plain file
-  without it raises.
-- **`kea://`, `keas://`** (`netboot.dhcp.kea`, `netboot[kea]`) —
-  `reservation-add`/`reservation-del` through the control agent. `?service=`
-  selects `dhcp4`/`dhcp6`. Needs the **host_cmds** hook and a writable hosts
-  backend; `result: 2` is reported with that cause. `subnet-id` comes from the
-  zone (`subnet_id`) or a matched `config-get`.
-- **`dhcpd://host:7911/?keyname=&keyfile=`** (`netboot.dhcp.dhcpd`,
-  `netboot[dhcpd]`) — an OMAPI host object whose `statements` carry the options,
-  escaped. Secret from `keyfile=` or `$PIXIE_DHCPD_OMAPI_KEY`. A host added this
-  way does **not** survive a dhcpd restart by itself.
-- **`windhcp://[user@]host/?transport=local|ssh|winrm&method=powershell|netsh&server=&auth=&port=&ssl=`**
-  (`netboot.dhcp.windhcp`) — Windows DHCP over **`local`** PowerShell (the default
-  when the URI has no host, e.g. `windhcp:///?server=dhcp01`; refused on
-  non-Windows), the system `ssh` client (the default for a named host, no
-  dependency) or WinRM (`netboot[winrm]`, password from
-  `$PIXIE_WINDHCP_PASSWORD`, account from the URI or `$PIXIE_WINDHCP_USER`). All
-  three send the **same script**: `local` is the ssh transport without the ssh. **`transport=` is how we get a shell, `method=` is
-  what runs there**: `powershell` (default) for the `DhcpServer` module's
-  cmdlets, `netsh` for `netsh dhcp server ...` on a host without that module.
-  `server=` becomes `-ComputerName`, or netsh's `\\server` (already-`\\`-prefixed
-  is left alone). An option's value is always a **list** in the payload, because
-  `Set-DhcpServerv4OptionValue -Value` takes `String[]` and refuses a joined
-  `"a,b"`; netsh takes one argument per value. Under `method=netsh` the script
-  **reads the state back** (`netsh ... dump`) and fails naming any option that is
-  missing or short of values, because netsh exits 0 and claims success after
-  silently dropping a value it dislikes. Parameters travel as a JSON payload, never interpolated into
-  the script — including under `netsh`, which is invoked as
-  `& netsh @($c.Args)` so every argument stays an array element. netsh is judged
-  by `$LASTEXITCODE`, not its localised success line; a `delete` carries
-  `Ignore` so cleanup can re-run; option data types come from `_OPTION_TYPES`
-  (unlisted → `STRING`), a multi-valued option becomes one argument per value
-  (the cmdlets take it comma-joined instead), and a reservation is added as
-  `BOTH`. The scope is the zone's network address, overridable with `scope`
-  **on the zone**.
-
-Each raises `PixieLookupError` for a target with no MAC — every one of these
-servers identifies a reservation by it.
-
-- **Completion** (`netboot.dhcp.completion`) — `dhcp_complete:` decides what a
-  finished target's entry becomes, because one that still gets `boot-file-name`
-  reinstalls itself. **`build_completion(ctx) -> DhcpCompletion`** layers zone →
-  image → target (most specific wins); `.keep` is `False` by default (remove the
-  entry, netboot's original behaviour), and `.apply_to(options)` returns the
-  options a kept entry should have — **`BOOT_OPTIONS`** (`boot-file-name`,
-  `next-server`, `tftp-server-name`) **replaced** by `.options`, everything else
-  untouched. `options` without `keep: true` is a config error, not a no-op.
-  The engine calls **`DhcpServer.complete_target(ctx)`**, which is
-  `remove_target` unless the entry is kept, in which case it first calls
-  `remove_condition_member` for every condition (a kept entry still matching one
-  would keep being served the installer) and then **`keep_target(ctx,
-  completion)`**. The base `keep_target` raises `NotImplementedError`, so a
-  backend that cannot keep an entry is reported rather than silently ignoring the
-  config. All four shipped backends implement it; `kea` uses `reservation-add`'s
-  upsert so a failure leaves the old reservation rather than none.
-- **Conditions** (`netboot.dhcp.conditions`) — `dhcp_when:` is a **mapping keyed
-  by name**, and the key is the backend's own construct name.
-  **`build_conditions(ctx) -> dict[str, DhcpCondition]`** layers zone → image →
-  target by name; **`DhcpCondition`** carries `.name`, `.match`, `.options` and
-  `.option_codes`; **`MATCH_KEYS`** is `user-class` (77) and `vendor-class` (60),
-  the tests every backend can express.
-  The backend contract is a ladder: **`ensure_condition(ctx, condition) -> str`**
-  uses the construct if it exists, creates it if it can, raises
-  **`ConditionMissing`** (carrying `.recipe`) if it cannot, and raises
-  **`ConditionUnsupported`** if the backend has no such concept at all — the base
-  implementation. **`condition_recipe(ctx, condition) -> str`** is that recipe,
-  and the same text the error carries. **`remove_condition_member(ctx, condition)`**
-  detaches a target that *keeps* its reservation, never deleting the shared
-  construct. Neither exception is a `PixieError` (the engine imports this
-  package), and both are caught by best-effort arming, so one backend refusing
-  leaves the others armed.
-  Per backend: `windhcp` creates a scope-level policy **plus the user/vendor
-  class it references** (Windows refuses a policy naming an undefined class) and
-  always does so through the cmdlets, because **netsh has no policy verb at all**.
-  **A reservation's options outrank every policy** (reservation > scope policy >
-  server policy > scope > server, per option), so an overridden option id is
-  **omitted from the reservation** and served by policies: one per condition
-  matched on the target's MAC *and* the test, plus a **base** policy on the MAC
-  alone carrying what the reservation would have said, with `ProcessingOrder` set
-  explicitly so the conditional one is consulted first. `conditions=shared`
-  instead makes one policy per condition name with no MAC, for a host where
-  netboot cannot create policies (an admin then creates them once); the base value
-  is the operator's to provide in that mode. Completion removes a target's own
-  policies and never a shared one;
-  `dhcpd` inlines an `if` (default) or writes a named group with
-  `conditions=group`; `kea` adds a client class with `class-add` when the
-  `class_cmds` hook is loaded and names it in the reservation's
-  `client-classes`; `dnsmasq` **refuses**, because the tag needs a `dhcp-match`
-  line in a config file netboot does not own.
-- **`DhcpServer.extras(ctx, phase="add") -> list`** — the extension point for
-  anything netboot does not model: an extra statement, an extra command, or a
-  condition (the iPXE chainload is the usual one). The default returns the
-  configured `raw.<backend>` fragments for that phase; a subclass overrides it to
-  decide **per target**, and should call `super()` to keep the config's own. The
-  fragment shape is the backend's: dhcpd statements, dnsmasq config lines, a kea
-  `option-data` entry, or — for windhcp — a PowerShell line or a
-  `{"Args": [...], "Ignore": bool}` netsh command, which is rendered as a quoted
-  `netsh` call when the method is `powershell` rather than dropped. `phase` is
-  `add` or `remove` (**`PHASES`**); a bare `raw.<backend>` is `add`,
-  `raw.<backend>.remove` is teardown. Fragments are emitted **verbatim** — no
-  parsing, validation or escaping — and always **after** the modelled options,
-  so a conditional overrides them.
+Any other `dhcpctl.DHCPCtlError` (a server refusing, a backend's library not
+installed) reaches the CLI as a one-line error with exit status 2.
 
 - **`pixie dhcp-config [target] [--apply] [--as USER]`**
   (`netboot.cmds.dhcp_config`) — prints each server's `condition_recipe()` with a
@@ -310,34 +227,11 @@ servers identifies a reservation by it.
   `--apply` calls `ensure_condition` per server and returns 1 if any failed,
   having done the rest. `--as` implies `--apply` and prompts with `getpass`, only
   on a TTY — without one it fails naming `PIXIE_WINDHCP_PASSWORD`, rather than
-  blocking an unattended run. The password goes into the environment the backends
-  already read, never a log or a script. **The only command that prompts**; this
-  is where privileged one-offs live so `initiate`/`complete` stay unattended.
-
-## DHCP options (`netboot.dhcp.options`)
-
-- **`GENERIC_OPTIONS`** — the option names netboot models and every backend
-  translates (`router`, `domain-name-servers`, `domain-name`, `domain-search`,
-  `next-server`, `boot-file-name`, `tftp-server-name`, `host-name`,
-  `subnet-mask`, `broadcast-address`, `lease-time`, `ntp-servers`,
-  `vendor-class-identifier`). A numeric `option-<n>` or a bare number is always
-  accepted, for anything not modelled.
-- **`APPLY_TIME`** — names that are resolved **when a target is applied**, never
-  from a connection string: `subnet_id`/`scope` belong to the **zone**,
-  `boot-file-name`/`next-server`/`tftp-server-name` to the **image or target**,
-  `host-name` to the target itself. Passing one in a URI query raises
-  `PixieConfigError` naming where it belongs — a boot file pinned to a
-  connection would hand every target on that server the same one.
-- **`DhcpOptions(dict)`** — the merged options, plus **`.raw`** /
-  **`.raw_for(backend)`**: backend-native text from `raw.<backend>=` in the
-  query, never translated.
-- **`build_options(ctx, server) -> DhcpOptions`** — merges, later winning: zone
-  defaults (from `gateway`/`nameservers`/`domain`/`search`/`network`) → the
-  server URI's query → `image.dhcp_options` → `target.dhcp_options` → the
-  server's `options_builder=` callback (`fn(ctx, options) -> options`) → the
-  `PixieEvent.BuildDhcpOptions` hook. An unknown option name raises.
-- **`split_query(uri, settings, backend)`** → `(settings, options, builder)`.
-  A repeated key becomes a list, which is how a multi-valued option is written.
+  blocking an unattended run. The password goes into the environment the
+  secrets are read from, never a log or a script. **The only command that
+  prompts**; this is where privileged one-offs live so `initiate`/`complete` stay
+  unattended. `conditions_for(ctx)` and `recipe(ctx, server, condition)` are the
+  module's helpers for the same output.
 
 ## Content (`netboot.content`)
 

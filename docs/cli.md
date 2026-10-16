@@ -47,7 +47,7 @@ DHCP backend in the target's zone.
 
 Rendering is **not** something `initiate` does on its own: the built-in command
 arms DHCP, and artifacts are produced by whatever renders `ctx.render(...)` —
-a hook on `PixieEvent.EndPixieInitialize`, a `DhcpServer` backend, or your own
+a hook on `PixieEvent.EndPixieInitialize`, a DHCP backend, or your own
 command. `--iscsi` is likewise a flag for such a hook to read: the built-in
 logic accepts it and does nothing with it.
 

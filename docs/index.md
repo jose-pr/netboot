@@ -14,7 +14,7 @@ netboot is a small, hook-driven engine. A YAML config declares:
 For a given target netboot builds a render **context** and produces netboot files
 from Jinja2 or shell-style templates, resolving template names by MAC, hostname
 or IP with sensible fallbacks. Behaviour is extensible through an event-hook
-system and pluggable `DhcpServer` backends.
+system and pluggable DHCP backends (from [dhcpctl](https://github.com/jose-pr/dhcpctl)).
 
 ## Install
 
@@ -45,5 +45,5 @@ Jinja2. IP/MAC/DNS helpers come from
 
 - [CLI](cli.md) — the `initiate` / `complete` commands and global options.
 - [Configuration](configuration.md) — the shape of the YAML config.
-- [Extending](extending.md) — hooks and custom `DhcpServer` backends.
+- [Extending](extending.md) — hooks and custom DHCP backends.
 - [API Reference](api.md) — the `Pixie` engine and context objects.

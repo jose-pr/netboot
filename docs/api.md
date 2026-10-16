@@ -23,9 +23,10 @@ The engine and its context objects. Rendered from source via
 
 ## DHCP
 
-::: netboot.dhcp.DhcpZone
+The servers are [dhcpctl](https://jose-pr.github.io/dhcpctl/)'s; this module
+builds each target's reservation for them.
 
-::: netboot.dhcp.DhcpServer
+::: netboot.dhcp
 
 ## Content repositories
 

@@ -53,7 +53,9 @@ repos:
 
 Each entry under a zone's `dhcpservers` is a URI. Its **scheme** picks the
 backend; its **query string** carries that backend's connection settings and the
-DHCP options the server should give the client.
+DHCP options the server should give the client. The backends are
+[dhcpctl](https://github.com/jose-pr/dhcpctl)'s, and each netboot extra below
+installs the matching dhcpctl one.
 
 | Scheme | Server | How it applies a reservation | Needs |
 | ------ | ------ | ---------------------------- | ----- |

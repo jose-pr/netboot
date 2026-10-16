@@ -23,7 +23,7 @@ PYTHONPATH=plugins pixie -l recording complete db01
 
 `-l/--load-module recording` imports the plugin so the `recording://` scheme in
 `dhcpzones.lan.dhcpservers` resolves to a backend; without it, building the
-zone raises `ValueError` for the unknown scheme. `PYTHONPATH=plugins` is only
+zone fails with a configuration error naming the unknown scheme. `PYTHONPATH=plugins` is only
 needed because the module lives in a subdirectory here — an installed plugin
 package needs just `-l your.plugin`.
 

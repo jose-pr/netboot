@@ -7,6 +7,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **The DHCP backends are `dhcpctl`'s.** netboot depends on
+  `dhcpctl>=0.1.0,<0.2`, and `netboot.dhcp` is a module that builds each
+  target's reservation for it: `DhcpZone`, `connect(uri)`, `build_options`,
+  `build_conditions`, `build_completion`, `reservation_for(ctx, server)`,
+  `arm` and `disarm`. What a server is sent is unchanged, byte for byte,
+  including the names netboot writes on it (`# >>> netboot` regions,
+  `netboot-<mac>` Windows policies). Removed, with what to do:
+  - `DhcpServer` and its scheme-by-class-name dispatch: subclass
+    `dhcpctl.DHCPServer` and call `dhcpctl.register_backend(scheme, cls)` from
+    the `--load-module` plugin, or declare it in the `dhcpctl.backends` entry
+    point. A backend implements `add(reservation)` / `remove(reservation)`
+    (were `add_target(ctx)` / `remove_target(ctx)`), `keep(reservation)` (was
+    `keep_target(ctx, completion)`), and `extras(reservation, phase)` (was
+    `extras(ctx, phase)`); the netboot context is `reservation.context`.
+  - `netboot.dhcp.dnsmasq`/`.kea`/`.dhcpd`/`.windhcp`: the backends are
+    `dhcpctl.backends.DnsmasqBackend`, `KeaBackend`, `DHCPDBackend` and
+    `WinDHCPBackend`; to override one, register the subclass with
+    `replace=True`.
+  - `netboot.dhcp.options`, `.conditions` and `.completion`: `GENERIC_OPTIONS`,
+    `APPLY_TIME`, `DhcpOptions`, `split_query`, `DhcpCondition`, `MATCH_KEYS`,
+    `DhcpCompletion` and `BOOT_OPTIONS` are dhcpctl's (`DHCPOptions`,
+    `Condition`, `Completion`, ...); `build_options`, `build_conditions`,
+    `build_completion` and `zone_defaults` are in `netboot.dhcp`.
+    `ConditionMissing` / `ConditionUnsupported` are
+    `dhcpctl.ConditionMissingError` / `ConditionUnsupportedError`.
+  - `windhcp.PASSWORD_ENV_VAR` / `USER_ENV_VAR` are
+    `netboot.dhcp.WINDHCP_PASSWORD_ENV_VAR` / `WINDHCP_USER_ENV_VAR`, and
+    `dhcpd.KEY_ENV_VAR` is `DHCPD_OMAPI_KEY_ENV_VAR`; the variables are the
+    same `PIXIE_*` ones, now read only when the URI has no user or password
+    of its own: `windhcp://admin:pw@host` and `dhcpd://keyname:key@host` work.
+    Logs, errors and `pixie dhcp-config` show a server's URI with the password
+    masked.
+  - `netboot.DhcpServer` is no longer exported.
+  The `kea`, `dhcpd`, `winrm` and `ssh` extras install dhcpctl's of the same
+  name. An unknown scheme, or a URI a backend cannot use, is a
+  `PixieConfigError`; a server refusing is a `dhcpctl.ServerError`, reported by
+  the CLI as one line with status 2. `PixieEvent.BuildDhcpOptions` now fires
+  once per server for every backend, including one that never asks for its
+  options.
 - **The path layer is `pathapi` and `uripath`, not `pathlib-next`.** netboot
   depends on `pathapi>=0.1.0,<0.2` and `pathapi-uri>=0.1.0,<0.2` (import
   package `uripath`) and no longer installs `pathlib-next` or `uritools`. The

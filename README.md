@@ -16,7 +16,7 @@ lives on) and content **repos** (where artifacts are fetched/served from). For a
 given target `netboot` builds a render **context** and produces netboot files from
 Jinja2 or shell-style templates, resolving names by MAC, hostname or IP with
 sensible fallbacks. Backends and behaviour are extensible through an event-hook
-system and pluggable `DhcpServer` handlers.
+system and pluggable DHCP backends (from [dhcpctl](https://github.com/jose-pr/dhcpctl)).
 
 ## Install
 
@@ -99,12 +99,13 @@ pixie.complete(target)                   # cleanup once installed
   `Pixie(...)`. Each hook `f(event, netboot, value, kwargs) -> value` is called for
   every `PixieEvent` and may transform the value flowing through it — used to
   customise lookup, context construction and the init/complete lifecycle.
-- **DHCP backends.** netboot ships four — `dnsmasq://`, `kea://`, `dhcpd://` and
-  `windhcp://` (Windows, over ssh or WinRM) — each imported only when a config
-  names its scheme. Write your own by subclassing `netboot.dhcp.DhcpServer`: the
-  lowercased class name is the URI scheme it handles, and `--load-module`
-  registers it before the config builds the zones. What the server should tell
-  the client rides in the URI query; see the configuration guide.
+- **DHCP backends.** Four come with [dhcpctl](https://github.com/jose-pr/dhcpctl)
+  — `dnsmasq://`, `kea://`, `dhcpd://` and `windhcp://` (Windows, locally or over
+  ssh or WinRM) — each imported only when a config names its scheme. Write your
+  own by subclassing `dhcpctl.DHCPServer` and registering it with
+  `dhcpctl.register_backend(scheme, cls)` from a `--load-module` plugin, or the
+  `dhcpctl.backends` entry point. What the server should tell the client rides
+  in the URI query; see the configuration guide.
 
 A complete runnable setup — config, both template engines and a DHCP plugin —
 is in [`examples/`](https://github.com/jose-pr/netboot/tree/main/examples).
