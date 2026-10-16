@@ -30,8 +30,9 @@ classifiers = [
 ]
 dependencies = [
     # The DHCP servers netboot arms: dnsmasq, Kea, ISC dhcpd and Windows DHCP.
+    # Imported as `dhcpctl`.
     # Importing it imports no backend dependency; the extras below add them.
-    "dhcpctl>=0.1.0,<0.2",
+    "pydhcpctl>=0.1.0,<0.2",
     "duho>=0.7.5,<0.8",
     # The 0.4 series has `split_host`, `MACAddress.format` and
     # `MACAddress.is_valid`, all of which netboot calls. `resolve()` answers [] by
@@ -70,10 +71,10 @@ mustache = ["tplx[mustache]"]
 # nothing for a local server, and windhcp nothing over its local or ssh
 # transport. http(s) repository services need no extra: uripath sends them on
 # the standard library.
-kea = ["dhcpctl[kea]"]                   # kea:// control agent
-dhcpd = ["dhcpctl[dhcpd]"]               # dhcpd:// OMAPI
-winrm = ["dhcpctl[winrm]"]               # windhcp://...?transport=winrm
-ssh = ["dhcpctl[ssh]"]                   # dnsmasq:// over sftp:// paths
+kea = ["pydhcpctl[kea]"]                   # kea:// control agent
+dhcpd = ["pydhcpctl[dhcpd]"]               # dhcpd:// OMAPI
+winrm = ["pydhcpctl[winrm]"]               # windhcp://...?transport=winrm
+ssh = ["pydhcpctl[ssh]"]                   # dnsmasq:// over sftp:// paths
 # The dnspython resolver backend for netimps' resolve(), used to look up
 # hostname targets. netimps >=0.2.0 makes dnspython optional, so this extra is
 # the only thing that installs it: with it, resolution has full record-type and
@@ -90,7 +91,7 @@ dev = [
     "pyyaml",
     "dnspython",
     # Backend dependencies, so the golden DHCP test runs rather than skips.
-    "dhcpctl[kea,dhcpd,winrm]",
+    "pydhcpctl[kea,dhcpd,winrm]",
     # Template engines behind an extra, so their tests run rather than skip.
     "mako",
     "python-liquid",
