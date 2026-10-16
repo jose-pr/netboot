@@ -1,0 +1,26 @@
+--- step
+initialize
+--- kea
+{"auth": null, "payload": {"arguments": {"name": "ipxe"}, "command": "class-get", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+--- kea
+{"auth": null, "payload": {"arguments": {"client-classes": [{"name": "ipxe", "option-data": [{"data": "boot.ipxe", "name": "boot-file-name"}], "test": "option[77].text == 'iPXE'"}]}, "command": "class-add", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+--- kea
+{"auth": null, "payload": {"command": "config-get", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+--- kea
+{"auth": null, "payload": {"arguments": {"reservation": {"boot-file-name": "undionly.kpxe", "client-classes": ["ipxe"], "hw-address": "aa:bb:cc:dd:ee:ff", "ip-address": "10.0.0.10", "next-server": "10.0.0.2", "option-data": [{"data": "10.0.0.1", "name": "router"}, {"data": "10.0.0.53,10.0.0.54", "name": "domain-name-servers"}, {"data": "example.com", "name": "domain-name"}, {"data": "example.com", "name": "domain-search"}, {"data": "255.255.255.0", "name": "subnet-mask"}, {"data": "10.0.0.255", "name": "broadcast-address"}], "subnet-id": 7}}, "command": "reservation-add", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+--- step
+complete
+--- kea
+{"auth": null, "payload": {"arguments": {"identifier": "aa:bb:cc:dd:ee:ff", "identifier-type": "hw-address", "subnet-id": 7}, "command": "reservation-del", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+--- recipes
+// netboot: add to kea-dhcp4.conf under Dhcp4.client-classes
+{
+  "name": "ipxe",
+  "test": "option[77].text == 'iPXE'",
+  "option-data": [
+    {
+      "name": "boot-file-name",
+      "data": "boot.ipxe"
+    }
+  ]
+}

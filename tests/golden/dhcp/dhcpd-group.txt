@@ -1,0 +1,31 @@
+--- step
+initialize
+--- omapi
+["connect", "dhcp01", 7911, "b'omapi_key'", "b'c2VjcmV0'"]
+--- omapi
+["add_group", ["ipxe", "if exists user-class and option user-class = /"iPXE/" { filename /"boot.ipxe/"; }"], {}]
+--- omapi
+["add_host_supersede", ["10.0.0.10", "aa:bb:cc:dd:ee:ff", "web01"], {"statements": "option routers 10.0.0.1; option domain-name-servers 10.0.0.53, 10.0.0.54; option domain-name /"example.com/"; option domain-search /"example.com/"; option subnet-mask 255.255.255.0; option broadcast-address 10.0.0.255; filename /"undionly.kpxe/"; next-server 10.0.0.2;"}]
+--- omapi
+["change_group", ["web01", "ipxe"], {}]
+--- omapi
+["close", [], {}]
+--- step
+complete
+--- omapi
+["connect", "dhcp01", 7911, "b'omapi_key'", "b'c2VjcmV0'"]
+--- omapi
+["add_host_supersede", ["10.0.0.10", "aa:bb:cc:dd:ee:ff", "web01"], {"statements": null}]
+--- omapi
+["close", [], {}]
+--- omapi
+["connect", "dhcp01", 7911, "b'omapi_key'", "b'c2VjcmV0'"]
+--- omapi
+["add_host_supersede", ["10.0.0.10", "aa:bb:cc:dd:ee:ff", "web01"], {"statements": "option routers 10.0.0.1; option domain-name-servers 10.0.0.53, 10.0.0.54; option domain-name /"example.com/"; option domain-search /"example.com/"; option subnet-mask 255.255.255.0; option broadcast-address 10.0.0.255; filename /"sanboot.ipxe/";"}]
+--- omapi
+["close", [], {}]
+--- recipes
+# netboot: add to dhcpd.conf so 'ipxe' survives a restart
+group "ipxe" {
+  if exists user-class and option user-class = "iPXE" { filename "boot.ipxe"; }
+}

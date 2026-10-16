@@ -1,0 +1,28 @@
+--- step
+initialize
+--- subprocess
+{"argv": ["systemctl", "reload", "dnsmasq"], "input": null}
+--- file after-initialize dnsmasq/hosts.conf
+# >>> netboot web01
+dhcp-host=aa:bb:cc:dd:ee:ff,set:web01,10.0.0.10,web01
+# <<< netboot web01
+
+--- file after-initialize dnsmasq/opts.conf
+# >>> netboot web01
+dhcp-boot=tag:web01,undionly.kpxe,,10.0.0.2
+dhcp-option=tag:web01,3,10.0.0.1
+dhcp-option=tag:web01,6,10.0.0.53,10.0.0.54
+dhcp-option=tag:web01,15,example.com
+dhcp-option=tag:web01,119,example.com
+dhcp-option=tag:web01,1,255.255.255.0
+dhcp-option=tag:web01,28,10.0.0.255
+# <<< netboot web01
+
+--- step
+complete
+--- subprocess
+{"argv": ["systemctl", "reload", "dnsmasq"], "input": null}
+--- file after-complete dnsmasq/hosts.conf
+
+--- file after-complete dnsmasq/opts.conf
+

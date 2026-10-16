@@ -68,14 +68,14 @@ def run(netboot: Pixie, args, conf: dict) -> int:
         zone = ctx.dhcpzone
         if zone is None:
             continue
-        conditions = list(_conditions(ctx).values())
+        conditions = list(conditions_for(ctx).values())
         if not conditions:
             continue
         for server in getattr(zone, "dhcpservers", None) or []:
             for condition in conditions:
                 printed += 1
                 if not apply:
-                    _print(server, condition, server.condition_recipe(ctx, condition))
+                    _print(server, condition, recipe(ctx, server, condition))
                     continue
                 try:
                     server.ensure_condition(ctx, condition)
@@ -115,10 +115,16 @@ def _targets(netboot: Pixie, args):
     return [target]
 
 
-def _conditions(ctx):
+def conditions_for(ctx):
+    """The `dhcp_when:` conditions that apply to this context's target."""
     from netboot.dhcp.conditions import build_conditions
 
     return build_conditions(ctx)
+
+
+def recipe(ctx, server, condition) -> str:
+    """What `server` needs for `condition`, in its own syntax."""
+    return server.condition_recipe(ctx, condition)
 
 
 def _print(server, condition, recipe: str) -> None:
