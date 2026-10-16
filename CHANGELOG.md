@@ -46,6 +46,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the CLI as one line with status 2. `PixieEvent.BuildDhcpOptions` now fires
   once per server for every backend, including one that never asks for its
   options.
+- **Template roots resolve against the config file's directory.** Through the
+  CLI, a relative `templates:` root is joined to the directory of the config
+  file, as `!include` is, and with no `templates:` the root is `templates`
+  beside the config file (`./config/templates` by default). The working
+  directory's `./templates` is no longer prepended. What to do: a config that
+  relied on `./templates` names it, relative to the config file (the example
+  config now says `templates: ../templates`).
 - **The path layer is `pathapi` and `uripath`, not `pathlib-next`.** netboot
   depends on `pathapi>=0.1.0,<0.2` and `pathapi-uri>=0.1.0,<0.2` (import
   package `uripath`) and no longer installs `pathlib-next` or `uritools`. The

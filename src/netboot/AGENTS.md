@@ -144,7 +144,8 @@ is the same object.
     backing resource `name`.
   - **`.searchpaths -> list[Path]`** — `target.template_path +
     image.template_path`. These **extend** the engine-wide template roots
-    (`config["templates"]`, `./templates` by default) and are consulted before
+    (`config["templates"]`; through the CLI, `<config dir>/templates` by
+    default) and are consulted before
     them. A *relative* entry is resolved inside each root
     (`template_path: [debian]` -> `<root>/debian`), so it does not depend on the
     process's working directory; an absolute path or a URI is used as given.
@@ -281,7 +282,8 @@ where it is looked for:
   `.searchpaths` the search paths, both passed to `tplx` for the template
   **and for every include inside it**. Name specificity outranks search-path
   order: a MAC-named file in the last search path beats a bare-named file in
-  the first. The roots are `config["templates"]`, `./templates` by default.
+  the first. The roots are `config["templates"]` (through the CLI,
+  `<config dir>/templates` by default).
 - **The engine is chosen by suffix**: `.j2`/`.jinja`/`.jinja2` Jinja, `.mako`,
   `.liquid`, `.hbs`/`.handlebars`, `.mustache`, `.erb` (ruby), `.epp`
   (puppet), `.shtpl` the `%{NAME}` shell engine, anything else is copied as
@@ -373,8 +375,11 @@ command against it.
   dispatched through plain `duho.run_command(command, instance)`.
 - Loading the config (`-c/--config`, else `<baseconfig>/pixie.yaml`) requires
   the `config` extra (`pyyaml`); raises `ImportError` with an install hint
-  otherwise. `conf["templates"]` always gets the CWD's `templates` dir
-  prepended, and a scalar `templates:` is accepted as a one-element list.
+  otherwise. `conf["templates"]` is the config's `templates:` (a scalar is a
+  one-element list), each **relative root resolved against the config file's
+  directory** as `!include` is, an absolute path or URI used as given; with no
+  `templates:` (or an empty one) it is `[<config dir>/templates]`. The working
+  directory is never a root.
   An empty or comment-only file loads as `{}`; a top level that is not a
   mapping raises `PixieConfigError`.
 - **Config loading is hardened**: the loader runs with `allow_commands=False`

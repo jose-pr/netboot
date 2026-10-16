@@ -273,17 +273,22 @@ images:
 
 ## Where templates are looked for
 
-`templates` is the list of **template roots** — the CWD's `templates` directory
-is always prepended, so `./templates` is the default root and a config that
-names none still works.
+`templates` is the list of **template roots**. A relative root is resolved
+against the **config file's directory**, the same base `!include` uses, and with
+no `templates:` at all the root is `templates` beside the config file
+(`./config/templates` for the default `./config/pixie.yaml`). An absolute path or
+a URI is used as given. The working directory is never a root, so a config means
+the same thing whichever directory `pixie` runs from:
+
+```yaml
+templates: [../templates, /srv/netboot/shared]   # beside ./config, then absolute
+```
 
 An image's or target's `template_path` **extends** the search path; it does not
 replace the roots, and the roots are always searched last:
 
 - a **relative** entry is resolved inside each root, so `template_path: [debian]`
-  means `./templates/debian`. A config therefore means the same thing whichever
-  directory `pixie` runs from — it used to be resolved against the process's
-  working directory, which is not where the config lives;
+  means `<root>/debian`;
 - an **absolute** path or a **URI** (`/srv/tftp/tpl`, `http://boot/tpl`) is used
   as given.
 
