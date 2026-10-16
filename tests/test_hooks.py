@@ -1,14 +1,14 @@
 """Tests for the hook chain and the initialize/complete lifecycle.
 
 Hooks are the extension contract the README advertises and had no coverage.
-The lifecycle is observed through a recording `DhcpServer` backend rather than
+The lifecycle is observed through a recording DHCP backend rather than
 by talking to anything: no server is started and no socket is opened.
 """
 
+import dhcpctl
 import pytest
 
 import netboot
-from netboot.dhcp import DhcpServer
 
 _HOOK_MODULE = """
 CALLS = []
@@ -20,17 +20,24 @@ def hook(event, netboot, value, kwargs):
 """
 
 
-class recorder(DhcpServer):
-    """A DhcpServer whose scheme is ``recorder://``; records arm/disarm calls."""
+class recorder(dhcpctl.DHCPServer):
+    """A backend for ``recorder://``; records arm/disarm calls."""
 
     #: (action, target id) for every call, across every instance.
     CALLS = []
 
-    def add_target(self, ctx):
-        recorder.CALLS.append(("add", ctx.target._id))
+    def add(self, reservation):
+        recorder.CALLS.append(("add", reservation.context.target._id))
 
-    def remove_target(self, ctx):
-        recorder.CALLS.append(("remove", ctx.target._id))
+    def remove(self, reservation):
+        recorder.CALLS.append(("remove", reservation.context.target._id))
+
+
+@pytest.fixture(autouse=True)
+def _recorder_backend():
+    dhcpctl.register_backend("recorder", recorder)
+    yield
+    dhcpctl.unregister_backend("recorder")
 
 
 def _config(tmp_path, **extra):
@@ -153,6 +160,8 @@ def test_initialize_emits_the_documented_event_sequence(tmp_path):
         "PixieEvent.FoundTargetImage",
         "PixieEvent.FoundTargetDhcpzone",
         "PixieEvent.PixieContextForTarget",
+        # Once per server in the zone, as its reservation is built.
+        "PixieEvent.BuildDhcpOptions",
         "PixieEvent.EndPixieInitialize",
     ]
 
@@ -169,7 +178,7 @@ def test_complete_emits_the_documented_event_sequence(tmp_path):
 
 
 def test_unknown_dhcp_scheme_is_a_clear_error(tmp_path):
-    with pytest.raises(ValueError, match="No DhcpServer backend registered"):
+    with pytest.raises(netboot.PixieConfigError, match="no dhcpctl backend serves"):
         netboot.Pixie(
             **_config(
                 tmp_path,

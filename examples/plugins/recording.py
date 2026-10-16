@@ -1,16 +1,20 @@
-"""A DhcpServer backend that prints instead of touching real DHCP.
+"""A DHCP backend that prints instead of touching real DHCP.
 
 Run the example with `--load-module recording` so the `recording://` scheme in
-the config resolves to this class.
+the config resolves to this class: importing the module registers it.
 """
 
-from netboot.dhcp import DhcpServer
+import dhcpctl
 
 
-class recording(DhcpServer):  # handles recording://...
-    def add_target(self, ctx):
-        print(f"[dhcp] arm   {ctx.target._id} -> {ctx.target.ip} ({self.uri})")
+class RecordingBackend(dhcpctl.DHCPServer):
+    def add(self, reservation):
+        target, ctx = reservation.target, reservation.context
+        print(f"[dhcp] arm   {target.name} -> {target.ip} ({self.uri})")
         print(ctx.render("boot.cfg"))
 
-    def remove_target(self, ctx):
-        print(f"[dhcp] disarm {ctx.target._id} ({self.uri})")
+    def remove(self, reservation):
+        print(f"[dhcp] disarm {reservation.target.name} ({self.uri})")
+
+
+dhcpctl.register_backend("recording", RecordingBackend, replace=True)

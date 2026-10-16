@@ -7,36 +7,38 @@ that replaced the render context, a zone chosen by declaration order.
 
 import logging
 
+import dhcpctl
 import pytest
 
 import netboot
-from netboot.dhcp import DhcpServer
 
 
-class _Recorder(DhcpServer):
+class _Recorder(dhcpctl.DHCPServer):
     """Records calls; `fail_on` makes one operation raise."""
 
     calls: list = []
 
-    def __init__(self, uri: str):
-        super().__init__(uri)
+    def __init__(self, uri: str, **kwargs):
+        super().__init__(uri, **kwargs)
         self.fail_on = None
 
-    def add_target(self, ctx):
+    def add(self, reservation):
         _Recorder.calls.append(("arm", self.uri))
         if self.fail_on == "add":
-            raise RuntimeError(f"{self.uri} refused to arm")
+            raise RuntimeError(f"{self} refused to arm")
 
-    def remove_target(self, ctx):
+    def remove(self, reservation):
         _Recorder.calls.append(("disarm", self.uri))
         if self.fail_on == "remove":
-            raise RuntimeError(f"{self.uri} refused to disarm")
+            raise RuntimeError(f"{self} refused to disarm")
 
 
 @pytest.fixture(autouse=True)
 def _reset_calls():
     _Recorder.calls = []
+    dhcpctl.register_backend("rollback", _Recorder)
     yield
+    dhcpctl.unregister_backend("rollback")
     _Recorder.calls = []
 
 
@@ -57,10 +59,6 @@ def _engine(**overrides):
     return netboot.Pixie(**config)
 
 
-class rollback(_Recorder):  # scheme `rollback://`
-    pass
-
-
 def test_arming_survives_a_failing_backend_with_a_warning(caplog):
     engine = _engine()
     zone = engine.dhcpzones["lan"]
@@ -70,6 +68,22 @@ def test_arming_survives_a_failing_backend_with_a_warning(caplog):
     # a is offline; b is still armed and nothing is rolled back.
     assert _Recorder.calls == [("arm", "rollback://a"), ("arm", "rollback://b")]
     assert "could not arm host1 on rollback://a" in caplog.text
+
+
+def test_a_failing_backend_is_logged_without_its_password(caplog):
+    engine = _engine(
+        dhcpzones={
+            "lan": {
+                "network": "10.0.0.0/24",
+                "dhcpservers": ["rollback://u:s3cret@a", "rollback://b"],
+            }
+        }
+    )
+    engine.dhcpzones["lan"].dhcpservers[0].fail_on = "add"
+    with caplog.at_level(logging.WARNING, logger="netboot"):
+        engine.initialize(engine.lookup_target("host1"))
+    assert "could not arm host1 on rollback://u:***@a" in caplog.text
+    assert "s3cret" not in caplog.text
 
 
 def test_arming_raises_when_every_backend_fails():

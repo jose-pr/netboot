@@ -22,8 +22,15 @@ import getpass
 import os
 import sys
 
+import dhcpctl
+
 from netboot import Pixie
-from netboot.dhcp.conditions import ConditionMissing, ConditionUnsupported
+from netboot.dhcp import (
+    WINDHCP_PASSWORD_ENV_VAR,
+    WINDHCP_USER_ENV_VAR,
+    build_conditions,
+    reservation_for,
+)
 from netboot.logging import LOGGER
 
 
@@ -78,12 +85,12 @@ def run(netboot: Pixie, args, conf: dict) -> int:
                     _print(server, condition, recipe(ctx, server, condition))
                     continue
                 try:
-                    server.ensure_condition(ctx, condition)
-                except ConditionUnsupported as exc:
+                    server.ensure_condition(reservation_for(ctx, server), condition)
+                except dhcpctl.ConditionUnsupportedError as exc:
                     # Nothing to apply here, ever. Say so and keep going.
                     LOGGER.warning("%s", exc)
                     failures += 1
-                except ConditionMissing as exc:
+                except dhcpctl.ConditionMissingError as exc:
                     # Applying is what this command is for, so this means the
                     # rights or the hook are missing even now.
                     LOGGER.error("%s", exc)
@@ -93,7 +100,7 @@ def run(netboot: Pixie, args, conf: dict) -> int:
                         "%s: %s is in place on %s",
                         target._id,
                         condition.name,
-                        getattr(server, "uri", server),
+                        server,
                     )
     if not printed:
         LOGGER.info("No conditional options are configured, so nothing is needed.")
@@ -117,20 +124,18 @@ def _targets(netboot: Pixie, args):
 
 def conditions_for(ctx):
     """The `dhcp_when:` conditions that apply to this context's target."""
-    from netboot.dhcp.conditions import build_conditions
-
     return build_conditions(ctx)
 
 
 def recipe(ctx, server, condition) -> str:
     """What `server` needs for `condition`, in its own syntax."""
-    return server.condition_recipe(ctx, condition)
+    return server.condition_recipe(reservation_for(ctx, server), condition)
 
 
 def _print(server, condition, recipe: str) -> None:
     """One recipe, with a header naming where it belongs."""
-    uri = getattr(server, "uri", server)
-    print(f"# {uri} -- dhcp_when.{condition.name}")
+    # `str` of a server is its URI with any password masked.
+    print(f"# {server} -- dhcp_when.{condition.name}")
     print(recipe or "# (nothing to configure for this backend)")
     print()
 
@@ -144,18 +149,16 @@ def _prompt_password(user: str) -> bool:
     written, or interpolated into a generated script -- the backends pass it as
     data, which is the rule the whole windhcp script follows.
     """
-    from netboot.dhcp.windhcp import PASSWORD_ENV_VAR
-
     if not sys.stdin.isatty():
         LOGGER.error(
             "--as needs a terminal to prompt on; set %s for an unattended run",
-            PASSWORD_ENV_VAR,
+            WINDHCP_PASSWORD_ENV_VAR,
         )
         return False
     password = getpass.getpass(f"Password for {user}: ")
     if not password:
         LOGGER.error("No password given, so nothing was applied.")
         return False
-    os.environ[PASSWORD_ENV_VAR] = password
-    os.environ.setdefault("PIXIE_WINDHCP_USER", user)
+    os.environ[WINDHCP_PASSWORD_ENV_VAR] = password
+    os.environ.setdefault(WINDHCP_USER_ENV_VAR, user)
     return True

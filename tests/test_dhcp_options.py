@@ -1,26 +1,18 @@
-"""The DHCP option model: what the query string carries, and what it refuses.
+"""How netboot layers a target's DHCP options before a server sees them.
 
-Two vocabularies share a backend's query string — its own connection settings
-and the client options — so the tests here are mostly about keeping them apart,
-and about refusing anything that varies per target (a boot file pinned to a
-connection would hand every target on that server the same one).
+Zone defaults, then the server's connection query, then the image's and the
+target's `dhcp_options`, then the server's `options_builder`, then the
+`BuildDhcpOptions` hook -- later wins. What the query string itself accepts is
+dhcpctl's, and tested there.
 """
 
-import logging
 import sys
 
+import dhcpctl
 import pytest
 
 import netboot
-from netboot.dhcp import DhcpServer
-from netboot.dhcp.options import (
-    APPLY_TIME,
-    GENERIC_OPTIONS,
-    DhcpOptions,
-    build_options,
-    is_option,
-    split_query,
-)
+from netboot.dhcp import build_options
 
 
 def test_importing_the_dhcp_package_pulls_in_no_backend_dependency():
@@ -42,87 +34,10 @@ def test_importing_the_dhcp_package_pulls_in_no_backend_dependency():
     assert result.stdout.strip() == "", f"netboot.dhcp imported {result.stdout.strip()}"
 
 
-def test_the_base_class_still_imports_from_its_old_home():
-    from netboot.dhcp import DhcpServer, DhcpZone
-
-    assert DhcpServer.__module__ == "netboot.dhcp"
-    assert DhcpZone.__module__ == "netboot.dhcp"
-
-
-class _Fake(DhcpServer):
-    """A backend with settings, for splitting tests."""
+class _Fake(dhcpctl.DHCPServer):
+    """A backend with settings, for layering tests."""
 
     SETTINGS = frozenset({"hostsfile", "reload"})
-
-
-def test_settings_and_options_split_by_vocabulary():
-    settings, options, builder = split_query(
-        "fake://h?hostsfile=/etc/x&reload=systemctl+reload+d&router=10.0.0.1",
-        _Fake.SETTINGS,
-        "fake",
-    )
-    assert settings == {"hostsfile": "/etc/x", "reload": "systemctl reload d"}
-    assert options == {"router": "10.0.0.1"}
-    assert builder is None
-
-
-def test_a_repeated_key_is_a_list():
-    _, options, _ = split_query(
-        "fake://h?domain-name-servers=10.0.0.53&domain-name-servers=10.0.0.54",
-        _Fake.SETTINGS,
-        "fake",
-    )
-    assert options["domain-name-servers"] == ["10.0.0.53", "10.0.0.54"]
-
-
-def test_raw_is_kept_per_backend_and_never_translated():
-    _, options, _ = split_query(
-        "fake://h?raw.dnsmasq=dhcp-option%3Dtag%3Ax%2C66%2C10.0.0.2",
-        _Fake.SETTINGS,
-        "fake",
-    )
-    assert options.raw_for("dnsmasq") == ["dhcp-option=tag:x,66,10.0.0.2"]
-    assert options.raw_for("kea") == []
-    assert dict(options) == {}
-
-
-def test_an_unknown_key_names_both_vocabularies():
-    with pytest.raises(netboot.PixieConfigError) as excinfo:
-        split_query("fake://h?nosuchthing=1", _Fake.SETTINGS, "fake")
-    message = str(excinfo.value)
-    assert "nosuchthing" in message and "hostsfile" in message and "router" in message
-
-
-@pytest.mark.parametrize("key", sorted(APPLY_TIME))
-def test_an_apply_time_key_is_refused_and_says_where_it_belongs(key):
-    with pytest.raises(netboot.PixieConfigError) as excinfo:
-        split_query(f"fake://h?{key}=x", _Fake.SETTINGS, "fake")
-    message = str(excinfo.value)
-    assert key in message
-    assert APPLY_TIME[key].split()[1] in message  # "zone" / "image" / "target"
-
-
-def test_numeric_options_are_always_accepted():
-    assert is_option("option-66") and is_option("66")
-    assert not is_option("option-abc")
-    _, options, _ = split_query("fake://h?option-66=10.0.0.2", _Fake.SETTINGS, "fake")
-    assert options["option-66"] == "10.0.0.2"
-
-
-def test_shipped_backend_settings_never_collide_with_option_names():
-    # A backend that names a setting `server-identifier` would silently eat that
-    # option; this is the test that stops it, before an operator's boot does.
-    from netboot.dhcp import _SHIPPED, _load_backend
-
-    for scheme in _SHIPPED:
-        _load_backend(scheme)
-        backend = next(
-            (c for c in DhcpServer.__subclasses__() if c.__name__ == scheme), None
-        )
-        if backend is None:  # not implemented yet
-            continue
-        overlap = set(backend.SETTINGS) & (GENERIC_OPTIONS | set(APPLY_TIME))
-        assert not overlap, f"{scheme} settings collide with options: {overlap}"
 
 
 def _engine(**overrides):
@@ -242,29 +157,3 @@ def test_the_hook_sees_the_options_and_can_change_them():
     options = build_options(_context(engine), _Fake("fake://h"))
     assert seen["target"] == "host1"
     assert options["ntp-servers"] == "10.0.0.123"
-
-
-def test_an_unknown_scheme_says_how_to_provide_one():
-    with pytest.raises(ValueError, match="--load-module"):
-        DhcpServer("nosuchscheme://host")
-
-
-def test_a_shipped_scheme_that_is_not_built_yet_names_its_extra():
-    # Self-adjusting: as each backend lands, it drops out of this check by
-    # constructing successfully instead.
-    from netboot.dhcp import _SHIPPED, _load_backend
-
-    for scheme, hint in _SHIPPED.items():
-        _load_backend(scheme)
-        if any(c.__name__ == scheme for c in DhcpServer.__subclasses__()):
-            continue
-        with pytest.raises(ValueError, match="install"):
-            DhcpServer(f"{scheme}://host/")
-
-
-def test_dhcp_options_copy_keeps_raw():
-    options = DhcpOptions({"router": "10.0.0.1"}, raw={"dnsmasq": ["x"]})
-    clone = options.copy()
-    clone["router"] = "10.0.0.2"
-    assert options["router"] == "10.0.0.1"
-    assert clone.raw_for("dnsmasq") == ["x"]

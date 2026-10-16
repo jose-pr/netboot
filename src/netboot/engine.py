@@ -25,7 +25,7 @@ from yaconfiglib import typed_merge as mergeObjects
 
 from ._version import __version__
 from .content import Repository, Resource
-from .dhcp import DhcpZone
+from .dhcp import DhcpZone, arm, disarm
 from .logging import LOGGER
 from .utils import T, shell_quote
 from .utils.misc import import_, parse_path
@@ -214,12 +214,12 @@ class PixieContext(Namespace):
         armed = 0
         for dhcpserver in self.dhcpzone.dhcpservers:
             try:
-                dhcpserver.add_target(self)
+                arm(self, dhcpserver)
             except Exception as exc:
                 LOGGER.warning(
                     "could not arm %s on %s: %s",
                     self.target._id,
-                    getattr(dhcpserver, "uri", dhcpserver),
+                    dhcpserver,
                     exc,
                     exc_info=LOGGER.isEnabledFor(logging.DEBUG),
                 )
@@ -238,14 +238,14 @@ class PixieContext(Namespace):
         """
         for dhcpserver in self.dhcpzone.dhcpservers:
             try:
-                # `complete_target` is `remove_target` unless the config says to
-                # keep the entry (`dhcp_complete:`).
-                dhcpserver.complete_target(self)
+                # Removes the entry unless the config says to keep it
+                # (`dhcp_complete:`).
+                disarm(self, dhcpserver)
             except Exception as exc:
                 LOGGER.warning(
                     "could not disarm %s on %s: %s",
                     self.target._id,
-                    getattr(dhcpserver, "uri", dhcpserver),
+                    dhcpserver,
                     exc,
                     exc_info=LOGGER.isEnabledFor(logging.DEBUG),
                 )
@@ -702,8 +702,8 @@ class Pixie:
             encoder=tplx.DataEncoder(expose=["_id"]),
         )
         ctx.version = f"netboot-v{self.VERSION}"
-        # DHCP backends fire BuildDhcpOptions through the engine, and they only
-        # ever see the context.
+        # `netboot.dhcp` fires BuildDhcpOptions through the engine while building
+        # a reservation, and it only has the context.
         ctx._netboot_ = self
         return self.hook(PixieEvent.PixieContextForTarget, ctx, target=target)
 

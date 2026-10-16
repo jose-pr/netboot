@@ -11,7 +11,7 @@ import uripath.schemes  # noqa: F401
 
 from ._version import __version__
 from .content import Repository, Resource
-from .dhcp import DhcpServer, DhcpZone
+from .dhcp import DhcpZone
 from .engine import (
     Pixie,
     PixieConfigError,
@@ -33,7 +33,6 @@ __all__ = [
     "PixieError",
     "PixieConfigError",
     "PixieLookupError",
-    "DhcpServer",
     "DhcpZone",
     "Repository",
     "Resource",

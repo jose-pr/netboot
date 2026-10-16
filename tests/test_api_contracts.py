@@ -8,7 +8,7 @@ import pytest
 
 import netboot
 from netboot.content import Repository, Resource
-from netboot.dhcp import DhcpServer, DhcpZone
+from netboot.dhcp import DhcpZone
 
 
 def test_resource_division_joins_the_path_and_keeps_the_repo():
@@ -19,20 +19,9 @@ def test_resource_division_joins_the_path_and_keeps_the_repo():
     assert str(resource.path) == "images", "the original must not be mutated"
 
 
-def test_dhcpserver_default_scheme_handles_a_schemeless_uri(dhcp_backend):
-    dhcp_backend("bare")
-
-    class _Defaulting(DhcpServer):
-        DEFAULT_SCHEME = "bare"
-
-    server = _Defaulting("no-scheme-here")
-    assert isinstance(server, DhcpServer)
-    assert server.uri == "no-scheme-here"
-
-
-def test_an_unknown_scheme_names_the_fix():
-    with pytest.raises(ValueError, match="--load-module"):
-        DhcpServer("nosuchscheme://host")
+def test_an_unknown_scheme_is_a_config_error():
+    with pytest.raises(netboot.PixieConfigError, match="nosuchscheme"):
+        DhcpZone(network="10.0.0.0/24", dhcpservers=["nosuchscheme://host"])
 
 
 def test_new_pixie_object_hook_can_swap_the_class():

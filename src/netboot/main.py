@@ -19,6 +19,7 @@ import typing as _ty
 from copy import deepcopy as _deepcopy
 from importlib import import_module as _import_module
 
+from dhcpctl import DHCPCtlError as _DHCPCtlError
 from duho import Arg, Cli, Extend, LoggingArgs, parse_globals
 from duho import run as _run
 from jinja2 import TemplateError as _TemplateError
@@ -39,9 +40,11 @@ _BUILTIN_COMMANDS = "netboot.cmds"
 #: anything else keeps its traceback, because it is netboot's bug to fix.
 #: `TemplateError` is jinja2's, for the sandbox refusing an expression in a
 #: config value (`SecurityError`); `TplxError` is a template that cannot be
-#: found or rendered.
+#: found or rendered. `DHCPCtlError` is a DHCP server refusing, or a URI it
+#: cannot use.
 _USER_ERRORS = (
     PixieError,
+    _DHCPCtlError,
     FileNotFoundError,
     NotADirectoryError,
     PermissionError,
