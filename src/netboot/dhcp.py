@@ -4,14 +4,14 @@ The servers are dhcpctl's: a zone's `dhcpservers` are URIs, built with
 `dhcpctl.connect`, and a backend for a new scheme is registered with
 `dhcpctl.register_backend` (or the `dhcpctl.backends` entry point). What stays
 here is what is about targets: the zone -> image -> target layering of
-`dhcp_options`, `dhcp_when` and `dhcp_complete`, a server's `options_builder`,
-the `BuildDhcpOptions` hook, and the secrets netboot reads from `PIXIE_*`.
+`dhcp_options`, `dhcp_when` and `dhcp_complete`, the `BuildDhcpOptions` hook,
+and each server's own secrets from its `dhcpservers` entry.
 """
 
 from __future__ import annotations
 
+import collections.abc as _abc
 import contextlib
-import os
 import typing as _ty
 from argparse import Namespace
 
@@ -20,22 +20,24 @@ import netimps
 from netimps import IPAddress, IPInterface, IPNetwork
 from yaconfiglib import OpaqueMerge
 
+from .exceptions import PixieConfigError, PixieLookupError
 from .logging import LOGGER
-from .utils.misc import import_
 
 if _ty.TYPE_CHECKING:
     from . import PixieContext
 
 __all__ = [
     "DhcpZone",
-    "WINDHCP_PASSWORD_ENV_VAR",
-    "WINDHCP_USER_ENV_VAR",
-    "DHCPD_OMAPI_KEY_ENV_VAR",
     "OWNER",
+    "LEGACY_OPTION_NAMES",
+    "NETBOOT_CODES",
+    "codes_for",
     "connect",
+    "server_from",
     "scope_for",
     "zone_defaults",
     "build_options",
+    "build_lease",
     "build_conditions",
     "build_completion",
     "reservation_for",
@@ -43,44 +45,103 @@ __all__ = [
     "disarm",
 ]
 
-#: Where a Windows DHCP account's password is read from. Never the URI.
-WINDHCP_PASSWORD_ENV_VAR = "PIXIE_WINDHCP_PASSWORD"
-#: The Windows DHCP account, when the URI names none.
-WINDHCP_USER_ENV_VAR = "PIXIE_WINDHCP_USER"
-#: The dhcpd OMAPI secret, when the URI gives no `keyfile=`.
-DHCPD_OMAPI_KEY_ENV_VAR = "PIXIE_DHCPD_OMAPI_KEY"
-
 #: What marks the entries netboot writes on a server: dnsmasq region markers,
 #: Windows policy names, recipe comments.
 OWNER = "netboot"
 
-#: Scheme -> dhcpctl secret name -> the variable it is read from.
-_SECRETS = {
-    "windhcp": {
-        "password": WINDHCP_PASSWORD_ENV_VAR,
-        "user": WINDHCP_USER_ENV_VAR,
-    },
-    "dhcpd": {"omapi_key": DHCPD_OMAPI_KEY_ENV_VAR},
+#: Names netboot configs have always used, as aliases of pydhcp's options and
+#: of the lease's `file` header field.
+LEGACY_OPTION_NAMES = {
+    "domain-name-servers": "dns",
+    "boot-file-name": "file",
+    "tftp-server-name": "tftp-server",
+    "host-name": "hostname",
+    "lease-time": "ip-address-lease-time",
 }
 
+#: The codemap a config with no `dhcp.options` reads names with: pydhcp's
+#: names and netboot's own.
+NETBOOT_CODES = dhcpctl.option_codes(LEGACY_OPTION_NAMES)
 
-def connect(uri: str) -> dhcpctl.DHCPServer:
-    """The dhcpctl server for `uri`; secrets the URI lacks come from `PIXIE_*`.
+
+def codes_for(dhcp: "dict|None" = None) -> "type[dhcpctl.OptionCodes]":
+    """The codemap a config's `dhcp:` section declares, over netboot's.
+
+    `dhcp.options` maps a name to `{code: <n>, type: <pydhcp codec>}` or to a
+    code or another name (see `dhcpctl.option_codes`).
+
+    :raises PixieConfigError: the section cannot be used.
+    """
+
+    dhcp = dhcp or {}
+    if not isinstance(dhcp, dict) or not isinstance(dhcp.get("options") or {}, dict):
+        raise PixieConfigError("dhcp.options must be a mapping of option names")
+    declared = dhcp.get("options")
+    if not declared:
+        return NETBOOT_CODES
+    try:
+        return dhcpctl.option_codes(declared, base=NETBOOT_CODES)
+    except dhcpctl.ConfigError as exc:
+        raise PixieConfigError(f"dhcp.{exc}") from exc
+
+
+def connect(
+    uri: str,
+    codes: "type[dhcpctl.OptionCodes]|None" = None,
+    secrets: "_abc.Mapping[str, str]|None" = None,
+) -> dhcpctl.DHCPServer:
+    """The dhcpctl server for `uri`, with the `secrets` its config entry gives.
+
+    A secret given here overrides the one the URI carries (its user or
+    password). Option names are read with `codes` (netboot's by default).
 
     :raises PixieConfigError: the URI cannot be used.
     """
-    from . import PixieConfigError
-
-    names = _SECRETS.get(uri.partition(":")[0].lower(), {})
-
-    def secret(key: str) -> "str|None":
-        variable = names.get(key)
-        return os.environ.get(variable) if variable else None
 
     try:
-        return dhcpctl.connect(uri, secrets=secret, owner=OWNER)
+        return dhcpctl.connect(
+            uri, secrets=dict(secrets or {}), owner=OWNER, codes=codes or NETBOOT_CODES
+        )
     except dhcpctl.ConfigError as exc:
         raise PixieConfigError(str(exc)) from exc
+
+
+def server_from(entry, codes=None) -> dhcpctl.DHCPServer:
+    """A `dhcpservers` entry as a server: a URI, or a mapping of `uri:` and the
+    secrets that backend takes (windhcp and kea `user`/`password`, dhcpd
+    `keyname`/`omapi_key`), each written in the config or produced by it
+    (`password: "{{ env.WINDHCP_PASSWORD }}"`).
+
+    :raises PixieConfigError: the entry cannot be used.
+    """
+
+    if isinstance(entry, dhcpctl.DHCPServer):
+        return entry
+    if isinstance(entry, str):
+        return connect(entry, codes)
+    if not isinstance(entry, _abc.Mapping) or not isinstance(entry.get("uri"), str):
+        raise PixieConfigError(
+            "a dhcpservers entry is a URI, or a mapping with `uri:` and that "
+            f"server's secrets, not {type(entry).__name__}"
+        )
+    uri = entry["uri"]
+    secrets = {key: value for key, value in entry.items() if key != "uri"}
+    try:
+        backend = dhcpctl.get_backend(uri.partition(":")[0])
+    except dhcpctl.ConfigError as exc:
+        raise PixieConfigError(str(exc)) from exc
+    accepted = sorted(set(backend.URI_SECRETS.values()))
+    unknown = sorted(set(map(str, secrets)) - set(accepted))
+    if unknown:
+        raise PixieConfigError(
+            f"dhcpservers entry {uri.partition('?')[0]!r}: unknown key(s) "
+            f"{', '.join(unknown)}; it takes uri and {', '.join(accepted)}"
+        )
+    return connect(
+        uri,
+        codes,
+        {key: str(value) for key, value in secrets.items() if value is not None},
+    )
 
 
 class DhcpZone(Namespace, OpaqueMerge):
@@ -142,11 +203,11 @@ class DhcpZone(Namespace, OpaqueMerge):
             kwargs["network"] = _network
 
         kwargs.pop("netmask", None)
+        codes = kwargs.pop("codes", None) or NETBOOT_CODES
         kwargs.setdefault("dhcpservers", [])
         super().__init__(**kwargs)
         self.dhcpservers = [
-            server if isinstance(server, dhcpctl.DHCPServer) else connect(server)
-            for server in (self.dhcpservers or [])
+            server_from(server, codes) for server in (self.dhcpservers or [])
         ]
         self.network = netimps.try_parse(self.network, IPNetwork)
         for prop, ctr in [
@@ -199,90 +260,113 @@ def scope_for(zone) -> dhcpctl.Scope:
 # -- options -----------------------------------------------------------------
 
 
-def zone_defaults(zone) -> dhcpctl.DHCPOptions:
-    """What the zone already knows, before anyone configures an option."""
-    options = dhcpctl.DHCPOptions()
+def zone_defaults(zone, codes=None) -> dhcpctl.DHCPOptions:
+    """What the zone already knows, before anyone configures an option.
+
+    The bag reads its options with `codes` (netboot's by default), the codemap
+    every layer merged onto it keeps.
+    """
+    known = {}
     if getattr(zone, "gateway", None):
-        options["router"] = zone.gateway
+        known["router"] = zone.gateway
     if getattr(zone, "nameservers", None):
-        options["domain-name-servers"] = list(zone.nameservers)
+        known["dns"] = list(zone.nameservers)
     if getattr(zone, "domain", None):
-        options["domain-name"] = zone.domain
+        known["domain-name"] = zone.domain
     if getattr(zone, "search", None):
-        options["domain-search"] = list(zone.search)
+        known["domain-search"] = list(zone.search)
     network = getattr(zone, "network", None)
     if network is not None and getattr(network, "netmask", None) is not None:
-        options["subnet-mask"] = network.netmask
+        known["subnet-mask"] = network.netmask
         broadcast = getattr(network, "broadcast_address", None)
         if broadcast is not None:
-            options["broadcast-address"] = broadcast
-    return options
+            known["broadcast-address"] = broadcast
+    return (codes or NETBOOT_CODES).options(
+        known, str(getattr(zone, "_id", "") or "zone")
+    )
+
+
+def _declared(ctx) -> "list[dhcpctl.DHCPLease]":
+    """The image's and the target's `dhcp_options`, each as what it serves.
+
+    `next-server` and `boot-file-name` there are the BOOTP header fields
+    `siaddr` and `file`, not options: each lease carries them beside its
+    options.
+    """
+
+    layers = []
+    for source in (ctx.image, ctx.target):
+        where = getattr(source, "_id", source)
+        declared = getattr(source, "dhcp_options", None) or {}
+        if not isinstance(declared, dict):
+            raise PixieConfigError(
+                f"dhcp_options on {where!r} must be a mapping, got "
+                f"{type(declared).__name__}"
+            )
+        try:
+            layers.append(_codes(ctx).lease(declared))
+        except dhcpctl.ConfigError as exc:
+            raise PixieConfigError(f"dhcp_options on {where!r}: {exc}") from exc
+    return layers
 
 
 def build_options(ctx, server: dhcpctl.DHCPServer) -> dhcpctl.DHCPOptions:
     """The options for this target on this server, in merge order.
 
-    Later wins: zone defaults, the server's connection query, the image's
-    `dhcp_options`, the target's `dhcp_options`, the server's `options_builder`,
-    then the `BuildDhcpOptions` hook. The last two may return anything mapping-
-    like; both must return the options they were given.
+    Later wins: zone defaults, the image's `dhcp_options`, the target's
+    `dhcp_options`, then the `BuildDhcpOptions` hook, which receives pydhcp
+    `DHCPOptions` and returns them, or any mapping of option names.
     """
-    from . import PixieConfigError, PixieEvent
+    from . import PixieEvent
 
-    layers = []
-    for source in (ctx.image, ctx.target):
-        declared = getattr(source, "dhcp_options", None) or {}
-        if not isinstance(declared, dict):
-            raise PixieConfigError(
-                f"dhcp_options on {getattr(source, '_id', source)!r} must be a "
-                f"mapping, got {type(declared).__name__}"
-            )
-        for key in declared:
-            if not dhcpctl.is_option(key):
-                raise PixieConfigError(
-                    f"unknown dhcp option {key!r} on "
-                    f"{getattr(source, '_id', source)!r}"
-                )
-        layers.append(declared)
-    options = server.client_options(*layers, defaults=zone_defaults(ctx.dhcpzone))
-
-    if server.options_builder:
-        options = _call_builder(server.options_builder, ctx, options)
+    layers = [lease.options for lease in _declared(ctx)]
+    options = zone_defaults(ctx.dhcpzone, _codes(ctx)).copy(*layers)
 
     netboot = getattr(ctx, "_netboot_", None)
     if netboot is not None:
-        options = netboot.hook(
-            PixieEvent.BuildDhcpOptions, options, target=ctx.target, server=server
+        options = _returned(
+            "a BuildDhcpOptions hook",
+            netboot.hook(
+                PixieEvent.BuildDhcpOptions, options, target=ctx.target, server=server
+            ),
+            _codes(ctx),
         )
-    if not isinstance(options, dict):
-        raise PixieConfigError(
-            "a BuildDhcpOptions hook must return the options mapping, got "
-            f"{type(options).__name__}"
-        )
-    if not isinstance(options, dhcpctl.DHCPOptions):
-        options = dhcpctl.DHCPOptions(options)
     return options
 
 
-def _call_builder(builder, ctx, options: dhcpctl.DHCPOptions) -> dhcpctl.DHCPOptions:
-    """Resolve and call an `options_builder`, insisting it returns the options."""
-    from . import PixieConfigError
+def build_lease(ctx, server: dhcpctl.DHCPServer) -> dhcpctl.DHCPLease:
+    """What this target is served on this server: its address, `build_options`,
+    and the header fields the image or the target sets, the target's first."""
 
-    fn = builder if callable(builder) else import_(builder)
-    result = fn(ctx, options)
-    if not isinstance(result, dict):
-        raise PixieConfigError(
-            f"options_builder {builder!r} must return the options mapping, got "
-            f"{type(result).__name__}"
+    fields = {}
+    for lease in _declared(ctx):
+        if not lease.siaddr.is_unspecified:
+            fields["siaddr"] = lease.siaddr
+        for name in ("sname", "file"):
+            if getattr(lease, name):
+                fields[name] = getattr(lease, name)
+    try:
+        return dhcpctl.DHCPLease(
+            ctx.target.ip or dhcpctl.UNSPECIFIED,
+            options=build_options(ctx, server),
+            strict=False,
+            **fields,
         )
-    if not isinstance(result, dhcpctl.DHCPOptions):
-        # A builder may return a plain dict; keep the raw section it cannot see.
-        merged = options.copy()
-        merged.clear()
-        merged.update(result)
-        result = merged
-    LOGGER.debug("options_builder %r produced %d option(s)", builder, len(result))
-    return result
+    except ValueError as exc:
+        raise PixieConfigError(f"target {ctx.target._id!r}: {exc}") from exc
+
+
+def _returned(who: str, result, codes) -> dhcpctl.DHCPOptions:
+    """What a hook returned, as options, or the reason it cannot be."""
+
+    if not isinstance(result, _abc.Mapping):
+        raise PixieConfigError(
+            f"{who} must return the options mapping, got {type(result).__name__}"
+        )
+    try:
+        return codes.options(result)
+    except dhcpctl.ConfigError as exc:
+        raise PixieConfigError(f"{who}: {exc}") from exc
 
 
 # -- conditions and completion -------------------------------------------------
@@ -303,6 +387,7 @@ def build_conditions(ctx) -> "dict[str, dhcpctl.Condition]":
                 dhcpctl.parse_conditions,
                 getattr(source, "dhcp_when", None),
                 getattr(source, "_id", source),
+                _codes(ctx),
             )
         )
     return conditions
@@ -318,18 +403,23 @@ def build_completion(ctx) -> dhcpctl.Completion:
             dhcpctl.parse_completion,
             getattr(source, "dhcp_complete", None),
             getattr(source, "_id", source),
+            _codes(ctx),
         )
         if declared is not None:
             completion = declared
     return completion
 
 
-def _config(parse, declared, where):
+def _codes(ctx) -> "type[dhcpctl.OptionCodes]":
+    """The codemap this context's engine reads its config with."""
+    return getattr(getattr(ctx, "_netboot_", None), "option_codes", NETBOOT_CODES)
+
+
+def _config(parse, declared, where, names):
     """Run a dhcpctl parser, reporting a bad value as netboot's config error."""
-    from . import PixieConfigError
 
     try:
-        return parse(declared, where)
+        return parse(declared, where, names)
     except dhcpctl.ConfigError as exc:
         raise PixieConfigError(str(exc)) from exc
 
@@ -349,11 +439,10 @@ def reservation_for(
         target=dhcpctl.Target(
             name=str(target._id),
             mac=mac,
-            ip=target.ip or None,
             hostname=str(getattr(target, "hostname", "") or ""),
         ),
         scope=scope_for(ctx.dhcpzone),
-        options=build_options(ctx, server),
+        lease=build_lease(ctx, server),
         conditions=build_conditions(ctx),
         completion=build_completion(ctx),
         context=ctx,
@@ -375,7 +464,6 @@ def disarm(ctx: "PixieContext", server: dhcpctl.DHCPServer) -> None:
 @contextlib.contextmanager
 def _lookup_errors():
     """Report a target the server cannot identify as netboot's lookup error."""
-    from . import PixieLookupError
 
     try:
         yield

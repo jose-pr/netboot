@@ -38,9 +38,10 @@ dhcpzones:
       # so this example runs with no DHCP server at all.
       - recording://dhcp-host
       # A real one looks like this -- swap it in when you have a dnsmasq. The
-      # query carries the options the server hands the client; the boot file
-      # comes from the image below, because it varies per target.
-      # - dnsmasq:///?hostsfile=/etc/dnsmasq.d/netboot.d/&router=10.0.0.1
+      # URI says only where dnsmasq reads its hosts and options directories;
+      # what a client is served comes from the zone, the image and the target.
+      # dnsmasq keys a reservation by MAC, so give the target a `mac:` too.
+      # - dnsmasq:///?hostsfile=/etc/dnsmasq.d/netboot/hosts/&optsfile=/etc/dnsmasq.d/netboot/opts/
 
 repos:
   mirror:

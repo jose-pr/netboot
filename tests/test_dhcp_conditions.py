@@ -12,7 +12,14 @@ import dhcpctl
 import pytest
 
 import netboot
+from netboot.dhcp import NETBOOT_CODES
 from netboot.dhcp import build_conditions
+
+
+def _opt(options, name):
+    """The plain value of option `name` in `options`, or None."""
+    return dict(dhcpctl.plain_items(options)).get(NETBOOT_CODES.resolve(name))
+
 
 IPXE = {
     "ipxe": {
@@ -79,7 +86,7 @@ def test_a_target_overrides_an_image_condition_of_the_same_name():
     )
     conditions = build_conditions(_ctx(engine))
     assert list(conditions) == ["ipxe"]
-    assert conditions["ipxe"].options["boot-file-name"] == "special.ipxe"
+    assert conditions["ipxe"].lease.file == "special.ipxe"
 
 
 def test_a_zone_condition_and_an_image_condition_both_apply():
@@ -111,7 +118,7 @@ def test_a_zone_condition_and_an_image_condition_both_apply():
         ),
         (
             {"match": {"user-class": "x"}, "options": {"nonsense": "y"}},
-            "unknown dhcp option",
+            "unknown option",
         ),
         (
             {

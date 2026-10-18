@@ -25,7 +25,7 @@ from yaconfiglib import typed_merge as mergeObjects
 
 from ._version import __version__
 from .content import Repository, Resource
-from .dhcp import DhcpZone, arm, disarm
+from .dhcp import DhcpZone, arm, codes_for, disarm
 from .exceptions import PixieConfigError, PixieLookupError
 from .logging import LOGGER
 from .utils import T, shell_quote
@@ -412,6 +412,8 @@ class Pixie:
                 "mapping to pass on"
             )
         netboot.globals = deepcopy(config.get("globals") or {})
+        # Read before the zones, whose servers' URIs may use the names declared.
+        netboot.option_codes = codes_for(config.get("dhcp"))
         defaults = config.get("defaults") or {}
 
         for prop, hint in get_type_hints(netboot.__class__).items():
@@ -455,6 +457,8 @@ class Pixie:
                             _val = deepcopy(prop_defaults)
                             _val.update(val)
                             val = _val
+                        if isinstance(_valcls, type) and issubclass(_valcls, DhcpZone):
+                            val = dict(val, codes=netboot.option_codes)
                         try:
                             return _valcls(_id=_id, **val)
                         except TypeError as exc:

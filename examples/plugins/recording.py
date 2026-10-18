@@ -10,7 +10,7 @@ import dhcpctl
 class RecordingBackend(dhcpctl.DHCPServer):
     def add(self, reservation):
         target, ctx = reservation.target, reservation.context
-        print(f"[dhcp] arm   {target.name} -> {target.ip} ({self.uri})")
+        print(f"[dhcp] arm   {target.name} -> {reservation.lease.ip} ({self.uri})")
         print(ctx.render("boot.cfg"))
 
     def remove(self, reservation):

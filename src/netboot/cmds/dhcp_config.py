@@ -19,18 +19,12 @@ from __future__ import annotations
 
 import argparse
 import getpass
-import os
 import sys
 
 import dhcpctl
 
 from netboot import Pixie
-from netboot.dhcp import (
-    WINDHCP_PASSWORD_ENV_VAR,
-    WINDHCP_USER_ENV_VAR,
-    build_conditions,
-    reservation_for,
-)
+from netboot.dhcp import build_conditions, connect, reservation_for
 from netboot.logging import LOGGER
 
 
@@ -52,8 +46,8 @@ def register(parser: argparse.ArgumentParser, args) -> None:
         metavar="USER",
         help=(
             "Account to apply as, prompting for its password. Implies --apply. "
-            "Only usable on a terminal; unattended runs set "
-            "PIXIE_WINDHCP_PASSWORD instead"
+            "Only usable on a terminal; an unattended run gives the server's "
+            "user and password in its dhcpservers entry instead"
         ),
     )
 
@@ -65,8 +59,12 @@ def run(netboot: Pixie, args, conf: dict) -> int:
         return 1
 
     apply = bool(args.apply or args.run_as)
-    if args.run_as and not _prompt_password(args.run_as):
-        return 1
+    run_as = None
+    if args.run_as:
+        password = _prompt_password(args.run_as)
+        if password is None:
+            return 1
+        run_as = {"user": args.run_as, "password": password}
 
     printed = 0
     failures = 0
@@ -79,6 +77,11 @@ def run(netboot: Pixie, args, conf: dict) -> int:
         if not conditions:
             continue
         for server in getattr(zone, "dhcpservers", None) or []:
+            if run_as is not None:
+                server = _as(server, run_as, netboot)
+                if server is None:
+                    failures += 1
+                    continue
             for condition in conditions:
                 printed += 1
                 if not apply:
@@ -140,25 +143,32 @@ def _print(server, condition, recipe: str) -> None:
     print()
 
 
-def _prompt_password(user: str) -> bool:
-    """Ask for `user`'s password and put it where the backends read it.
+def _prompt_password(user: str) -> "str|None":
+    """Ask for `user`'s password, or None.
 
-    `getpass` only, and only on a terminal: without one this fails naming the
-    environment variable rather than blocking a pipeline on a prompt nobody will
-    answer. The value lives in this process's environment and is never logged,
+    `getpass` only, and only on a terminal: without one this fails saying where
+    an unattended run puts the password, rather than blocking a pipeline on a
+    prompt nobody will answer. The value stays in memory: it is never logged,
     written, or interpolated into a generated script -- the backends pass it as
     data, which is the rule the whole windhcp script follows.
     """
     if not sys.stdin.isatty():
         LOGGER.error(
-            "--as needs a terminal to prompt on; set %s for an unattended run",
-            WINDHCP_PASSWORD_ENV_VAR,
+            "--as needs a terminal to prompt on; for an unattended run give the "
+            "server's user and password in its dhcpservers entry"
         )
-        return False
+        return None
     password = getpass.getpass(f"Password for {user}: ")
     if not password:
         LOGGER.error("No password given, so nothing was applied.")
-        return False
-    os.environ[WINDHCP_PASSWORD_ENV_VAR] = password
-    os.environ.setdefault(WINDHCP_USER_ENV_VAR, user)
-    return True
+        return None
+    return password
+
+
+def _as(server, secrets: dict, netboot: Pixie):
+    """`server` again, applying as `secrets`' account, which overrides any user
+    and password its URI carries; None when its backend takes no password."""
+    if "password" not in type(server).URI_SECRETS.values():
+        LOGGER.error("%s takes no password, so --as cannot apply there", server)
+        return None
+    return connect(server.uri, getattr(netboot, "option_codes", None), secrets)

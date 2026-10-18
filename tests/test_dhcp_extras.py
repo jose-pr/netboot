@@ -2,9 +2,9 @@
 
 The worked example is the iPXE chainload: a PXE ROM must be handed the iPXE
 binary, and iPXE itself must then be handed the script, or it loads itself
-forever. A fragment comes from config (`raw.<backend>` on the server URI) or
-from a backend subclass that decides per target; how each backend emits one is
-dhcpctl's, and tested there.
+forever. A fragment comes from a backend subclass that decides per target,
+from the context netboot hands it; how each backend emits one is dhcpctl's,
+and tested there.
 """
 
 import dhcpctl
@@ -67,12 +67,11 @@ def ipxe():
 
 
 def test_a_subclass_can_decide_per_target(ipxe):
-    engine = _engine(["ipxe://host/?raw.ipxe=" + "authoritative;"])
-    engine.initialize(engine.lookup_target("web01"))
-    assert ipxe.applied == ["authoritative;", IPXE_DHCPD]
-
-
-def test_a_teardown_fragment_does_not_reach_arming(ipxe):
-    engine = _engine(["ipxe://host/?raw.ipxe.remove=" + "log(1);"])
+    engine = _engine(["ipxe://host/"])
     engine.initialize(engine.lookup_target("web01"))
     assert ipxe.applied == [IPXE_DHCPD]
+
+
+def test_a_server_uri_takes_no_backend_native_text():
+    with pytest.raises(netboot.PixieConfigError, match="unknown key 'raw.dhcpd'"):
+        _engine(["dhcpd://host/?raw.dhcpd=log(1);"])

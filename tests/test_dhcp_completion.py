@@ -13,7 +13,13 @@ import dhcpctl
 import pytest
 
 import netboot
+from netboot.dhcp import NETBOOT_CODES
 from netboot.dhcp import build_completion, disarm, reservation_for
+
+
+def _opt(options, name):
+    """The plain value of option `name` in `options`, or None."""
+    return dict(dhcpctl.plain_items(options)).get(NETBOOT_CODES.resolve(name))
 
 
 @pytest.fixture
@@ -73,20 +79,22 @@ def test_keep_without_options_drops_only_the_boot_options():
     ctx = _ctx(_engine({"dhcp_complete": {"keep": True}}))
     completion = build_completion(ctx)
     server = dhcpctl.connect("windhcp://dhcp01/")
-    kept = completion.apply_to(reservation_for(ctx, server).options)
-    assert not any(name in kept for name in dhcpctl.BOOT_OPTIONS)
+    kept = completion.apply_to(reservation_for(ctx, server).lease)
+    assert not any(int(code) in kept.options for code in dhcpctl.BOOT_OPTIONS)
+    assert not kept.file
     # The options that make a reservation worth keeping are still there.
-    assert kept["router"] is not None and "subnet-mask" in kept
+    assert _opt(kept.options, "router") is not None
+    assert _opt(kept.options, "subnet-mask")
 
 
 def test_keep_with_options_replaces_rather_than_merges():
     ctx = _ctx(_engine({"dhcp_complete": SANBOOT}))
     completion = build_completion(ctx)
     server = dhcpctl.connect("windhcp://dhcp01/")
-    kept = completion.apply_to(reservation_for(ctx, server).options)
-    assert kept["boot-file-name"] == "sanboot.ipxe"
+    kept = completion.apply_to(reservation_for(ctx, server).lease)
+    assert kept.file == "sanboot.ipxe"
     # A merge would have left the installer's tftp server in place.
-    assert "tftp-server-name" not in kept
+    assert _opt(kept.options, "tftp-server") is None
 
 
 def test_a_target_overrides_the_image_completion():
@@ -111,7 +119,7 @@ def test_a_target_overrides_the_image_completion():
         ("remove", "must be a mapping"),
         ({"keep": "yes"}, "must be true or false"),
         ({"keep": True, "zzz": 1}, "unknown key"),
-        ({"keep": True, "options": {"nonsense": "x"}}, "unknown dhcp option"),
+        ({"keep": True, "options": {"nonsense": "x"}}, "unknown option"),
         ({"options": {"boot-file-name": "x"}}, "nowhere to go"),
     ],
 )

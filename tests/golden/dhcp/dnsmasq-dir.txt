@@ -1,17 +1,20 @@
 --- step
 initialize
 --- file after-initialize dnsmasq/hosts/web01.conf
-dhcp-host=aa:bb:cc:dd:ee:ff,set:web01,10.0.0.10,web01
+aa:bb:cc:dd:ee:ff,set:web01,10.0.0.10,web01
 
 --- file after-initialize dnsmasq/opts/web01.conf
-dhcp-boot=tag:web01,undionly.kpxe,,10.0.0.2
-dhcp-option=tag:web01,3,10.0.0.1
-dhcp-option=tag:web01,6,10.0.0.53,10.0.0.54
-dhcp-option=tag:web01,15,example.com
-dhcp-option=tag:web01,119,example.com
-dhcp-option=tag:web01,1,255.255.255.0
-dhcp-option=tag:web01,28,10.0.0.255
-dhcp-option=tag:web01,42,10.0.0.9
+tag:web01,option:bootfile-name,undionly.kpxe
+tag:web01,option:server-ip-address,10.0.0.2
+tag:web01,3,10.0.0.1
+tag:web01,6,10.0.0.53,10.0.0.54
+tag:web01,15,example.com
+tag:web01,119,example.com
+tag:web01,1,255.255.255.0
+tag:web01,28,10.0.0.255
+tag:web01,42,10.0.0.9
 
 --- step
 complete
+--- sighup
+/run/dnsmasq/dnsmasq.pid

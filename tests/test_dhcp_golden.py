@@ -21,6 +21,7 @@ import subprocess
 import sys
 import types
 
+import dhcpctl
 import pytest
 
 import netboot
@@ -28,6 +29,8 @@ import netboot
 pytest.importorskip("requests", reason="needs the 'kea' extra")
 
 GOLDEN = pathlib.Path(__file__).parent / "golden" / "dhcp"
+#: The dhcpd scenarios' OMAPI secret.
+OMAPI_KEY = "c2VjcmV0"
 UPDATE = bool(os.environ.get("NETBOOT_UPDATE_GOLDEN"))
 
 
@@ -69,6 +72,12 @@ def recorder(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(argv, 0, stdout='{"ok": true}', stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    # A dnsmasq directory needs SIGHUP once an entry is taken away; this host
+    # has no dnsmasq to signal, and Windows has no SIGHUP.
+    monkeypatch.setattr(
+        "dhcpctl.backends._dnsmasq._signal_pidfile",
+        lambda pidfile: rec.add("sighup", pidfile),
+    )
 
     import requests
 
@@ -100,9 +109,37 @@ def recorder(tmp_path, monkeypatch):
 
     monkeypatch.setattr(requests, "post", fake_post)
 
+    UPDATE, STATUS = 3, 4
+
+    class OmapiMessage:
+        def __init__(self, kind):
+            self.kind, self.message, self.obj = kind, [], []
+
+        @classmethod
+        def open(cls, kind):
+            return cls(kind)
+
+    def readable(value: bytes) -> str:
+        text = value.decode("utf-8", "replace")
+        return text if text.isprintable() else value.hex()
+
     class Omapi:
         def __init__(self, host, port, username, key, timeout=None):
             rec.add("omapi", ["connect", host, port, username, key])
+
+        def query_server(self, message):
+            rec.add(
+                "omapi",
+                [
+                    "query",
+                    message.kind.decode(),
+                    [[k.decode(), readable(v)] for k, v in message.message],
+                    [[k.decode(), readable(v)] for k, v in message.obj],
+                ],
+            )
+            # A fresh server: opening without `create` finds nothing.
+            created = any(k == b"create" for k, _ in message.message)
+            return types.SimpleNamespace(opcode=UPDATE if created else STATUS)
 
         def __getattr__(self, name):
             def call(*args, **kwargs):
@@ -110,7 +147,17 @@ def recorder(tmp_path, monkeypatch):
 
             return call
 
-    monkeypatch.setitem(sys.modules, "pypureomapi", types.SimpleNamespace(Omapi=Omapi))
+    monkeypatch.setitem(
+        sys.modules,
+        "pypureomapi",
+        types.SimpleNamespace(
+            Omapi=Omapi,
+            OmapiMessage=OmapiMessage,
+            OMAPI_OP_UPDATE=UPDATE,
+            pack_mac=lambda mac: mac.encode(),
+            pack_ip=lambda ip: ip.encode(),
+        ),
+    )
 
     class Session:
         def __init__(self, endpoint, auth=None, transport=None):
@@ -125,8 +172,6 @@ def recorder(tmp_path, monkeypatch):
             )
 
     monkeypatch.setitem(sys.modules, "winrm", types.SimpleNamespace(Session=Session))
-    monkeypatch.setenv("PIXIE_WINDHCP_PASSWORD", "pw")
-    monkeypatch.setenv("PIXIE_DHCPD_OMAPI_KEY", "c2VjcmV0")
     return rec
 
 
@@ -139,7 +184,7 @@ IPXE = {
 KEEP = {"keep": True, "options": {"boot-file-name": "sanboot.ipxe"}}
 
 
-def _config(server: str, *, when=None, complete=None, zone=None) -> dict:
+def _config(server, *, when=None, complete=None, zone=None) -> dict:
     image = {
         "template_path": [],
         "dhcp_options": {"boot-file-name": "undionly.kpxe", "next-server": "10.0.0.2"},
@@ -181,10 +226,9 @@ def _scenarios(tmp: pathlib.Path) -> dict:
     opts = (tmp / "dnsmasq" / "opts").as_posix() + "/"
     hostsfile = (tmp / "dnsmasq" / "hosts.conf").as_posix()
     optsfile = (tmp / "dnsmasq" / "opts.conf").as_posix()
-    raw = "raw.dnsmasq=dhcp-option%3Dtag%3Aweb01%2C42%2C10.0.0.9"
     win = "windhcp://admin@dhcp01/?server=dhcp01"
     return {
-        "dnsmasq-dir": _config(f"dnsmasq:///?hostsfile={hosts}&optsfile={opts}&{raw}"),
+        "dnsmasq-dir": _config(f"dnsmasq:///?hostsfile={hosts}&optsfile={opts}"),
         "dnsmasq-dir-keep": _config(
             f"dnsmasq:///?hostsfile={hosts}&optsfile={opts}", complete=KEEP
         ),
@@ -196,26 +240,64 @@ def _scenarios(tmp: pathlib.Path) -> dict:
         "kea-keep": _config(
             "kea://admin:pw@kea01/", complete=KEEP, zone={"subnet_id": 3}
         ),
-        "keas": _config("keas://kea01/?raw.keas=%7B%22code%22%3A%2042%7D"),
-        "dhcpd-if": _config("dhcpd://dhcp01:7911/?keyname=omapi_key", when=IPXE),
+        "keas": _config("keas://kea01/"),
+        # A server's secrets are its config entry's.
+        "dhcpd-if": _config(
+            {"uri": "dhcpd://dhcp01:7911/?keyname=omapi_key", "omapi_key": OMAPI_KEY},
+            when=IPXE,
+        ),
         "dhcpd-group": _config(
-            "dhcpd://dhcp01/?keyname=omapi_key&conditions=group",
+            {
+                "uri": "dhcpd://dhcp01/?keyname=omapi_key&conditions=group",
+                "omapi_key": OMAPI_KEY,
+            },
             when=IPXE,
             complete=KEEP,
         ),
-        "dhcpd-raw": _config(
-            "dhcpd://dhcp01/?raw.dhcpd=ddns-hostname%20%22web01%22%3B"
-            "&raw.dhcpd.remove=%23%20gone"
-        ),
+        "dhcpd-raw": _config({"uri": "dhcpd://dhcp01/", "omapi_key": OMAPI_KEY}),
         "windhcp-ssh": _config(win, when=IPXE),
         "windhcp-ssh-keep": _config(win, when=IPXE, complete=KEEP),
         "windhcp-shared": _config(win + "&conditions=shared", when=IPXE),
         "windhcp-netsh": _config(win + "&method=netsh", zone={"scope": "10.0.0.0"}),
         "windhcp-winrm": _config(
-            "windhcp://svc@dhcp01/?transport=winrm&raw.windhcp=Write-Verbose%20extra"
+            {"uri": "windhcp://svc@dhcp01/?transport=winrm", "password": "pw"}
         ),
         "windhcp-local": _config("windhcp:///?server=dhcp01&transport=local"),
     }
+
+
+#: Backend-native fragments a scenario's backend adds, by phase, through an
+#: `extras()` override: the one way in for text no option models.
+EXTRAS = {
+    "dnsmasq-dir": ("dnsmasq", {"add": ["tag:web01,42,10.0.0.9"]}),
+    "keas": ("keas", {"add": ['{"code": 42}']}),
+    "dhcpd-raw": ("dhcpd", {"add": ['ddns-hostname "web01";'], "remove": ["# gone"]}),
+    "windhcp-winrm": ("windhcp", {"add": ["Write-Verbose extra"]}),
+}
+
+
+@pytest.fixture
+def extras_for(request):
+    """Serve `scheme` with its backend plus `extras`, for one test."""
+
+    def install(scheme, extras):
+        backend = dhcpctl.get_backend(scheme)
+
+        def with_extras(self, reservation, phase="add"):
+            return backend.extras(self, reservation, phase) + list(
+                extras.get(phase, ())
+            )
+
+        dhcpctl.register_backend(
+            scheme,
+            type(backend.__name__, (backend,), {"extras": with_extras}),
+            replace=True,
+        )
+        request.addfinalizer(
+            lambda: dhcpctl.register_backend(scheme, backend, replace=True)
+        )
+
+    return install
 
 
 NAMES = (
@@ -262,7 +344,9 @@ def _run(name: str, config: dict, rec: Recorder, tmp: pathlib.Path) -> str:
 
 @pytest.mark.skipif(os.name != "nt", reason="windhcp transport=local is Windows only")
 @pytest.mark.parametrize("name", NAMES)
-def test_what_each_backend_sends(name, recorder, tmp_path):
+def test_what_each_backend_sends(name, recorder, tmp_path, extras_for):
+    if name in EXTRAS:
+        extras_for(*EXTRAS[name])
     scenarios = _scenarios(tmp_path)
     assert sorted(scenarios) == list(NAMES)
     config = scenarios[name]

@@ -1,10 +1,12 @@
 """Tests for DHCP zone parsing and how a zone builds its servers."""
 
+import types
+
 import dhcpctl
 import pytest
 
 import netboot
-from netboot.dhcp import DhcpZone, connect
+from netboot.dhcp import DhcpZone, connect, server_from
 
 
 def test_zone_parses_network_and_nameservers():
@@ -56,37 +58,79 @@ def test_zone_keeps_a_server_object_as_it_is(dhcp_backend):
 
 
 @pytest.mark.parametrize(
-    "uri, key, variable",
+    "entry, key",
     [
-        ("windhcp://dhcp01/?transport=ssh", "password", "PIXIE_WINDHCP_PASSWORD"),
-        ("windhcp://dhcp01/?transport=ssh", "user", "PIXIE_WINDHCP_USER"),
-        ("dhcpd://dhcp01", "omapi_key", "PIXIE_DHCPD_OMAPI_KEY"),
+        (
+            {"uri": "windhcp://dhcp01/?transport=winrm", "password": "s3cret"},
+            "password",
+        ),
+        ({"uri": "windhcp://dhcp01/?transport=winrm", "user": "s3cret"}, "user"),
+        ({"uri": "dhcpd://dhcp01", "omapi_key": "s3cret"}, "omapi_key"),
+        ({"uri": "kea://kea01/", "password": "s3cret"}, "password"),
     ],
 )
-def test_secrets_are_read_from_the_environment_when_asked(
-    monkeypatch, uri, key, variable
-):
-    server = connect(uri)
-    assert server.secret(key) is None
-    # Read at use, not at connect: `pixie dhcp-config --as` sets it later.
-    monkeypatch.setenv(variable, "s3cret")
+def test_a_server_entry_carries_its_own_secrets(entry, key):
+    server = server_from(entry)
     assert server.secret(key) == "s3cret"
-    assert server.secret("other") is None
+    # Nothing is shared: another server of the same kind has none.
+    assert server_from(entry["uri"]).secret(key) is None
 
 
-def test_a_secret_in_the_uri_outranks_the_environment(monkeypatch):
-    monkeypatch.setenv("PIXIE_WINDHCP_PASSWORD", "from-env")
-    server = connect("windhcp://admin:from-uri@dhcp01/?transport=ssh")
-    assert server.secret("password") == "from-uri"
-    assert connect("windhcp://admin@dhcp01/?transport=ssh").secret("password") == (
-        "from-env"
+def test_no_secret_is_read_from_the_environment(monkeypatch):
+    for name in (
+        "PIXIE_WINDHCP_PASSWORD",
+        "PIXIE_WINDHCP_USER",
+        "PIXIE_DHCPD_OMAPI_KEY",
+    ):
+        monkeypatch.setenv(name, "from-env")
+    assert connect("windhcp://dhcp01/?transport=winrm").secret("password") is None
+    assert connect("dhcpd://dhcp01").secret("omapi_key") is None
+
+
+def test_the_entrys_secret_overrides_the_uris():
+    server = server_from(
+        {"uri": "windhcp://admin:from-uri@dhcp01/?transport=ssh", "password": "x"}
     )
+    assert server.secret("password") == "x"
+    assert server.secret("user") == "admin", "what the entry leaves is the URI's"
 
 
-def test_a_scheme_without_secrets_reads_none(dhcp_backend, monkeypatch):
-    dhcp_backend("plain")
-    monkeypatch.setenv("PIXIE_WINDHCP_PASSWORD", "s3cret")
-    assert connect("plain://host").secret("password") is None
+@pytest.mark.parametrize(
+    "entry, message",
+    [
+        ({"uri": "windhcp://dhcp01/", "omapi_key": "k"}, "unknown key.*omapi_key"),
+        ({"password": "x"}, "needs|mapping with `uri:`"),
+        (["windhcp://dhcp01/"], "not list"),
+        ({"uri": "nosuch://h/"}, "nosuch"),
+    ],
+)
+def test_a_bad_server_entry_is_a_config_error(entry, message):
+    with pytest.raises(netboot.PixieConfigError, match=message):
+        server_from(entry)
+
+
+def test_a_bad_entry_never_echoes_its_secret():
+    with pytest.raises(netboot.PixieConfigError) as refused:
+        server_from({"uri": "windhcp://dhcp01/", "password": "s3cret", "pin": "1"})
+    assert "s3cret" not in str(refused.value)
+
+
+def test_the_config_file_can_take_a_secret_from_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("NETBOOT_TEST_WINDHCP_PASSWORD", "s3cret")
+    (tmp_path / "pixie.yaml").write_text(
+        "dhcpzones:\n"
+        "  lan:\n"
+        "    network: 10.0.0.0/24\n"
+        "    dhcpservers:\n"
+        "      - uri: windhcp://dhcp01/?transport=winrm\n"
+        '        password: "{{ env.NETBOOT_TEST_WINDHCP_PASSWORD }}"\n',
+        encoding="utf-8",
+    )
+    from netboot.main import _load_config
+
+    conf = _load_config(types.SimpleNamespace(config=str(tmp_path / "pixie.yaml")))
+    zone = DhcpZone(**conf["dhcpzones"]["lan"])
+    assert zone.dhcpservers[0].secret("password") == "s3cret"
 
 
 def test_zone_scope_carries_its_overrides():

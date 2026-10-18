@@ -6,7 +6,7 @@ consumed without reading its source. Kept current with the public API. For the
 project overview, install instructions and CLI usage, see the shipped
 `README.md`, or <https://github.com/jose-pr/netboot>.
 
-## Errors (`netboot`)
+## Errors (`netboot.exceptions`, re-exported from `netboot`)
 
 - **`PixieError(Exception)`** — base for what netboot raises on purpose, as
   opposed to a bug. The CLI reports these as one line and exits 2.
@@ -176,14 +176,18 @@ nothing from dhcpctl.
   `.nameservers`, or `""`. **`.get_local_server(servers, default)`** — first
   server inside `.network`, else `default`; accepts strings and skips
   unparseable ones with a warning.
-- **`connect(uri) -> dhcpctl.DHCPServer`** — `dhcpctl.connect` with
-  `owner="netboot"` (**`OWNER`**: dnsmasq region markers, Windows policy names
-  `netboot-<mac>[-<name>]`, recipe comments). A secret comes from the URI's
-  user/password when it has them, else from the environment, read **when the
-  backend asks**: windhcp `password` ← **`WINDHCP_PASSWORD_ENV_VAR`**
-  (`PIXIE_WINDHCP_PASSWORD`), `user` ← **`WINDHCP_USER_ENV_VAR`**
-  (`PIXIE_WINDHCP_USER`); dhcpd `omapi_key` ← **`DHCPD_OMAPI_KEY_ENV_VAR`**
-  (`PIXIE_DHCPD_OMAPI_KEY`; a `keyfile=` outranks both). Logs, errors and
+- **`connect(uri, codes=None, secrets=None) -> dhcpctl.DHCPServer`** —
+  `dhcpctl.connect` with `owner="netboot"` (**`OWNER`**: dnsmasq region
+  markers, Windows policy names `netboot-<mac>[-<name>]`, recipe comments) and
+  `secrets`, which override the user or password the URI carries.
+  **`server_from(entry, codes=None)`** — a `dhcpservers` entry as a server:
+  a URI, a server object as it is, or a mapping of `uri:` and the secrets that
+  server's backend takes (`URI_SECRETS` values: windhcp and kea `user` /
+  `password`, dhcpd `keyname` / `omapi_key`; a `keyfile=` outranks
+  `omapi_key`). Each server has its own; netboot reads no secret from the
+  environment itself, while the config may (`password: "{{ env.NAME }}"`,
+  interpolated when the file is loaded). An unknown key, or an entry that is
+  neither, is a `PixieConfigError` that never shows a value. Logs, errors and
   `pixie dhcp-config` show a server as its URI with the password masked
   (`str(server)`). An unknown scheme or an unusable URI raises
   `PixieConfigError`. A backend for a new scheme is registered with
@@ -191,24 +195,46 @@ nothing from dhcpctl.
   or the `dhcpctl.backends` entry-point group.
 - **`scope_for(zone) -> dhcpctl.Scope`** — `name` is the zone id, `network`,
   `subnet_id`, `scope_id` from the zone's `scope`.
+- Options are pydhcp's `DHCPOptions`, keyed by code
+  (`options[DHCPOptionCode.ROUTER]`, `options[3]`), each value read by its
+  pydhcp codec. Config names are read with the codemap
+  **`codes_for(dhcp)`** returns: the config's `dhcp.options` declarations over
+  **`NETBOOT_CODES`** (`LEGACY_OPTION_NAMES` over pydhcp's), a
+  `dhcpctl.option_codes` enum, so a declared type is the config's alone. The
+  engine builds it as `Pixie.option_codes` before the zones, hands it to their
+  servers, and reads `dhcp_options`, `dhcp_when` and `dhcp_complete` with it;
+  `zone_defaults(zone, codes)` starts the bag every layer merges onto.
+  `next-server` and `boot-file-name` in `dhcp_options` are the BOOTP header
+  fields `siaddr` and `file` of what the target is served (a
+  `dhcpctl.DHCPLease`), not options; `file`, `sname` and `siaddr` are read
+  too, and `bootfile-name` is option 67 itself.
+  **`LEGACY_OPTION_NAMES`** are the names netboot configs have always used
+  (`domain-name-servers`, `boot-file-name`, `tftp-server-name`, `host-name`,
+  `lease-time`), as aliases of pydhcp's names (`boot-file-name` of the `file`
+  field). A hook receives the
+  `DHCPOptions` and returns it or any mapping of option names; a value an
+  option cannot hold is a `PixieConfigError`, naming the hook, image or
+  target.
 - **`zone_defaults(zone) -> dhcpctl.DHCPOptions`** — `router`,
   `domain-name-servers`, `domain-name`, `domain-search`, `subnet-mask`,
   `broadcast-address`, from what the zone knows.
 - **`build_options(ctx, server) -> dhcpctl.DHCPOptions`** — merges, later
-  winning: zone defaults → the server URI's query options → `image.dhcp_options`
-  → `target.dhcp_options` → the server's `options_builder=` (an import path or
-  callable, `fn(ctx, options) -> options`) → the `PixieEvent.BuildDhcpOptions`
-  hook (`target=`, `server=` kwargs). An unknown option name, or a builder/hook
-  not returning a mapping, raises `PixieConfigError`. A builder returning a
-  plain dict keeps the URI's `raw.*` fragments.
+  winning: zone defaults → `image.dhcp_options` → `target.dhcp_options` → the
+  `PixieEvent.BuildDhcpOptions` hook (`target=`, `server=` kwargs). An unknown
+  option name, or a hook not returning a mapping, raises `PixieConfigError`. A
+  server URI carries only how to reach the server.
+- **`build_lease(ctx, server) -> dhcpctl.DHCPLease`** — what the target is
+  served: its `ip` (`0.0.0.0` when it has none), `build_options`, and the
+  header fields the image's and the target's `dhcp_options` set, the target's
+  first. An address or field that cannot be read raises `PixieConfigError`.
 - **`build_conditions(ctx) -> dict[str, dhcpctl.Condition]`** — `dhcp_when:`
   from zone → image → target, layered **by name** (a target redeclaring `ipxe`
   replaces the image's). **`build_completion(ctx) -> dhcpctl.Completion`** —
   `dhcp_complete:`, the most specific declaration wins; default removes the
   entry. A malformed block raises `PixieConfigError` naming the object.
 - **`reservation_for(ctx, server) -> dhcpctl.Reservation`** — the target
-  (`name` = `_id`, the null MAC becomes `None`, an unset ip `None`), the zone's
-  scope, `build_options`, `build_conditions`, `build_completion`, and
+  (`name` = `_id`, the null MAC becomes `None`), the zone's scope,
+  `build_lease`, `build_conditions`, `build_completion`, and
   `context=ctx`, so a backend subclass overriding `extras(reservation, phase)`
   can decide per target from `reservation.context`.
 - **`arm(ctx, server)`** / **`disarm(ctx, server)`** — `server.add` /
@@ -227,9 +253,12 @@ installed) reaches the CLI as a one-line error with exit status 2.
   header naming the server and condition; **contacts nothing** without `--apply`.
   `--apply` calls `ensure_condition` per server and returns 1 if any failed,
   having done the rest. `--as` implies `--apply` and prompts with `getpass`, only
-  on a TTY — without one it fails naming `PIXIE_WINDHCP_PASSWORD`, rather than
-  blocking an unattended run. The password goes into the environment the
-  secrets are read from, never a log or a script. **The only command that
+  on a TTY — without one it fails saying the password belongs in the
+  server's `dhcpservers` entry, rather than blocking an unattended run. The
+  user and password are that run's secrets for each server, held in memory,
+  never a log, the environment or a script, and override any user and password
+  the URI carries; a server whose backend takes no password is refused under
+  `--as`. **The only command that
   prompts**; this is where privileged one-offs live so `initiate`/`complete` stay
   unattended. `conditions_for(ctx)` and `recipe(ctx, server, condition)` are the
   module's helpers for the same output.

@@ -174,6 +174,9 @@ def _load_config(args: "Pixie_") -> dict:
         # `YACONFIGLIB_CONFINE_TO` to confine them to a directory.
         allow_commands=False,
         sandbox=True,
+        # `{{ env.NAME }}` reads the environment, so a secret need not be
+        # written into the file itself.
+        inject_env=True,
     )
     # yaconfiglib auto-registers !include/!load on the active loader class during
     # load(); a manual yaml.add_constructor is redundant (and since yaconfiglib

@@ -13,7 +13,6 @@ import pytest
 
 import netboot
 from netboot.cmds import dhcp_config
-from netboot.dhcp import WINDHCP_PASSWORD_ENV_VAR, WINDHCP_USER_ENV_VAR, connect
 
 IPXE = {
     "ipxe": {
@@ -77,7 +76,8 @@ def test_printing_contacts_nothing_and_shows_the_recipe(capsys):
     assert dhcp_config.run(engine, _args(), {}) == 0
     out = capsys.readouterr().out
     assert "windhcp://dhcp01/?transport=ssh -- dhcp_when.ipxe" in out
-    assert "Add-DhcpServerv4Policy -Name 'ipxe'" in out
+    # Target mode: the per-target policy arming this target creates.
+    assert "Add-DhcpServerv4Policy -Name 'netboot-aabbccddeeff-ipxe'" in out
     assert "Add-DhcpServerv4Class" in out
 
 
@@ -172,17 +172,15 @@ def test_one_failing_server_does_not_stop_the_others(caplog, backend):
 # -- the credential prompt -------------------------------------------------
 
 
-def test_as_without_a_terminal_names_the_env_var(monkeypatch, caplog):
+def test_as_without_a_terminal_says_where_the_password_goes(monkeypatch, caplog):
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     assert dhcp_config.run(_engine(), _args(run_as="admin"), {}) == 1
-    assert WINDHCP_PASSWORD_ENV_VAR in caplog.text
+    assert "dhcpservers entry" in caplog.text
 
 
 def test_as_prompts_once_and_keeps_the_password_out_of_the_log(
     monkeypatch, caplog, capsys, backend
 ):
-    monkeypatch.delenv(WINDHCP_PASSWORD_ENV_VAR, raising=False)
-    monkeypatch.delenv(WINDHCP_USER_ENV_VAR, raising=False)
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     prompts = []
     monkeypatch.setattr(
@@ -196,15 +194,15 @@ def test_as_prompts_once_and_keeps_the_password_out_of_the_log(
     @backend
     class applies2(dhcpctl.DHCPServer):
         def ensure_condition(self, reservation, condition):
-            applied.append(os.environ.get(WINDHCP_PASSWORD_ENV_VAR))
+            applied.append((self.secret("user"), self.secret("password")))
             return condition.name
 
     engine = _engine(servers=("applies2://host/",))
     assert dhcp_config.run(engine, _args(run_as="admin"), {}) == 0
     assert len(prompts) == 1 and "admin" in prompts[0]
-    # It reaches the backend...
-    assert applied == ["s3cret"]
-    assert os.environ[WINDHCP_USER_ENV_VAR] == "admin"
+    # It reaches the backend, as that server's secrets and nobody else's...
+    assert applied == [("admin", "s3cret")]
+    assert "s3cret" not in str(os.environ)
     # ... and nowhere else.
     assert "s3cret" not in caplog.text
     assert "s3cret" not in capsys.readouterr().out
@@ -226,8 +224,17 @@ def test_an_empty_password_applies_nothing(monkeypatch, caplog, backend):
     assert "No password given" in caplog.text
 
 
-def test_the_account_can_come_from_the_environment(monkeypatch):
-    monkeypatch.setenv(WINDHCP_USER_ENV_VAR, "admin")
-    assert connect("windhcp://dhcp01/?transport=winrm").user == "admin"
-    # The URI still wins, since it is the more specific statement.
-    assert connect("windhcp://svc@dhcp01/?transport=winrm").user == "svc"
+def test_as_overrides_the_user_the_uri_names(monkeypatch, backend):
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr(dhcp_config.getpass, "getpass", lambda prompt="": "s3cret")
+    applied = []
+
+    @backend
+    class named(dhcpctl.DHCPServer):
+        def ensure_condition(self, reservation, condition):
+            applied.append((self.secret("user"), self.secret("password")))
+            return condition.name
+
+    engine = _engine(servers=("named://svc:old@host/",))
+    assert dhcp_config.run(engine, _args(run_as="admin"), {}) == 0
+    assert applied == [("admin", "s3cret")]
