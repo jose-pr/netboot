@@ -6,7 +6,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-10-19
 
 ### Added
 - `pixie render <target> NAME... [--out DIR]` renders a target's artifacts to
