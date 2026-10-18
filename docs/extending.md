@@ -118,22 +118,16 @@ that makes the server answer two kinds of client differently. The canonical case
 is the **iPXE chainload**: hand a PXE ROM the iPXE binary, then hand iPXE itself
 the script, or iPXE loads iPXE forever.
 
-Two ways in, both ending up in the same list:
-
-```yaml
-dhcpservers:
-  # from config, per connection
-  - dhcpd://key@dhcp01/?raw.dhcpd=if exists user-class and option user-class = "iPXE" { filename "boot.ipxe"; } else { filename "undionly.kpxe"; }
-```
+A backend subclass overrides `extras()`, and can look at the target through the
+netboot context the reservation carries:
 
 ```python
-# from code, which is the one that can look at the target
 import dhcpctl
 from dhcpctl.backends import DHCPDBackend
 
 class IPXEDHCPD(DHCPDBackend):
     def extras(self, reservation, phase="add"):
-        lines = super().extras(reservation, phase)  # keep the config's own
+        lines = super().extras(reservation, phase)  # the reservation's own
         ctx = reservation.context                   # netboot's context
         if phase == "add" and ctx.image.globals.get("ipxe"):
             lines.append(
@@ -145,21 +139,23 @@ class IPXEDHCPD(DHCPDBackend):
 dhcpctl.register_backend("dhcpd", IPXEDHCPD, replace=True)  # now serves dhcpd://
 ```
 
-`phase` is `add` or `remove`. A bare `raw.<backend>=` belongs to `add`;
-`raw.<backend>.remove=` is for a fragment that undoes something at teardown (a
-policy created while arming, say). What a fragment *is* belongs to the backend:
+`phase` is `add` or `remove`; `remove` is for a fragment that undoes something
+at teardown (a policy created while arming, say). Arming writes the `add`
+fragments, and keeping a target on completion writes the `remove` ones, on
+every backend. Removing a target deletes its entry; only `windhcp://`, whose
+fragments are commands, also runs the `remove` ones then. What a fragment *is* belongs
+to the backend:
 
 | Backend | A fragment is | Where it lands |
 | ------- | ------------- | -------------- |
 | `dhcpd://` | dhcpd config **statements** | appended to the host object's `statements`, after the modelled options — so a conditional written there wins |
-| `dnsmasq://` | config **lines** (`dhcp-match=set:ipxe,77,iPXE`, `dhcp-boot=tag:ipxe,boot.ipxe`) | the options file for that target's tag |
+| `dnsmasq://` | an options-file **line**: a `--dhcp-option` value without the key (`tag:web01,252,http://x`) | the options file for that target's tag |
 | `kea://` | an **`option-data` entry** | the reservation's `option-data` |
 | `windhcp://` | a **PowerShell line**, or a `{"Args": [...], "Ignore": false}` **netsh command** | after the reservation and its options |
 
 A netsh command works under either windhcp `method`: with `method=netsh` it joins
 the command list, and with `method=powershell` it becomes the `netsh` call it
-describes rather than being dropped. `Args` may be a list, or one string that is
-split on whitespace — a query string has nowhere to put a list. `Ignore` marks a
+describes rather than being dropped. `Args` is a list. `Ignore` marks a
 command whose failure is acceptable, which is what a teardown usually wants.
 
 Fragments are emitted **verbatim**: netboot does not parse, validate or escape
@@ -168,8 +164,8 @@ dhcpd statement early, or a PowerShell line that does more than it looks like,
 is yours to get right. Where netboot builds the text itself (a netsh command
 under `method=powershell`) it quotes it properly.
 
-Order is defined: modelled options first, then `extras()`, in the order given
-(unsuffixed `raw.<backend>` before `raw.<backend>.add`). A condition that
+Order is defined: modelled options first, then `extras()`, in the order given.
+A condition that
 overrides an option therefore comes after the thing it overrides, which is what
 both dhcpd's last-write-wins statements and a Windows policy need.
 

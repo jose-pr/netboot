@@ -77,9 +77,10 @@ pixie dhcp-config --as admin      # ... prompting for an admin password
 `--apply` runs the configuration; `--as USER` implies it and prompts for that
 account's password. **This is the only command that prompts.** `initiate` and
 `complete` run unattended — from hooks, from a provisioning system — so a prompt
-there would hang rather than ask anyone; `--as` without a terminal fails naming
-`PIXIE_WINDHCP_PASSWORD` instead of blocking. The password is passed to the
-backend as data and never logged, stored, or written into a generated script.
+there would hang rather than ask anyone; `--as` without a terminal fails, saying
+the password belongs in the server's `dhcpservers` entry, instead of blocking.
+The password is passed to the backend as data and never logged, stored, put in
+the environment, or written into a generated script.
 
 Exit code 1 if any server could not be configured, with the reason per server;
 the others are still done.

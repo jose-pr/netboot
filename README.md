@@ -104,8 +104,9 @@ pixie.complete(target)                   # cleanup once installed
   ssh or WinRM) — each imported only when a config names its scheme. Write your
   own by subclassing `dhcpctl.DHCPServer` and registering it with
   `dhcpctl.register_backend(scheme, cls)` from a `--load-module` plugin, or the
-  `dhcpctl.backends` entry point. What the server should tell the client rides
-  in the URI query; see the configuration guide.
+  `dhcpctl.backends` entry point. A server URI says how to reach the server;
+  what it tells a client comes from the zone, image and target (see the
+  configuration guide).
 
 A complete runnable setup — config, both template engines and a DHCP plugin —
 is in [`examples/`](https://github.com/jose-pr/netboot/tree/main/examples).

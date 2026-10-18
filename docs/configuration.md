@@ -16,6 +16,7 @@ targets:
   web01:
     hostname: web01
     ip: 10.0.0.10
+    mac: "52:54:00:12:34:56"   # quoted: an all-digit MAC is a YAML number
     image: debian
   "aa:bb:cc:dd:ee:ff":       # a MAC-keyed target
     image: debian
@@ -36,9 +37,9 @@ dhcpzones:
     nameservers: [10.0.0.53]
     search: [example.com]
     dhcpservers:
-      # The scheme selects the backend; the query carries what the server
-      # should tell the client. See "DHCP servers and options" below.
-      - dnsmasq:///?hostsfile=/etc/dnsmasq.d/netboot.d/&router=10.0.0.1
+      # The scheme selects the backend; the query says how to reach it.
+      # See "DHCP servers and options" below.
+      - dnsmasq:///?hostsfile=/etc/dnsmasq.d/netboot/hosts/&optsfile=/etc/dnsmasq.d/netboot/opts/
 
 # Where boot artifacts are fetched / served from.
 repos:
@@ -51,25 +52,51 @@ repos:
 
 ## DHCP servers and options
 
-Each entry under a zone's `dhcpservers` is a URI. Its **scheme** picks the
-backend; its **query string** carries that backend's connection settings and the
-DHCP options the server should give the client. The backends are
+Each entry under a zone's `dhcpservers` is a URI, or a mapping of `uri:` and
+that server's secrets. Its **scheme** picks the backend, and its **query
+string** says only how to reach the server: that backend's connection settings,
+nothing else. What the server tells a client
+comes from the zone, the image and the target. The backends are
 [dhcpctl](https://github.com/jose-pr/dhcpctl)'s, and each netboot extra below
 installs the matching dhcpctl one.
 
 | Scheme | Server | How it applies a reservation | Needs |
 | ------ | ------ | ---------------------------- | ----- |
-| `dnsmasq://` | dnsmasq | writes `dhcp-host`/`dhcp-option` files, local or over `sftp://` | nothing locally; `netboot[ssh]` for remote paths |
+| `dnsmasq://` | dnsmasq | writes `--dhcp-hostsfile`/`--dhcp-optsfile` entries, local or over `sftp://` | nothing locally; `netboot[ssh]` for remote paths |
 | `kea://`, `keas://` | ISC Kea | `reservation-add` / `reservation-del` via the control agent | `netboot[kea]` |
 | `dhcpd://` | ISC dhcpd | an OMAPI host object | `netboot[dhcpd]` |
 | `windhcp://` | Windows DHCP | its PowerShell cmdlets *or* `netsh`, over ssh or WinRM | nothing over ssh; `netboot[winrm]` for WinRM |
 
+### Credentials
+
+A server's credentials are its own, given in its entry: Windows DHCP and Kea
+take `user` and `password`, dhcpd `keyname` and `omapi_key` (a `keyfile=` in
+the URI outranks `omapi_key`). A value in the entry overrides a user or
+password written in the URI, so one URI can serve several logins. A value is written in the config, or produced when the file is loaded:
+`{{ env.NAME }}` reads an environment variable, and anything else the config
+loader offers works the same way. netboot reads no credential from the
+environment by itself.
+
+```yaml
+dhcpservers:
+  - uri: windhcp://dhcp01/?transport=winrm
+    user: svc-netboot
+    password: "{{ env.DHCP01_PASSWORD }}"
+  - uri: dhcpd://dhcp02/?keyname=omapi_key
+    omapi_key: "{{ env.DHCP02_OMAPI_KEY }}"
+  - kea://kea01:8000/               # no credentials
+```
+
+An unknown key is a configuration error, and it never shows a value.
+
 Each has one thing that is easy to get wrong:
 
 - **dnsmasq** re-reads `--dhcp-hostsfile`/`--dhcp-optsfile` only on SIGHUP, and
-  never re-reads its main config — but `--dhcp-hostsdir`/`--dhcp-optsdir` pick up
-  changed files by themselves, which is why a directory needs no `reload=` and a
-  plain file does.
+  never re-reads its main config. `--dhcp-hostsdir`/`--dhcp-optsdir` read a new
+  file by themselves but only ever add, so a directory arms with no `reload=`
+  while completing a target SIGHUPs dnsmasq (`pidfile=`, default
+  `/run/dnsmasq/dnsmasq.pid`, or `reload=` for a remote host); a plain file needs
+  `reload=` every time. A target served options needs `optsfile=` too.
 - **Kea** needs the `host_cmds` hook loaded *and* a writable hosts backend; a
   file-only Kea loads the hook and still refuses.
 - **dhcpd** hosts added over OMAPI do not survive a restart by themselves — that
@@ -93,7 +120,7 @@ Each has one thing that is easy to get wrong:
   netsh is still invoked *from* PowerShell, with each argument an element of a
   JSON array — so no value is ever spliced into a command line, which is the same
   guarantee the cmdlet path gives. Extra commands (a policy, say) go through
-  `raw.windhcp=` or a subclass's `extras()`; see
+  a backend subclass's `extras()`; see
   [Extra commands and conditions](extending.md#extra-commands-and-conditions),
   which is also where the iPXE chainload recipe lives.
 
@@ -111,7 +138,7 @@ Each has one thing that is easy to get wrong:
 
 ### When provisioning finishes (`dhcp_complete:`)
 
-A target that still receives `boot-file-name` after its install finishes **boots
+A target that is still handed a boot file after its install finishes **boots
 the installer again**. `pixie complete` removes the reservation, which stops that
 — and also throws away the fixed address the rest of the estate may depend on.
 `dhcp_complete:` chooses what the entry becomes instead:
@@ -131,7 +158,8 @@ images:
 | `keep: true` | the address and its options stay; the **boot** options go, so the client's firmware falls through to local disk |
 | `keep: true` with `options` | those options are served instead — an iPXE script ending in `sanboot` hands control to the disk, which works on firmware with no local-disk fallback of its own |
 
-Only `boot-file-name`, `next-server` and `tftp-server-name` are replaced or
+Only the boot file (`boot-file-name`), `next-server`, the server name, and
+options 66 and 67 (`tftp-server-name`, `bootfile-name`) are replaced or
 removed. `router`, `domain-name-servers`, `subnet-mask` and the rest are what make
 a kept reservation worth keeping, and none of them re-kicks a machine. `options`
 **replaces** the boot options rather than merging with them — a merge would leave
@@ -199,15 +227,18 @@ stay on the reservation, where that precedence is a feature.
 The two policies are matched on the target's **MAC** as well, because a policy is
 scope-level: without the MAC it would answer for every client in the scope.
 Processing order is set explicitly, conditional before base, or the base policy
-would answer an iPXE client and the chainload would never happen.
+would answer an iPXE client and the chainload would never happen. Completing the
+target removes both, whether the reservation is removed or kept.
 
 `conditions=shared` is the other shape: one policy per condition name, matched on
 the test alone, for every client in the scope. netboot still keeps the option off
 the reservation, but the base value is then **not netboot's to serve** — a
 scope-wide base policy would answer for every client, so it comes from a scope
-option or a policy of your own. Use it where netboot cannot create policies at all
-(no PowerShell module, so `method=netsh`): an administrator creates one policy per
-condition **once**, rather than one per machine forever.
+option or a policy of your own. A shared policy that exists is used as it is, and
+is never removed. Use it where netboot cannot create policies at all (no
+PowerShell module, so `method=netsh`): an administrator creates one policy per
+condition **once**, rather than one per machine forever, and netboot trusts it to
+be there.
 
 ```
 windhcp://dhcp01/?conditions=shared     # an admin pre-creates the policies
@@ -238,26 +269,57 @@ hooks and would otherwise hang a pipeline. See [the CLI reference](cli.md).
 
 ### Options
 
-Anything in the query that is not a connection setting is a client option:
-`router`, `domain-name-servers`, `domain-name`, `domain-search`, `ntp-servers`,
-`subnet-mask`, `broadcast-address`, `lease-time`, `vendor-class-identifier`, or
-`option-<n>` for anything netboot does not model. Repeat a key for a list.
-`raw.<backend>=` passes backend-native text through untranslated.
+Options are set in `dhcp_options` on an image or a target (and the zone
+supplies its own, below), named as [pydhcp](https://github.com/jose-pr/pydhcp)
+names them (`router`, `dns`,
+`domain-name`, `domain-search`, `ntp-servers`, `subnet-mask`, `bootfile-name`,
+... in any case, with `-` or `_`), by the older names netboot always took
+(`domain-name-servers`, `boot-file-name`, `tftp-server-name`, `host-name`,
+`lease-time`), by a name the config declares (below), or as `option-<n>`. Each
+value is checked against the option's type before any server is contacted —
+`router: gateway` is a configuration error, not a reservation Kea refuses. Give
+a list option a YAML list, and an option with no type of its own
+(`option-224`, unless declared) its octets as hex text (`0a0b`, `0a:0b`) or
+`{hex: 0a0b}`. Backend-native text comes from a backend subclass (see the
+extending guide).
+
+`next-server` and `boot-file-name` are not options but the BOOTP header
+fields `siaddr` and `file`, as `file`, `sname` and `siaddr` are. They are
+still written in `dhcp_options`, and each backend sets them as its server
+spells the fields (Kea's `boot-file-name`, dhcpd's `filename`, dnsmasq's
+`dhcp-boot`; Windows, which has no such fields per reservation, gets the boot
+file as option 67). `bootfile-name` is option 67 itself, sent as an option:
+some ROMs read that, some the header field; set both if unsure.
+
+#### Declaring option names (`dhcp.options`)
+
+The top-level `dhcp.options` section names options a config uses that pydhcp
+has no name or type for, and aliases of its own:
+
+```yaml
+dhcp:
+  options:
+    site-tag: {code: 224, type: String}   # an option of your own: its code, and the pydhcp type of its value
+    gw: router                            # an alias of a name...
+    pxe-file: 67                          # ...or of a code
+    tag: site-tag                         # ...or of another declared name
+```
+
+`type` is a pydhcp codec name (`String`, `U8`, `U16`, `U32`,
+`IPv4AddressOption`, `Boolean`, ...) or `List[...]` of one; without a `type`,
+pydhcp's own is used, and an option pydhcp has no type for takes only bytes.
+Every place that names an option reads these: `dhcp_options`, `dhcp_when`
+and `dhcp_complete`.
 
 Options are merged in this order, later winning:
 
 1. what the zone already knows (`gateway` → `router`, `nameservers`, `domain`…);
-2. the server URI's query;
-3. `images.<id>.dhcp_options`;
-4. `targets.<id>.dhcp_options`;
-5. an `options_builder=my.module.function` — `fn(ctx, options) -> options`;
-6. any hook on `PixieEvent.BuildDhcpOptions`.
+2. `images.<id>.dhcp_options`;
+3. `targets.<id>.dhcp_options`;
+4. any hook on `PixieEvent.BuildDhcpOptions` (a `hooks:` entry), which gets the
+   options, the target and the server, and returns the options to serve.
 
-**Some things belong to the target, not the connection**, and netboot refuses
-them in a URI with a message saying where they go: `subnet_id` and `scope` on the
-**zone**, `boot-file-name`, `next-server`, `tftp-server-name` and `host-name` on
-the **image** or **target**. A boot file pinned to a connection would hand every
-target on that server the same one.
+`subnet_id` (Kea) and `scope` (Windows) belong to the **zone**.
 
 ```yaml
 dhcpzones:
@@ -265,7 +327,7 @@ dhcpzones:
     network: 10.0.0.0/24
     subnet_id: 44                      # kea; windhcp uses `scope`
     dhcpservers:
-      - kea://10.0.0.1:8000/?domain-name-servers=10.0.0.53
+      - kea://10.0.0.1:8000/
 images:
   debian:
     dhcp_options: {boot-file-name: pxelinux.0, next-server: 10.0.0.2}

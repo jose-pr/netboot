@@ -7,6 +7,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **A DHCP server's credentials are its own config entry's.** A `dhcpservers`
+  entry is a URI or a mapping of `uri:` and that backend's secrets (`user`,
+  `password`; dhcpd `keyname`, `omapi_key`), written in the config or taken
+  from the environment there with `{{ env.NAME }}`, which config files can now
+  use. `PIXIE_WINDHCP_PASSWORD`, `PIXIE_WINDHCP_USER` and
+  `PIXIE_DHCPD_OMAPI_KEY` are no longer read, and
+  `netboot.dhcp.WINDHCP_PASSWORD_ENV_VAR`, `WINDHCP_USER_ENV_VAR` and
+  `DHCPD_OMAPI_KEY_ENV_VAR` are gone: move each value into the entries of the
+  servers that use it (`password: "{{ env.PIXIE_WINDHCP_PASSWORD }}"` keeps a
+  variable you already set). An entry's secrets override a user or password
+  in the URI. `pixie dhcp-config --as` passes the prompted user and password
+  to each server directly, overriding the URI's.
+- The errors are in `netboot.exceptions` (`PixieError`, `PixieConfigError`,
+  `PixieLookupError`), still re-exported from `netboot`.
+- `dhcp_options`, `dhcp_when` and `dhcp_complete` are read as what a target is
+  served, a pydhcp `DHCPLease`: `next-server` and `boot-file-name` are its
+  BOOTP header fields `siaddr` and `file`, as they always reached the server,
+  and `file`, `sname` and `siaddr` may be written as such. `bootfile-name` is
+  option 67 itself and is now sent as an option. `build_next_server` is
+  replaced by `build_lease(ctx, server)`. A Kea client class from `dhcp_when`
+  carries the boot file as its `boot-file-name` field, not as option 67.
+- An option with no type of its own (`option-224`, unless `dhcp.options`
+  declares one) takes its octets as hex text or `{hex: ...}` in
+  `dhcp_options`, as pydhcp's `DHCPOptions.from_mapping` reads them.
 - **The DHCP backends are `dhcpctl`'s.** netboot depends on
   `pydhcpctl>=0.1.0,<0.2` (imported as `dhcpctl`), and `netboot.dhcp` is a module that builds each
   target's reservation for it: `DhcpZone`, `connect(uri)`, `build_options`,
@@ -46,6 +70,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the CLI as one line with status 2. `PixieEvent.BuildDhcpOptions` now fires
   once per server for every backend, including one that never asks for its
   options.
+- **DHCP options are pydhcp's**, through dhcpctl. Every IANA option is named by
+  its pydhcp name (`dns`, `bootfile-name`, `interface-mtu`, ...) or
+  `option-<n>`, and the names netboot already took still work
+  (`LEGACY_OPTION_NAMES`). A config declares more in a new top-level
+  `dhcp.options` section: an option of its own with a code and a pydhcp type,
+  or an alias of a name or a code; `dhcp_options`, `dhcp_when` and
+  `dhcp_complete` all read them. Each value is read by the
+  option's type when the config is applied, so `router: gateway` is a
+  `PixieConfigError` naming the image or target; a list option takes one
+  address per item, so write several as a YAML list or a repeated URI key,
+  not one comma-joined string. Kea is sent options by code, so a zone with a
+  gateway or a lease time no longer sends Kea option names it does not define
+  (`router`, `lease-time`). What to do in a `BuildDhcpOptions` hook: it
+  receives pydhcp's `DHCPOptions`, keyed by code,
+  so write `options[DHCPOptionCode.ROUTER] = ...` or `options[3]` where it
+  wrote `options["router"]`, or return a mapping of option names.
+  `next-server` is no longer an option a hook sees: it is the reservation's
+  BOOTP field, still set from `dhcp_options: {next-server: ...}`.
+- **A server URI says only how to reach the server.** Its query takes the
+  backend's connection settings and nothing else: DHCP options
+  (`?router=...`), `options_builder=` and `raw.<backend>=` text are
+  unknown-key errors. What to do: move options to the zone's settings or an
+  image's or target's `dhcp_options`; replace an `options_builder` with a hook
+  on `PixieEvent.BuildDhcpOptions`, which receives the same options plus the
+  target and the server; for the iPXE chainload use `dhcp_when:`, and for other
+  backend-native text register a backend subclass whose
+  `extras(reservation, phase)` returns it.
 - **Template roots resolve against the config file's directory.** Through the
   CLI, a relative `templates:` root is joined to the directory of the config
   file, as `!include` is, and with no `templates:` the root is `templates`
@@ -86,6 +137,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `sftppath`, over paramiko. `SFTPPATH_BACKEND` replaces
   `PATHLIB_NEXT_SFTP_BACKEND` to choose paramiko or asyncssh; the old name is
   not read.
+
+### Fixed
+- With `DUHO_TRACEBACK` set, a configuration error prints its traceback to
+  standard error again: duho 0.7.6 leaves that to netboot, which now requires
+  `duho>=0.7.6`.
+- `dnsmasq://` writes reservation and option files dnsmasq can read: each line
+  is the value of `--dhcp-host` / `--dhcp-option` without the key, which
+  dnsmasq rejected before, so no reservation took effect. A dnsmasq extras
+  fragment is written the same way (`tag:web01,252,http://x`).
+- `dnsmasq://` in directory mode stops serving a completed target: dnsmasq
+  keeps what `--dhcp-hostsdir` held until SIGHUP, so completion now signals
+  `pidfile=` (default `/run/dnsmasq/dnsmasq.pid`), or needs `reload=` when the
+  dnsmasq is remote. A dnsmasq target served options with no `optsfile=` is
+  refused rather than armed without its boot file.
+- `dhcpd://` keeps a completed target (the host is deleted and created again,
+  as dhcpd refuses to overwrite one), serves a `conditions=group` target its
+  conditional boot file (the host's own no longer outranks the group's), and
+  writes an option dhcpd has no name for in a form dhcpd parses.
+- `kea://` keeps a completed target with `reservation-update` (or a delete
+  and add), where it sent a `reservation-add` Kea refuses for an existing
+  reservation, and finds a zone's subnet inside a Kea `shared-networks` entry.
+- `windhcp://` completing a target that is removed also removes its own
+  policies (`netboot-<mac>-<condition>`, `netboot-<mac>`), which went on serving
+  its boot file; `conditions=shared` leaves an existing policy untouched;
+  `pixie dhcp-config` prints the per-target policies target mode creates, every
+  value quoted; `method=netsh` keeps a reservation through netsh and no longer
+  fails its read-back for an option a condition serves.
+- `windhcp://` over its local and ssh transports runs the whole script and
+  fails when any of it fails. It ran only the first line of each multi-line
+  block and reported success, so a reservation could be reported armed and not
+  exist.
 
 ## [0.4.0] - 2026-10-14
 
