@@ -8,7 +8,7 @@ a laptop.
 config/pixie.yaml              the config `pixie` discovers (./config/pixie.yaml)
 templates/debian/boot.cfg.shtpl shell-engine template (%{NAME} placeholders)
 templates/debian/install.ks.j2  Jinja template (full context access)
-plugins/recording.py           a DhcpServer backend that prints instead of arming
+plugins/recording.py           a dhcpctl.DHCPServer backend that prints instead of arming
 ```
 
 ## Run it
@@ -34,15 +34,14 @@ Expected output for `initiate web01`: the backend line, then the rendered
 [dhcp] arm   web01 -> 10.0.0.10 (recording://dhcp-host)
 ...
     kernel vmlinuz
-    append ip=10.0.0.10 hostname=web01 domain=example.com
+    append ip=10.0.0.10 hostname=web01 domain=example.com console=tty0
 ```
 
 ## What each part demonstrates
 
 - **Two ways to key a target.** `web01` is keyed by hostname and carries an IP;
-  `aa:bb:cc:dd:ee:ff` is keyed by MAC. A MAC-keyed target has no IP to match a
-  zone by containment, so it names its `dhcpzone` — otherwise zone lookup finds
-  nothing. Either target can be selected by id, hostname, MAC or IP, in any MAC
+  `aa:bb:cc:dd:ee:ff` is keyed by MAC. It names its `dhcpzone`, which a target
+  with no IP must: there is no address to find a zone by. Either target can be selected by id, hostname, MAC or IP, in any MAC
   spelling.
 - **Both template engines.** The suffix picks the engine and the stem names the
   artifact: `boot.cfg.shtpl` is rendered by the shell engine and asked for as
@@ -56,8 +55,9 @@ Expected output for `initiate web01`: the backend line, then the rendered
   its server — reach whichever backend you use, because they belong to the image
   rather than to the connection.
 - **Repo URLs.** `ctx.repos["mirror"].service("tftp")` builds
-  `tftp://10.0.0.2/debian` from the repo's address and service path. An
-  `http`/`https` service is built the same way and needs no extra.
+  `tftp://10.0.0.2/debian` from the repo's address and service path; the
+  kickstart's `service("http")` is built the same way and needs no extra
+  (kickstart's `url` takes http, https, ftp or nfs, not tftp).
 - **Quoting.** `shell_quote("$6$salt$hash")` renders `'$6$salt$hash'` — the `$`
   sequences reach the installer intact instead of being expanded by the shell
   that reads the file.

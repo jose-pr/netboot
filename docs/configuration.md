@@ -1,6 +1,6 @@
 # Configuration
 
-netboot loads a YAML config (via [`yaconfiglib`](https://github.com/jose-pr/yaconfiglib),
+netboot loads a YAML config (via [`anycfg`](https://github.com/jose-pr/anycfg),
 so `!include` and deep-merge are available). By default it reads `pixie.yaml` from
 `./config`; override with `--config FILE` or `--baseconfig DIR`.
 
@@ -65,7 +65,7 @@ installs the matching dhcpctl one.
 | `dnsmasq://` | dnsmasq | writes `--dhcp-hostsfile`/`--dhcp-optsfile` entries, local or over `sftp://` | nothing locally; `netboot[ssh]` for remote paths |
 | `kea://`, `keas://` | ISC Kea | `reservation-add` / `reservation-del` via the control agent | `netboot[kea]` |
 | `dhcpd://` | ISC dhcpd | an OMAPI host object | `netboot[dhcpd]` |
-| `windhcp://` | Windows DHCP | its PowerShell cmdlets *or* `netsh`, over ssh or WinRM | nothing over ssh; `netboot[winrm]` for WinRM |
+| `windhcp://` | Windows DHCP | its PowerShell cmdlets *or* `netsh`, locally, over ssh or WinRM | `netboot[ssh]` over ssh, `netboot[winrm]` over WinRM |
 
 ### Credentials
 
@@ -97,10 +97,12 @@ Each has one thing that is easy to get wrong:
   while completing a target SIGHUPs dnsmasq (`pidfile=`, default
   `/run/dnsmasq/dnsmasq.pid`, or `reload=` for a remote host); a plain file needs
   `reload=` every time. A target served options needs `optsfile=` too.
-- **Kea** needs the `host_cmds` hook loaded *and* a writable hosts backend; a
-  file-only Kea loads the hook and still refuses.
-- **dhcpd** hosts added over OMAPI do not survive a restart by themselves — that
-  is dhcpd's design.
+- **Kea** needs the `host_cmds` hook loaded *and* a writable hosts backend, or
+  `?target=memory` on the URI to keep reservations in Kea's running
+  configuration (Kea 2.7.4 or later; they are gone when Kea restarts); a Kea
+  with neither loads the hook and still refuses.
+- **dhcpd** writes a host added over OMAPI to its leases file, which is what
+  keeps it across a restart: a dhcpd started with a fresh leases file has lost it.
 - **Windows** validates some option values as it stores them, whichever method
   you use: a name server that does not answer is refused rather than stored. An
   arm that fails part-way leaves the reservation with the options applied so far
@@ -210,8 +212,8 @@ every backend can express. `options` takes the same option names as
 | Backend | Construct | netboot creates it | If it cannot |
 | ------- | --------- | ------------------ | ------------ |
 | `windhcp://` | a scope-level **policy** per target (plus the user/vendor **class** it references), and a base policy for the same target | yes, through the cmdlets — **netsh has no policy support at all**, so this part ignores `method=` | prints the `Add-DhcpServerv4Class` / `Add-DhcpServerv4Policy` lines to run once as an admin |
-| `dhcpd://` | an inline **`if`** in the host's statements (default), or a named **group** with `conditions=group` | yes — statements always, groups over OMAPI | prints the `group { }` block for `dhcpd.conf`, which also survives a restart where an OMAPI group does not |
-| `kea://` | a **client class**, named by the reservation | only with the `class_cmds` hook (`class-add`) | prints the `client-classes` JSON for `kea-dhcp4.conf` |
+| `dhcpd://` | an inline **`if`** in the host's statements (default), or a named **group** with `conditions=group` | yes — statements always, groups over OMAPI | prints the `group { }` block for `dhcpd.conf` |
+| `kea://` | a **client class** of the target's own (`<name>-<mac>`), plus one serving what the condition overrides when it does not match | only with the `class_cmds` hook (`class-add`) | prints the `client-classes` JSON for `kea-dhcp4.conf` |
 | `dnsmasq://` | — | **no** | refuses, and prints the `dhcp-match`/`dhcp-option` pair for `dnsmasq.conf` |
 
 #### Windows: why a condition means two policies
@@ -367,7 +369,7 @@ rendered an empty string, so the behaviour depended on a file's suffix.
 | Value | Behaviour |
 | ----- | --------- |
 | `strict` (default) | Raise, naming the variable. A typo fails the run instead of shipping a boot artifact with a blank where a kernel path belongs. |
-| `lenient` | Render an empty string, and log a warning. This is what Jinja templates did before. |
+| `lenient` | Render an empty string. The shell and mako engines also log a warning naming the variable; Jinja, Liquid, Handlebars and Mustache do not. |
 | `debug` | Leave the placeholder (`{{ name }}` / `%{NAME}`) in the output, so the gap is visible in the rendered file. |
 
 ```yaml
@@ -378,14 +380,14 @@ templates_undefined: lenient   # keep the pre-0.2 Jinja behaviour
 
 Config values may use `{{ ... }}` interpolation, evaluated while the config
 loads: `greeting: "{{ globals.site }}-boot"` resolves against the merged
-document. It renders in jinja2's **sandbox**, and the loader runs with commands
-disabled, so a config document cannot execute a command or reach out of the
-template language -- netboot never documented those capabilities and a config is
+document. It renders in tplx's **sandbox**, and the loader runs with anycfg's
+untrusted policy (no command sources, no template files), so a config document
+cannot execute a command or reach out of the template language -- netboot never documented those capabilities and a config is
 often assembled by `!include` from inventory exports rather than written by
 hand.
 
 `!include` can still read any file the process can read. To confine it, set
-`YACONFIGLIB_CONFINE_TO` to the directories includes may come from.
+`ANYCFG_CONFINE_TO` to the directories includes may come from.
 
 An empty or comment-only config loads as an empty mapping. A top level that is
 not a mapping is an error naming the file.
@@ -431,8 +433,8 @@ netboot renders through:
 | `tplx.CopyTemplate` | anything else | — | n/a — nothing is substituted |
 
 Every optional engine is **registered whether or not its library is installed**,
-so a `.liquid` file tells you to `pip install netboot[liquid]` instead of being
-quietly copied. None of them is imported until a file claims it, so an install
+so a `.liquid` file fails naming the extra to install (`tplx[liquid]`, which
+`netboot[liquid]` installs) instead of being quietly copied. None of them is imported until a file claims it, so an install
 that uses none pays nothing.
 
 Jinja and mako evaluate Python, so a template reaches into `ctx` directly. The

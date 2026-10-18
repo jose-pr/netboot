@@ -5,4 +5,4 @@
 default=install
 label install
     kernel %{IMAGE_GLOBALS_KERNEL}
-    append ip=%{TARGET_IP} hostname=%{TARGET_HOSTNAME} domain=%{DHCPZONE_DOMAIN}
+    append ip=%{TARGET_IP} hostname=%{TARGET_HOSTNAME} domain=%{DHCPZONE_DOMAIN} console=%{IMAGE_GLOBALS_CONSOLE:-tty0}

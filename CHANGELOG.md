@@ -6,7 +6,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `pixie render <target> NAME... [--out DIR]` renders a target's artifacts to
+  standard output or a directory, arming nothing.
+
 ### Changed
+- **Configuration is loaded by `anycfg`**, the new name of yaconfiglib:
+  netboot depends on `anycfg>=0.14.0,<0.15` and `tplx>=0.2.0,<0.3` instead of
+  `yaconfiglib` and `jinja2`, and `netboot[config]` installs `anycfg[yaml]`.
+  Includes are confined by **`ANYCFG_CONFINE_TO`**; `YACONFIGLIB_CONFINE_TO` is
+  not read, so rename it where you set it. A malformed file is still a
+  one-line error, now naming `file:line:col`. `netboot.utils.config.Namespace`
+  and the config classes build on `anycfg.TypedNamespace` / `OpaqueMerge`.
+- Every public module declares `__all__`; `netboot.utils` exports `Namespace`
+  too. `PixieTarget`, `PixieImage` and `PixieContext` are defined in private
+  modules and imported, as before, from `netboot` or `netboot.engine`.
+- `netboot.dhcp.DhcpZone` is `DHCPZone` (also importable from `netboot`), as
+  every other public name spells DHCP; rename the import.
+- `Pixie.lookup_image` returns `None` when nothing matches, as
+  `lookup_target` and `lookup_dhcpzone` do, rather than `{}`; a
+  `FoundTargetImage` hook sees `None` too.
+- **The command line is `netboot.cli`**, one duho class per command
+  (`Initiate`, `Complete`, `Render`, `DhcpConfig`); the console script is
+  `netboot.cli:main`, and `netboot.main` re-exports `main`, `PixieArgs`,
+  `Pixie_` and `parse_path`. `main(argv=None, *, name=None)`: `argv` is the
+  first parameter, so `main(["--version"])` works; pass `name=` by keyword.
+  `netboot.cmds` is gone: `netboot.cmds.dhcp_config.recipe` is
+  `netboot.dhcp.condition_recipe`, `conditions_for` is `build_conditions`, and
+  a `--cmdspath` plugin with `run(netboot, args, conf)` works as before.
+- `pixie` no longer imports a `pixie_env` settings module from `sys.path`,
+  which under `python -m netboot` meant the working directory: running it in
+  a directory runs no code from there. Export `PIXIE_*` variables instead, or
+  name a module with `--load-module`.
+- **Building the engine does no DNS.** A hostname-only target's `ip` is
+  looked up by `PixieTarget.resolve_ip()`, which the engine calls for the
+  target a command acts on (and for every hostname-only target when an IP
+  query matches no configured address), so an unresolvable target no longer
+  slows every command. A `PixieTarget` built directly has `ip == ""` until
+  `resolve_ip()` is called.
+- `initialize(target, **options)` and `complete(target, **options)` hand
+  `options` to their Start/End hooks as kwargs: `initiate --iscsi` now reaches
+  them as `kwargs["iscsi"]`.
 - **A DHCP server's credentials are its own config entry's.** A `dhcpservers`
   entry is a URI or a mapping of `uri:` and that backend's secrets (`user`,
   `password`; dhcpd `keyname`, `omapi_key`), written in the config or taken
@@ -139,6 +179,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not read.
 
 ### Fixed
+- A configuration mistake is one line and exit 2, not a traceback: a MAC,
+  address or network that does not parse (named `targets.<id>`,
+  `dhcpzones.<id>`), a collection that is not a mapping, a key that is not
+  text, a `--load-module` that does not import, and a zone whose only DHCP
+  servers could not be reached (`no DHCP server armed ...`). A configured `ip`
+  that is not an address is now that error instead of being dropped.
+- **A numeric MAC is refused.** YAML reads an unquoted all-digit MAC
+  (`mac: 52:54:00:12:34:56`, or such a target id) as a base-60 number, which
+  netboot armed as a different MAC; quote it.
+- `repo / "sub"` keeps a service's query string last
+  (`http://h/boot/sub/a?sig=1`, not `.../a?sig=1/sub`), and leaves `local`
+  unset when the repository had none instead of making it `file:sub`.
+- A full-URI repository service no longer resolves the repository's address
+  (nor warns that it has none); a relative one resolves it once, through
+  netimps' shared cache, rather than on every URL.
+- `templates: dir` given to `Pixie` directly is one root, not one per
+  character, and `parse_path` reads every RFC 3986 scheme (`svn+ssh://`).
+- `pixie dhcp-config` with no target warns about a target whose zone cannot
+  be found and covers the rest, where it stopped at the first; a recipe
+  several targets share is printed once. `--as` on Windows with standard
+  input from `NUL` fails at once instead of waiting on a prompt.
+- A global named like any member of the render context (`version`,
+  `render`, `searchpaths`, ...) is dropped with a warning, as `target` and
+  `image` already were, instead of replacing it or breaking the context.
+- A zone with no `dhcpservers` warns that nothing was armed.
+- `hooks: None` means no hooks; `ctx.resource(Resource)` for a resource with
+  no `path` is `None`.
+- A configuration key nothing reads (`targetz:`, a zone's `gatway:`) is
+  logged as a warning naming it. Data for templates belongs under `globals`;
+  a key starting with `_` is never warned about.
 - With `DUHO_TRACEBACK` set, a configuration error prints its traceback to
   standard error again: duho 0.7.6 leaves that to netboot, which now requires
   `duho>=0.7.6`.
@@ -164,6 +234,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `pixie dhcp-config` prints the per-target policies target mode creates, every
   value quoted; `method=netsh` keeps a reservation through netsh and no longer
   fails its read-back for an option a condition serves.
+- `pixie initiate` on a target that is already armed replaces its reservation
+  on every DHCP server; dhcpd and Kea refused, and the Windows cmdlet threw.
+- `kea://` conditions are a client class of the target's own, so an iPXE
+  client is served the chainload and any other client the reservation's boot
+  file; on a real Kea both were handed the same one. `dhcp-config` prints the
+  two classes per target (`<name>-<mac>` and `netboot-<mac>`). A Kea with no
+  hosts database is armed with `?target=memory`.
+- Every DHCP option reaches dnsmasq, dhcpd and Kea in a form it reads: dhcpd
+  refused the host's statements for most options netboot did not name, and
+  dnsmasq read flags, number lists and octets as text.
+- `windhcp://` and a remote `dnsmasq://` reload run through hostctl. ssh is
+  asyncssh rather than the system `ssh` client (it reads `~/.ssh/config` as
+  `ssh` does), so `windhcp://` over ssh now needs `netboot[ssh]`; `?timeout=` bounds one
+  Windows script (default 120 s).
 - `windhcp://` over its local and ssh transports runs the whole script and
   fails when any of it fails. It ran only the first line of each multi-line
   block and reported success, so a reservation could be reported armed and not

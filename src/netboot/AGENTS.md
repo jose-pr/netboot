@@ -1,48 +1,63 @@
 # `netboot` — public API header
 
 Header-file-style reference for the `netboot` package: every public export with
-its signature, arguments, contract, and gotchas, so this module can be
-consumed without reading its source. Kept current with the public API. For the
-project overview, install instructions and CLI usage, see the shipped
-`README.md`, or <https://github.com/jose-pr/netboot>.
+its signature, arguments, contract and gotchas, so the package can be used
+without reading its source. It ships inside the package and is
+self-contained. Development documentation lives with the source at
+<https://github.com/jose-pr/netboot>.
 
-## Errors (`netboot.exceptions`, re-exported from `netboot`)
+Import the engine, its objects and the errors from `netboot` itself
+(`from netboot import Pixie, PixieConfigError`); `netboot.dhcp`,
+`netboot.content` and `netboot.logging` are public modules of their own;
+`netboot.cli` is the command line, documented under "Command line", and
+`import netboot` never imports it. A module or name starting with `_` is private.
 
-- **`PixieError(Exception)`** — base for what netboot raises on purpose, as
-  opposed to a bug. The CLI reports these as one line and exits 2.
-  - **`PixieLookupError(PixieError, LookupError)`** — a target, image or zone
-    could not be resolved, or a target query was ambiguous.
-  - **`PixieConfigError(PixieError, ValueError)`** — the configuration cannot
-    be used as given (for example a top level that is not a mapping).
+`pip install netboot` is the engine and its DHCP and template layers
+(`pydhcpctl`, `tplx`, `netimps`, `pathapi`, `uripath`, `anycfg`, `duho`).
+Extras: `config` (`pyyaml`, which the `pixie` CLI needs to read a config file),
+`dns` (the `dnspython` resolver backend), `mako`, `liquid`, `handlebars`,
+`mustache` (those template engines, through tplx), `kea`, `dhcpd`, `winrm`,
+`ssh` (those DHCP backends and transports, through dhcpctl), `docs`. Python 3.9+.
+
+`netboot.__version__` is the installed distribution's version (`"0.0.0"` from
+a source tree that is not installed).
 
 ## Engine (`netboot.engine`, re-exported from `netboot`)
 
-The engine lives in `netboot.engine`; the package root re-exports it, so
-`from netboot import Pixie` is the supported import and `netboot.engine.Pixie`
-is the same object.
+`netboot.engine` exports the engine and its objects, and the package root
+re-exports them, so `from netboot import Pixie` is the supported import and
+`netboot.engine.Pixie` is the same object. `PixieTarget`, `PixieImage` and
+`PixieContext` are defined in private modules; import them from either.
 
-- **`Pixie(hooks=(), **config)`** — the engine. `config` is the merged config
+- **`Pixie(hooks=(), **config)`** — the engine (`hooks=None` is none). `config` is the merged config
   mapping: `targets`, `images`, `dhcpzones`, `repos` (each a `dict[id, ...]`
   built into the corresponding class via its type hints — `TypeError` from the
   value class falls back to a no-`_id` constructor call; a `None` entry
-  (`targets: {host1:}` in YAML) means "all defaults", and an entry that is
-  neither a mapping nor an object raises `PixieConfigError`), `globals` (dict;
+  (`targets: {host1:}` in YAML) means "all defaults"; a collection that is
+  not a mapping, an id that is not text (YAML reads an unquoted
+  `52:54:00:12:34:56` as a number), an entry that is neither a mapping nor an
+  object, and a value its class cannot parse (a MAC, an address, a network)
+  raise `PixieConfigError` naming `<collection>.<id>`), `globals` (dict;
   deep-copied at construction, so later edits to the caller's mapping do not
   reach the engine), `defaults` (per-collection default mappings), plus any other
-  annotated `Pixie` attribute. `hooks` is a sequence of callables or
+  annotated `Pixie` attribute. A key nothing reads (`targetz:`, a zone's
+  `gatway:`) is logged as a **warning** naming its dotted path; the keys read
+  are each class's annotated fields plus its `_CONFIG_KEYS`, and a key
+  starting with `_` is never warned about. `hooks` is a sequence of callables or
   `"module.func"` import-path strings; resolved once in `__new__`. Every
   config-driven step fires a `PixieEvent` through the hook chain (see below)
   so hooks can intercept object construction and property values before
   they're set.
   - **`.targets`** / **`.dhcpzones`** / **`.images`** / **`.repos`** —
-    `dict[str, ...]` of `PixieTarget` / `DhcpZone` / `PixieImage` /
+    `dict[str, ...]` of `PixieTarget` / `DHCPZone` / `PixieImage` /
     `Repository`, keyed by config id.
   - **`.globals`** — `dict`, layered into every render context.
   - **`.templates_undefined`** — `"strict"` (default), `"lenient"` or
     `"debug"`, from the config key of the same name: what a template variable
     with no value does. `strict` raises naming it, `lenient` renders an empty
-    string with a warning, `debug` leaves the placeholder in the output. It
-    means the same in both engines; an unknown value raises
+    string (the shell and mako engines also warn; Jinja, Liquid, Handlebars
+    and Mustache do not), `debug` leaves the placeholder in the output. An
+    unknown value raises
     `PixieConfigError` when a context is built.
   - **`.hook(event, value=None, /, **kwargs) -> value`** — run the hook chain
     for `event`, threading `value` through each `f(event, netboot, value,
@@ -63,12 +78,11 @@ is the same object.
     Fires `PixieEvent.LookupTarget` (may substitute a `PixieTarget` directly)
     then `PixieEvent.FoundTarget`; `None` if nothing resolves to a
     `PixieTarget`.
-  - **`.lookup_image(name: str, target=None) -> PixieImage`** — the image
-    whose `.match(img_name, name)` returns the highest truthy value (default
-    `PixieImage.match` is exact-name equality); falls back to an empty dict
-    if nothing matches (**not** `None` — check truthiness carefully). Fires
-    `PixieEvent.FoundTargetImage`.
-  - **`.lookup_dhcpzone(name: str, target=None) -> DhcpZone | None`** — by id;
+  - **`.lookup_image(name: str, target=None) -> PixieImage | None`** — the
+    image whose `.match(img_name, name)` returns the highest truthy value
+    (default `PixieImage.match` is exact-name equality); `None` if nothing
+    matches. Fires `PixieEvent.FoundTargetImage`.
+  - **`.lookup_dhcpzone(name: str, target=None) -> DHCPZone | None`** — by id;
     if `name` is empty and `target` is given, uses `target.dhcpzone`, else the
     **most specific** zone whose `.network` contains `target.ip` (longest
     prefix, so declaration order does not decide it) and caches that id back
@@ -79,19 +93,21 @@ is the same object.
     `[self.globals, *globals, image.globals, dhcpzone.globals, target.globals]`
     (image/dhcpzone/target objects are shared across targets and never
     mutated) into a fresh `PixieContext`, attaches a `tplx.Loader` over
-    `config["templates"]`, and sets `.version`. Globals named `target`,
-    `image`, `dhcpzone`, `repos` or `resources` are **dropped with a warning**:
-    they would replace the context's own fields. Raises `PixieLookupError`
+    `config["templates"]`, and sets `.version`. A global named like a member
+    of the context class (`target`, `image`, `version`, `render`,
+    `searchpaths`, ... its annotated fields and public attributes) is
+    **dropped with a warning**: it would replace the context's own. Raises `PixieLookupError`
     naming the target and what was configured if the image or dhcp zone cannot
     be resolved; `require_image=False` (what `.complete` uses) substitutes an
     empty `PixieImage` instead, so a machine can still be cleaned up after its
     image is retired from the config. Fires `PixieEvent.PixieContextForTarget`.
-  - **`.initialize(target) -> PixieContext`** — `make_context` then
+  - **`.initialize(target, **options) -> PixieContext`** — `make_context` then
     `ctx.pxe_init(self)` (arms every `dhcpzone.dhcpservers` for the target).
-    Fires `StartPixieInitialize` / `EndPixieInitialize`.
-  - **`.complete(target) -> PixieContext`** — `make_context` then
+    Fires `StartPixieInitialize` / `EndPixieInitialize`, each with `options`
+    as its hook kwargs (`initiate` passes `iscsi=`).
+  - **`.complete(target, **options) -> PixieContext`** — `make_context` then
     `ctx.pxe_complete(self)` (disarms every `dhcpzone.dhcpservers`). Fires
-    `StartPixieComplete` / `EndPixieComplete`.
+    `StartPixieComplete` / `EndPixieComplete`, with `options` likewise.
   - **`.VERSION`** — class attr, `netboot.__version__` at class-definition time.
 
 - **`PixieEvent`** (`StrEnum`) — hook event names: `NewPixieObject`,
@@ -100,18 +116,24 @@ is the same object.
   `PixieContextForTarget`, `BuildDhcpOptions`, `StartPixieInitialize`,
   `EndPixieInitialize`, `StartPixieComplete`, `EndPixieComplete`.
 
-- **`PixieTarget(**kwargs)`** (`argparse.Namespace` + `yaconfiglib.OpaqueMerge`)
-  — `_id`, `hostname`, `ip` (`IPAddress`), `mac` (`MACAddress`), `image`,
+- **`PixieTarget(**kwargs)`** (`argparse.Namespace` + `anycfg.OpaqueMerge`)
+  — `_id`, `hostname`, `ip` (`IPAddress`, or `""` while unknown), `mac`
+  (`MACAddress`; a number is refused with `PixieConfigError`), `image`,
   `dhcpzone`, `globals` (`dict`), `template_path` (`list[str | Path]`).
   Construction fills gaps: a MAC-shaped `_id` with no explicit `mac` is
   adopted as the MAC (else `mac` defaults to the null MAC
   `00:00:00:00:00:00`); an `_id` that looks like an IP fills `ip`, otherwise a
-  non-MAC `_id` fills `hostname`; then, if `ip` is still unset and a hostname
-  is known, **exactly one** forward lookup
-  (`netimps.resolve`, no reverse lookup) fills it. A name that does
-  not resolve — including when no resolver is reachable at all — leaves `ip`
-  unset and logs a warning; it is never retried, and never raises. `hostname`
-  is lower-cased. The `dns` extra is optional: without it netimps still
+  non-MAC `_id` fills `hostname`. Construction does **no DNS**: a configured
+  `ip` that is not an address raises netimps' `ValueError`, and so does a
+  malformed `mac`. `hostname` is lower-cased.
+  **`.resolve_ip() -> Self`** — if `ip` is unset and a hostname is known,
+  **exactly one** forward lookup (`netimps.resolve`, no reverse lookup) fills
+  it, the first time it is called only. A name that does not resolve —
+  including when no resolver is reachable at all — leaves `ip` unset and logs
+  a warning; it is never retried, and never raises. The engine calls it for a
+  target it acts on: `lookup_target` (before `FoundTarget`), `make_context`,
+  `lookup_dhcpzone`, and an IP query nothing configured matches, which looks
+  up every hostname-only target. The `dns` extra is optional: without it netimps still
   resolves through its system/`nslookup` backends.
 
 - **`PixieImage(**kwargs)`** (`content.Resource`) — `template_path`,
@@ -153,8 +175,10 @@ is the same object.
     arm/disarm every `dhcpzone.dhcpservers` for this context; called by
     `Pixie.initialize`/`.complete`, not usually invoked directly. Both try
     every backend. `pxe_init` logs a backend that raises as a **warning** and
-    carries on; it raises (the first error) only when **no** backend could be
-    armed, and nothing is rolled back, so a target may end up armed on some
+    carries on (a zone with no servers is a warning that nothing was
+    armed); it raises only when **no** backend could be armed — the
+    first error itself when it is a `PixieError` or `DHCPCtlError`, else a
+    `PixieError` chained to it — and nothing is rolled back, so a target may end up armed on some
     servers and not others. `pxe_complete` never raises for a backend: each
     failure is logged as a warning and the rest are still disarmed.
 
@@ -166,13 +190,14 @@ module is what is about targets: zones, the layering of `dhcp_options` /
 `dhcp_when` / `dhcp_complete`, and the secrets netboot reads. It re-exports
 nothing from dhcpctl.
 
-- **`DhcpZone(**kwargs)`** (`Namespace` + `OpaqueMerge`) — `network`
+- **`DHCPZone(**kwargs)`** (`Namespace` + `OpaqueMerge`) — `network`
   (`IPNetwork`), `gateway` (`IPAddress | None`), `domain` (`str | None`),
   `search` (`list[str]`), `nameservers` (`list[IPAddress]`), `globals`,
   `dhcpservers` (`list[dhcpctl.DHCPServer]`; a string is built with
   `connect(uri)`, a server object is kept), and optionally `subnet_id` (Kea)
   and `scope` (Windows scope id). Accepts `gateway`+`netmask`, or a CIDR
-  `network`/`gateway` string, and derives the rest. **`.nameserver`** — first of
+  `network`/`gateway` string, and derives the rest; a `network` or `gateway`
+  that does not parse raises netimps' `ValueError`. **`.nameserver`** — first of
   `.nameservers`, or `""`. **`.get_local_server(servers, default)`** — first
   server inside `.network`, else `default`; accepts strings and skips
   unparseable ones with a warning.
@@ -248,20 +273,26 @@ nothing from dhcpctl.
 Any other `dhcpctl.DHCPCtlError` (a server refusing, a backend's library not
 installed) reaches the CLI as a one-line error with exit status 2.
 
+- **`condition_recipe(ctx, server, condition) -> str`** — what `server` needs
+  set up once for a `dhcp_when:` condition, in its own syntax: the text
+  `pixie dhcp-config` prints.
 - **`pixie dhcp-config [target] [--apply] [--as USER]`**
-  (`netboot.cmds.dhcp_config`) — prints each server's `condition_recipe()` with a
-  header naming the server and condition; **contacts nothing** without `--apply`.
+  (`netboot.cli.dhcp_config.DhcpConfig`) — prints each server's `condition_recipe()` with a
+  header naming the server and condition, once per identical
+  (server, condition, recipe); **contacts nothing** without `--apply`. With no
+  target, a target whose zone cannot be found is a warning and the rest are
+  still covered.
   `--apply` calls `ensure_condition` per server and returns 1 if any failed,
   having done the rest. `--as` implies `--apply` and prompts with `getpass`, only
-  on a TTY — without one it fails saying the password belongs in the
+  on a terminal (on Windows, a console handle: `NUL` reports `isatty()`) —
+  without one it fails saying the password belongs in the
   server's `dhcpservers` entry, rather than blocking an unattended run. The
   user and password are that run's secrets for each server, held in memory,
   never a log, the environment or a script, and override any user and password
   the URI carries; a server whose backend takes no password is refused under
   `--as`. **The only command that
   prompts**; this is where privileged one-offs live so `initiate`/`complete` stay
-  unattended. `conditions_for(ctx)` and `recipe(ctx, server, condition)` are the
-  module's helpers for the same output.
+  unattended.
 
 ## Content (`netboot.content`)
 
@@ -271,13 +302,16 @@ installed) reaches the CLI as a one-line error with exit status 2.
   (`dict[str, URIPath]`), `local` (`URIPath | None`, a filesystem/local
   service; a Windows drive path such as `C:\tftp` is read as a path and becomes
   a `file:` URI, not URI scheme `c`). `repo / "sub"` (`.joinpath`) returns a **new** `Repository` with
-  every service (and `.local`) suffixed by `sub` — the original is untouched.
+  every service (and `.local`, when set) suffixed by `sub`, joined as a URI
+  path so a service's query string stays last — the original is untouched.
   **`.get(*path, service=None) -> URIPath | None`** — join `path` onto the
   named service's base URI (`service=None` → `.local`, scheme `"file"`);
   `None` if that service isn't defined. **`.service(name) -> URIPath | None`**
-  — the base URI for `name`. For a *relative* service path the authority is
-  filled in from `.address`: resolved to an IP (`Host.ip()`, or the name as
-  written when it does not resolve) for every scheme
+  — the base URI for `name`. A full-URI service is used as written and
+  reads no address. For a *relative* service path the authority is
+  filled in from `.address`: resolved to an IP (`Host.ip(cache=True)`, so
+  netimps' shared cache answers repeats; the name as written when it does
+  not resolve) for every scheme
   except `https`, which keeps the configured name so TLS validation and
   name-based virtual hosts still work. An `address` of the form `host:port` or
   `[v6]:port` becomes a real host and port (**`netimps.split_host`**; a v6
@@ -311,8 +345,8 @@ where it is looked for:
   `.searchpaths` the search paths, both passed to `tplx` for the template
   **and for every include inside it**. Name specificity outranks search-path
   order: a MAC-named file in the last search path beats a bare-named file in
-  the first. The roots are `config["templates"]` (through the CLI,
-  `<config dir>/templates` by default).
+  the first. The roots are `config["templates"]`, a list or one root
+  (through the CLI, `<config dir>/templates` by default).
 - **The engine is chosen by suffix**: `.j2`/`.jinja`/`.jinja2` Jinja, `.mako`,
   `.liquid`, `.hbs`/`.handlebars`, `.mustache`, `.erb` (ruby), `.epp`
   (puppet), `.shtpl` the `%{NAME}` shell engine, anything else is copied as
@@ -328,7 +362,7 @@ where it is looked for:
 
 ## Utils (`netboot.utils`)
 
-- **`Namespace`** (`netboot.utils.config`) — `yaconfiglib.TypedNamespace` +
+- **`Namespace`** (`netboot.utils.config`) — `anycfg.TypedNamespace` +
   `OpaqueMerge`; the shared base for netboot's config objects (applies
   `_parse_<prop>` coercers at construction, and marks the built object as
   merge-opaque — a later config layer replaces it wholesale rather than
@@ -363,72 +397,138 @@ where it is looked for:
   `netboot.<child>` inherits from it). Importing netboot has **no logging side
   effects**: it configures nothing and imports no optional dependency.
 - **`quiet_noisy_dependencies(insecure_warnings=False)`** — opt-in: turns
-  `urllib3.connectionpool` / `paramiko.transport` down to `WARNING`, and with
+  `urllib3.connectionpool`, `asyncssh` and `paramiko.transport` (whichever SSH
+  library is in use) down to `WARNING`, and with
   `insecure_warnings=True` also disables urllib3's `InsecureRequestWarning`
   **process-wide** (which is why that is off by default, and why it is a call
   rather than an import side effect). The `pixie` CLI calls it; an embedding
   application decides for itself.
 
-## CLI driver (`netboot.main`)
+## CLI (`netboot.cli`)
 
-Thin driver over `duho.run(..., exit="parse")` (so `duho.app`); `duho` owns command discovery, parser build,
-config/env layering and parsing. Netboot overrides only *dispatch*: it loads
-the layered YAML config into one `Pixie` object, then runs the selected
-command against it.
+Built on `duho.run(..., exit="parse")`; `duho` owns parser build, env
+layering and parsing. Each built-in command is a class in its own module
+(`netboot.cli.initiate.Initiate`, `.complete.Complete`, `.render.Render`,
+`.dhcp_config.DhcpConfig`), a `duho.Cmd` whose `netboot` property builds the
+engine from the global options on first use (a test sets `_netboot_`), and
+whose `__call__` is the command. `netboot.main` re-exports `main`,
+`PixieArgs`, `Pixie_` and `parse_path` from their former home.
 
-- **`main(name=None, argv=None) -> int`** — build the app, parse `argv`,
+- **`main(argv=None, *, name=None) -> int`** — build the app, parse `argv`,
   dispatch; returns the status, except that `--help`, `--version` and a usage error
   raise `SystemExit` (0, 0, 2); Ctrl-C returns
   130, a broken pipe 1. `name` defaults to `"pixie"` — the CLI's identity: it is the prog
-  name **and** the `duho.env.Env` prefix, so `PIXIE_<KEY>` env vars (and an
-  optional `pixie_env` companion module of defaults, autoloaded from
-  `sys.path`/CWD) supply app settings; the resolved `Env` is attached to the
+  name **and** the `duho.env.Env` prefix, so `PIXIE_<KEY>` env vars supply
+  app settings (no companion module is imported); the resolved `Env` is attached to the
   dispatched instance as `_env_`. The `netboot` name is only the
   library/import package. This is the console-script
-  (`pixie = netboot.main:main`) and `python -m netboot` entry point.
+  (`pixie = netboot.cli:main`) and `python -m netboot` entry point.
 - **`PixieArgs`** (`duho.LoggingArgs` mixin) — the global CLI fields:
   `config` (`-c/--config`), `baseconfig` (default `./config`), `load_module`
   (`-l/--load-module`, repeatable, colon-extendable), `cmdspath`
   (`--cmdspath`, repeatable, `os.pathsep`-extendable).
 - **`Pixie_`** (`PixieArgs` + `duho.Cli`) — the runnable app root;
   `_version_` is `netboot.__version__`.
-- **`parse_path(path: str | Path) -> Path`** — a bare path → `LocalPath`; a
-  path containing `:` (a URI scheme) → `URIPath`.
-- Command-module contract (built-ins in `netboot.cmds`; discovered the same
-  way via `--cmdspath` / `PIXIE_CMDS_PATH`, `os.pathsep`-separated): a module
+- **`parse_path(path: str | Path) -> Path`** — text starting with an RFC 3986
+  scheme of two or more characters and `:` (`sftp:`, `svn+ssh:`) → `URIPath`;
+  anything else, a Windows drive (`C:\srv`) included → `LocalPath`.
+- Plugin command contract (discovered via `--cmdspath` / `PIXIE_CMDS_PATH`,
+  `os.pathsep`-separated, after the built-ins): a subclass of
+  **`netboot.cli.Command`** (`.netboot` the engine, `.find(query)` the
+  built-ins' lookup, `__call__` the command), or a module
   exposing `register(parser, args)` (add its argparse arguments) and
   `run(netboot: Pixie, args, conf: dict) -> int | None` (`conf` is the raw
-  merged config dict, deep-copied before `Pixie` construction). A later
-  command source wins on a name clash. A module whose `run` does **not**
+  merged config dict, deep-copied before `Pixie` construction). A plugin
+  shadows a built-in of its name, and `PIXIE_CMDS_PATH` wins over
+  `--cmdspath`. A module whose `run` does **not**
   accept at least 3 positional params (no netboot-first signature) is instead
   dispatched through plain `duho.run_command(command, instance)`.
 - Loading the config (`-c/--config`, else `<baseconfig>/pixie.yaml`) requires
-  the `config` extra (`pyyaml`); raises `ImportError` with an install hint
-  otherwise. `conf["templates"]` is the config's `templates:` (a scalar is a
+  the `config` extra (`pyyaml`); raises `PixieConfigError` with an install
+  hint otherwise. `conf["templates"]` is the config's `templates:` (a scalar is a
   one-element list), each **relative root resolved against the config file's
   directory** as `!include` is, an absolute path or URI used as given; with no
   `templates:` (or an empty one) it is `[<config dir>/templates]`. The working
   directory is never a root.
   An empty or comment-only file loads as `{}`; a top level that is not a
   mapping raises `PixieConfigError`.
-- **Config loading is hardened**: the loader runs with `allow_commands=False`
-  and `sandbox=True`, so `{{ ... }}` interpolation in config values renders in
-  jinja2's sandbox and a document cannot run commands. Set
-  `YACONFIGLIB_CONFINE_TO` to also restrict which directories `!include` may
-  read from.
+- **Config loading is hardened**: `anycfg.Loader(merge="deep",
+  recursive=True, interpolate=True, inject_env=True,
+  policy=anycfg.Policy.untrusted())` — no command sources, no template files,
+  and `{{ ... }}` in values rendered in tplx's sandbox. A malformed file is a
+  `PixieConfigError` naming `file:line:col` (its cause an `anycfg.ParseError`),
+  any other `anycfg.ConfigError` a `PixieConfigError` too, and a policy refusal
+  an `anycfg.PolicyError` (a `PermissionError`). Set `ANYCFG_CONFINE_TO` to
+  also restrict which directories `!include` may read from.
+
+## Exceptions (`netboot.exceptions`, re-exported from `netboot`)
+
+- **`PixieError(Exception)`** — base for what netboot raises on purpose, as
+  opposed to a bug. The CLI reports these as one line and exits 2.
+  - **`PixieLookupError(PixieError, LookupError)`** — a target, image or zone
+    could not be resolved, or a target query was ambiguous.
+  - **`PixieConfigError(PixieError, ValueError)`** — the configuration cannot
+    be used as given (for example a top level that is not a mapping).
+
+- A `dhcpctl.DHCPCtlError` (a server refusing, a URI it cannot use) and a
+  `tplx.TplxError` (a template that cannot be found or rendered) come through
+  as themselves; the CLI reports both as one line too.
+- A value a config object cannot parse (a MAC, an address, a network) raises
+  netimps' `ValueError` from the class itself, and `PixieConfigError` naming
+  `<collection>.<id>` from `Pixie(...)`.
+
+## Command line
+
+- **`initiate <target> [--iscsi]`** — `netboot.lookup_target` then
+  `netboot.initialize(target, iscsi=...)`. `--iscsi` is not consumed by the
+  built-in logic: it reaches the Start/EndPixieInitialize hooks' kwargs. Exit 1 if the target
+  isn't found or the query is ambiguous (both logged, not raised).
+- **`complete <target>`** — `netboot.lookup_target` then
+  `netboot.complete(target)`. Same exit-1 cases.
+- **`render <target> NAME... [--out DIR]`** — `make_context(target)` then
+  `ctx.render(NAME)` for each name, written to standard output, or to
+  `DIR/NAME` with `--out`; a byte-exact copy is written as its bytes. Arms
+  nothing. Same exit-1 cases; a template that cannot be found or rendered
+  exits 2.
+- **`dhcp-config [target] [--apply] [--as USER]`** — under DHCP above.
+
+`pixie <command> --help` lists each command's arguments.
+
 - **Exit codes**: 0 success, 1 the command reported failure (target not found,
-  ambiguous), 2 a configuration or lookup error (reported as one line through
+  ambiguous), 2 a configuration or lookup error, a `--load-module` that does not
+  import, or no DHCP server armed (reported as one line through
   the `netboot` logger; `-v` adds the traceback at DEBUG; with `DUHO_TRACEBACK`
   set the traceback is also printed to standard error and the status stays 2). A netboot-contract command returning
   a non-int, non-None value is warned about and treated as success rather than
   crashing after its work; a plain `run(args)` command's returned value is
   printed to standard output.
 
-## Built-in commands (`netboot.cmds`)
+## Environment variables
 
-- **`initiate <target> [--iscsi]`** — `netboot.lookup_target` then
-  `netboot.initialize(target)`. `--iscsi` is accepted but not yet consumed by
-  the built-in logic (a hook/plugin extension point). Exit 1 if the target
-  isn't found or the query is ambiguous (both logged, not raised).
-- **`complete <target>`** — `netboot.lookup_target` then
-  `netboot.complete(target)`. Same exit-1 cases.
+| Variable | Read by | Effect |
+| --- | --- | --- |
+| `PIXIE_CMDS_PATH` | the CLI (duho) | more command directories or packages, `os.pathsep`-separated, after `--cmdspath` |
+| `DUHO_TRACEBACK` | the CLI | when set, a reported error also prints its traceback to standard error; the status is unchanged |
+| `ANYCFG_CONFINE_TO` | config loading (anycfg) | confines `!include` to those directories (`os.pathsep`-separated) |
+| `TPLX_RUBY`, `TPLX_PUPPET` | tplx | the `ruby` / `puppet` program for `.erb` / `.epp`, when it is not on `PATH` |
+| any `NAME` | config loading | `{{ env.NAME }}` in a config value reads it when the file is loaded |
+
+netboot reads no credential from the environment by itself: a DHCP server's
+secrets are its `dhcpservers` entry's, which may take them from `{{ env.NAME }}`.
+The CLI imports no settings module (`Env(name, autoload=False)`): running it
+in a directory runs no code from there unless `--load-module` names it.
+
+## Gotchas
+
+- **Quote MACs in YAML.** An unquoted all-digit MAC (`52:54:00:12:34:56`) is a
+  base-60 number to YAML 1.1; netboot refuses it rather than arm another MAC.
+- **A hostname-only target's `ip` is `""` until `resolve_ip()`**, which the
+  engine calls for the target it acts on; iterate `.targets` yourself and you
+  see unresolved targets.
+- **`templates_undefined: lenient` warns only in the shell and mako
+  engines**; Jinja, Liquid, Handlebars and Mustache render the empty string
+  silently.
+- **Arming is best effort**: `initialize` succeeds when any one server armed,
+  and rolls nothing back on the others.
+- **A config key nothing reads is a warning, not an error**: check the log
+  after editing a config.

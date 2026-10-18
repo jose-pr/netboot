@@ -45,7 +45,7 @@ the loader, the engines and the engine contract.
 
 ## CLI entry point
 
-::: netboot.main
+::: netboot.cli
 
 ## Errors
 

@@ -1,30 +1,23 @@
 # netboot — working in this checkout
 
-Contributor orientation. The **API** is documented in
-[`src/netboot/AGENTS.md`](src/netboot/AGENTS.md), which ships inside the wheel —
-read that to *use* the library, this to *work on* it.
+| Shipped header | Covers |
+| --- | --- |
+| [`src/netboot/AGENTS.md`](src/netboot/AGENTS.md) | the public API and the `pixie` command line; it ships in the wheel |
 
-## Names
-
-Deliberate, not drift: **`netboot`** is the library (distribution, import
-package, `python -m netboot`), **`pixie`** is the CLI identity (console script,
-prog name, `PIXIE_*` env vars, `pixie.yaml`), and **`Pixie*`** is the public
-class prefix (`Pixie`, `PixieTarget`, `PixieContext`, `PixieEvent`). PXE is
-pronounced "pixie". `netboot` remains the conventional variable name for an
-engine instance, which is why command modules take `run(netboot, args, conf)`.
+Read the header to *use* netboot, this file to *work on* it.
 
 ## Layout
 
 | Path | What |
 | ---- | ---- |
-| `src/netboot/` | the package; `__init__.py` holds the engine |
-| `src/netboot/cmds/` | built-in CLI commands (`initiate`, `complete`) |
+| `src/netboot/` | the package: `engine.py` the engine, `dhcp.py` what a target is served, `main.py` the CLI, `exceptions.py` the errors |
+| `src/netboot/cli/` | the `pixie` command line: `_root.py` (globals, discovery, dispatch), `_config.py` (loading `pixie.yaml`), one class per command (`initiate`, `complete`, `render`, `dhcp-config`); `main.py` re-exports it |
 | `tests/` | pytest suite; nothing here touches the network |
 | `benchmarks/` | micro-benchmarks + committed results ([README](benchmarks/README.md)) |
 | `examples/` | a runnable config, templates and a DHCP plugin ([README](examples/README.md)) |
 | `docs/` + `mkdocs.yml` | the documentation site |
 
-## Environments
+## Environment
 
 Per-version venvs, gitignored: `.venv/<version>-<os>-<arch>/`. Develop on the
 latest Python and also run the floor from `requires-python` (3.9) before
@@ -32,13 +25,13 @@ finishing a chunk of work.
 
 ```sh
 python -m venv .venv/3.14-nt-amd64
-.venv/3.14-nt-amd64/Scripts/python -m pip install -e ".[dev,docs,config,http]"
+.venv/3.14-nt-amd64/Scripts/python -m pip install -e ".[dev,docs,config]"
 ```
 
-Install **every extra that has tests**: without `http` the repository-service
-tests skip rather than run, and `pytest -rs` is how you see that happen. The
-`dev` extra pulls in the optional template engines' libraries (`mako`,
-`python-liquid`, `pybars3`, `chevron`) for the same reason.
+`dev` carries every library a test needs — the DHCP backends' (so
+`tests/test_dhcp_golden.py` runs) and the optional template engines' (`mako`,
+`python-liquid`, `pybars3`, `chevron`) — so nothing skips for a missing
+package; `pytest -rs` is how you see what does.
 
 Templates are rendered by [`tplx`](https://github.com/jose-pr/tplx), which has
 its own engine tests; `tests/test_templates.py` pins what netboot hands it. Its
@@ -47,7 +40,7 @@ without them, so a change to what those engines receive is unverified until the
 suite has run where both exist. To work against an unreleased tplx, install a
 checkout over the released one: `pip install --no-deps -e ../tplx`.
 
-## Commands
+## Checks
 
 ```sh
 <venv>/python -m pytest -q -rs                 # the suite (skips are visible)
@@ -60,27 +53,17 @@ checkout over the released one: `pip install --no-deps -e ../tplx`.
 CI does not gate on `black`, so an unformatted commit is only caught by the
 person who wrote it.
 
-## Line endings
+## Conventions
 
-LF everywhere, enforced by `.gitattributes` (`* text=auto eol=lf`).
+**Names** are deliberate, not drift: **`netboot`** is the library (distribution, import
+package, `python -m netboot`), **`pixie`** is the CLI identity (console script,
+prog name, `PIXIE_*` env vars, `pixie.yaml`), and **`Pixie*`** is the public
+class prefix (`Pixie`, `PixieTarget`, `PixieContext`, `PixieEvent`). PXE is
+pronounced "pixie". `netboot` remains the conventional variable name for an
+engine instance, which is why plugin command modules take `run(netboot, args, conf)`.
+
+**Line endings**: LF everywhere, enforced by `.gitattributes` (`* text=auto eol=lf`).
 `git ls-files --eol | grep w/crlf` must stay empty.
-
-## CI
-
-Three workflows, one concern each — a release must never be the first time a
-config is exercised, and the docs site must be redeployable without a release.
-
-- `test.yml` — every supported Python on Linux plus the platform edges;
-  `workflow_dispatch` (with a `ref`), pushes, PRs, and `ci-*` tags.
-- `release.yml` (`v*` tag) — test → build → GitHub release → PyPI (Trusted
-  Publishing, `skip-existing`). It runs a **non-deploying** docs gate, then
-  dispatches `docs.yml` for the tag: a release created with `GITHUB_TOKEN`
-  starts no workflow run, so `release: published` alone never deploys.
-- `docs.yml` — owns every Pages deploy, self-enables Pages, and is the only
-  place that publishes the site.
-
-Throwaway `ci-*` tags are fine to push; delete them afterwards, local and
-remote. A `v*` tag is a publish and needs the owner's say-so for that release.
 
 ## Releasing
 
@@ -92,3 +75,23 @@ broke**; new methods, new optional arguments and fixes are all patches, so a
 Bump `version` in the same commit as the `CHANGELOG.md` entry, and keep the
 changelog to what changed and what a reader must do about it. The release body
 is scraped from the matching `## [x.y.z]` section, so that heading must exist.
+
+Three workflows, one concern each — a release must never be the first time a
+config is exercised, and the docs site must be redeployable without a release.
+
+- `test.yml` — every supported Python on Linux plus the platform edges;
+  `workflow_dispatch` (with a `ref`), pushes, PRs, and `ci-*` tags.
+- `test.yml` also runs the suite at every declared dependency floor (3.9),
+  and installs the built wheel from a directory where the checkout is not
+  importable.
+- `release.yml` (`v*` tag) — tests on three OSes and at the floors → build
+  (the tag must name the built version; `twine check`) → the installed wheel's
+  `pixie` runs `examples/` on three OSes, beside a **non-deploying** strict
+  docs gate → GitHub release → PyPI (Trusted Publishing, `skip-existing`, final
+  tags only) → dispatch `docs.yml` at the tag: a release created with
+  `GITHUB_TOKEN` starts no workflow run, so nothing can listen for it.
+- `docs.yml` — owns every Pages deploy, self-enables Pages, and is the only
+  place that publishes the site.
+
+Throwaway `ci-*` tags are fine to push; delete them afterwards, local and
+remote. A `v*` tag is a publish and needs the owner's say-so for that release.

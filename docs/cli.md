@@ -28,6 +28,7 @@ argument matches nothing.
 | `--baseconfig DIR`  | Base config directory to search (default `./config`) |
 | `-l, --load-module M` | Import module(s) before building netboot (config/hook deps) |
 | `--cmdspath PATH` | Extra directories/packages to search for commands |
+| `--loglevel [NAME:]LEVEL[,...]` | Set a logger's level: `--loglevel DEBUG` for netboot's own, `--loglevel dhcpctl:DEBUG,tplx:INFO` for others |
 | `-v` / `-q` | Increase / decrease log verbosity; these move the level of netboot's own `netboot` logger, and `-v` also prints the traceback behind a reported error |
 
 ## Exit codes
@@ -36,7 +37,7 @@ argument matches nothing.
 | ---- | ------- |
 | 0 | the command succeeded |
 | 1 | the command reported failure — target not found, or the query matched several targets |
-| 2 | the configuration or a lookup could not be used: missing or malformed config, unknown image or zone. Reported as a single line; run with `-v` for the traceback |
+| 2 | the configuration or a lookup could not be used: missing or malformed config, a value that does not parse, unknown image or zone, a `--load-module` that does not import, or no DHCP server could be armed. Reported as a single line; run with `-v` for the traceback |
 
 ## Commands
 
@@ -48,14 +49,27 @@ DHCP backend in the target's zone.
 Rendering is **not** something `initiate` does on its own: the built-in command
 arms DHCP, and artifacts are produced by whatever renders `ctx.render(...)` —
 a hook on `PixieEvent.EndPixieInitialize`, a DHCP backend, or your own
-command. `--iscsi` is likewise a flag for such a hook to read: the built-in
-logic accepts it and does nothing with it.
+command. `--iscsi` is likewise a flag for such a hook to read: it arrives as
+`kwargs["iscsi"]` in the `StartPixieInitialize` and `EndPixieInitialize`
+hooks, and the built-in logic does nothing with it.
 
 ### `complete <target>`
 
 Look up the target, rebuild its context, and call `remove_target` on every DHCP
 backend in its zone. Post-boot cleanup beyond that is a hook's job
 (`PixieEvent.EndPixieComplete`).
+
+### `render <target> NAME... [--out DIR]`
+
+Render each named artifact for the target, through the same template search a
+hook's `ctx.render(NAME)` uses, and write it to standard output or, with
+`--out`, to `DIR/NAME`. A file the copy engine claims is written byte for byte.
+Nothing is armed; this is how to look at what a target would be served.
+
+```sh
+pixie render web01 boot.cfg                 # print it
+pixie render web01 boot.cfg install.ks --out /srv/tftp/web01
+```
 
 ### `dhcp-config [target] [--apply] [--as USER]`
 
@@ -64,7 +78,9 @@ to create itself: a Windows DHCP policy and the user class it references, a
 `dhcpd.conf` group, a Kea `client-classes` entry. One section per server per
 `dhcp_when:` condition, in that server's own syntax.
 
-With no arguments it covers every target; name one to narrow it. **Printing
+With no arguments it covers every target, warning about and skipping one whose
+zone cannot be found, and a recipe several targets share is printed once; name
+one to narrow it. **Printing
 contacts nothing**, so it is safe to run anywhere and the output can go straight
 into a change ticket or a config-management repo.
 
@@ -92,7 +108,26 @@ existing separately.
 ## Adding your own commands
 
 Point `--cmdspath` (or the `PIXIE_CMDS_PATH` environment variable) at a package or
-directory of command modules. A netboot command module exposes:
+directory of command modules. A command is a class, as the built-ins are:
+
+```python
+from netboot.cli import Command
+
+
+class Hosts(Command):
+    """List the configured targets."""
+
+    _parsername_ = "hosts"
+
+    def __call__(self) -> int:
+        for target in self.netboot.targets.values():   # the engine, from the config
+            print(target._id, target.ip)
+        return 0
+```
+
+`self.netboot` is the engine built from `--config`/`--baseconfig` after
+`--load-module`; `self.find(query)` looks a target up the way the built-ins do.
+A module may instead expose:
 
 ```python
 def register(parser, args):      # optional: add argparse arguments
@@ -115,11 +150,9 @@ App settings are read through `duho.env.Env("pixie")`, so they live under the
 `PIXIE_` prefix:
 
 - `PIXIE_CMDS_PATH` — extra command sources, `os.pathsep`-separated (see above).
-- A `pixie_env` Python module importable at startup (e.g. a `pixie_env.py` in
-  the working directory) may ship settings as `UPPER_CASE` module variables.
-  Precedence runs explicit `env` values (kwargs or runtime writes) > real
-  `PIXIE_*` environment variables > `pixie_env` module defaults, so an exported
-  variable always beats a shipped default.
+
+No settings module is imported: running `pixie` in a directory never runs code
+from it unless `--load-module` names it.
 
 Commands receive the resolved accessor as `args._env_`, so a custom command can
 read its own `PIXIE_<KEY>` settings without touching `os.environ`.

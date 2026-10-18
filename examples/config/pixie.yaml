@@ -9,11 +9,13 @@ globals:
 targets:
   web01:
     ip: 10.0.0.10
+    mac: "52:54:00:00:00:10"   # quoted: an all-digit MAC is a YAML number
     image: debian
-  "aa:bb:cc:dd:ee:ff":       # MAC-keyed: no IP, so it names its zone
+  "aa:bb:cc:dd:ee:ff":       # MAC-keyed
     image: debian
     hostname: db01
-    dhcpzone: lan
+    ip: 10.0.0.11            # given, so db01 is never looked up in DNS
+    dhcpzone: lan            # named; without an ip it would have to be
 
 images:
   debian:
@@ -40,12 +42,13 @@ dhcpzones:
       # A real one looks like this -- swap it in when you have a dnsmasq. The
       # URI says only where dnsmasq reads its hosts and options directories;
       # what a client is served comes from the zone, the image and the target.
-      # dnsmasq keys a reservation by MAC, so give the target a `mac:` too.
+      # dnsmasq keys a reservation by MAC, which is why each target has one.
       # - dnsmasq:///?hostsfile=/etc/dnsmasq.d/netboot/hosts/&optsfile=/etc/dnsmasq.d/netboot/opts/
 
 repos:
   mirror:
     address: 10.0.0.2
     services:
-      tftp: /debian
+      tftp: /debian                # what the boot loader fetches
+      http: /debian                # what the installer fetches
     local: /srv/mirror/debian
