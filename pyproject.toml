@@ -45,61 +45,52 @@ dependencies = [
     "pathapi>=0.1.0,<0.2",
     "pathapi-uri>=0.1.0,<0.2",
     # Templates are rendered by tplx; `.j2` is the engine netboot's own
-    # examples and docs use, so it is always installed.
-    "tplx[jinja]>=0.1.0,<0.2",
-    # 3.0 is the floor that can actually be imported: 2.x calls
-    # markupsafe.soft_unicode, removed in MarkupSafe 2.1, so an unpinned
-    # resolve can install a jinja2/markupsafe pair that fails on import. The
-    # CLI reports jinja2's errors from config interpolation itself.
-    "jinja2>=3.0,<4",
-    # 0.13.1 is the first release built on pathapi; 0.13.0 is built on
-    # pathlib-next, whose path classes are not the ones netboot passes it.
-    "yaconfiglib>=0.13.1,<0.14",
+    # examples and docs use, so it is always installed. 0.2 is what anycfg's
+    # interpolation needs.
+    "tplx[jinja]>=0.2.0,<0.3",
+    # Layered config with `!include`, and the typed-namespace base of netboot's
+    # config objects; `templates` renders `{{ ... }}` in values.
+    "anycfg[templates]>=0.14.0,<0.15",
 ]
 
 [project.optional-dependencies]
 # Config-file loading for the CLI (YAML with !include).
-config = ["pyyaml"]
+config = ["anycfg[yaml]>=0.14.0,<0.15"]
 # The optional template engines are tplx's; each extra installs that one's
 # library. A file whose engine is missing fails naming tplx's extra.
-mako = ["tplx[mako]"]
-liquid = ["tplx[liquid]"]
-handlebars = ["tplx[handlebars]"]
-mustache = ["tplx[mustache]"]
+mako = ["tplx[mako]>=0.2.0,<0.3"]
+liquid = ["tplx[liquid]>=0.2.0,<0.3"]
+handlebars = ["tplx[handlebars]>=0.2.0,<0.3"]
+mustache = ["tplx[mustache]>=0.2.0,<0.3"]
 # DHCP backends are dhcpctl's; each extra installs that one's library, and a
 # backend is imported only when a config names its scheme. dnsmasq needs
-# nothing for a local server, and windhcp nothing over its local or ssh
-# transport. http(s) repository services need no extra: uripath sends them on
-# the standard library.
-kea = ["pydhcpctl[kea]"]                   # kea:// control agent
-dhcpd = ["pydhcpctl[dhcpd]"]               # dhcpd:// OMAPI
-winrm = ["pydhcpctl[winrm]"]               # windhcp://...?transport=winrm
-ssh = ["pydhcpctl[ssh]"]                   # dnsmasq:// over sftp:// paths
+# nothing for a local server, and windhcp nothing over its local transport.
+# http(s) repository services need no extra: uripath sends them on the
+# standard library.
+kea = ["pydhcpctl[kea]>=0.1.0,<0.2"]       # kea:// control agent
+dhcpd = ["pydhcpctl[dhcpd]>=0.1.0,<0.2"]   # dhcpd:// OMAPI
+winrm = ["pydhcpctl[winrm]>=0.1.0,<0.2"]   # windhcp://...?transport=winrm
+ssh = ["pydhcpctl[ssh]>=0.1.0,<0.2"]       # windhcp:// over ssh; dnsmasq:// remote
 # The dnspython resolver backend for netimps' resolve(), used to look up
 # hostname targets. netimps >=0.2.0 makes dnspython optional, so this extra is
 # the only thing that installs it: with it, resolution has full record-type and
 # explicit-nameserver support; without it, resolve() still works through
 # netimps' system/nslookup backends (address and reverse records only).
-dns = ["dnspython"]
+dns = ["netimps[dns]>=0.4.0,<0.5"]
 dev = [
+    # Every extra with tests, so they run rather than skip, within the ranges
+    # a user gets.
+    "netboot[config,dns,mako,liquid,handlebars,mustache,kea,dhcpd,winrm]",
     "black",
     "build",
     "hatchling",
     "pytest",
     "pytest-cov",
     "twine",
-    "pyyaml",
-    "dnspython",
-    # Backend dependencies, so the golden DHCP test runs rather than skips.
-    "pydhcpctl[kea,dhcpd,winrm]",
-    # Template engines behind an extra, so their tests run rather than skip.
-    "mako",
-    "python-liquid",
-    "pybars3",
-    "chevron",
 ]
 docs = [
-    "mkdocs",
+    # MkDocs 2 drops the plugin system mkdocstrings needs.
+    "mkdocs<2",
     "mkdocs-material",
     "mkdocstrings[python]",
     # 12.2 made Highlight(md) required; mkdocstrings 1.0.6 (the newest on 3.10) omits it.
@@ -107,7 +98,7 @@ docs = [
 ]
 
 [project.scripts]
-pixie = "netboot.main:main"
+pixie = "netboot.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/jose-pr/netboot/"
@@ -127,11 +118,13 @@ Documentation = "https://jose-pr.github.io/netboot/"
 [tool.hatch.build.targets.sdist]
 # `/.*` covers dotfiles; `*.local.*` does not start with a dot, so a personal
 # override needs its own pattern or it ships.
-exclude = ["/.*", "*.local.*"]
+# The repo-root AGENTS.md orients a contributor in a checkout and the
+# benchmarks measure one; neither is for an installed consumer.
+exclude = ["/.*", "/AGENTS.md", "/benchmarks", "*.local.*", "CLAUDE*"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/netboot"]
-exclude = ["*.local.*"]
+exclude = ["*.local.*", "CLAUDE*"]
 
 [tool.black]
 # Pinned to the project's minimum supported Python so black never emits syntax
@@ -141,3 +134,4 @@ target-version = ["py39"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+filterwarnings = ["error"]

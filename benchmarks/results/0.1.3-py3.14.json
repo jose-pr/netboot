@@ -1,0 +1,24 @@
+{
+  "generated": "2026-09-17T12:28:39.987217+00:00",
+  "iterations": 5000,
+  "python": "3.14.6",
+  "platform": "Windows-11-10.0.28000-SP0",
+  "netboot_version": "0.1.3",
+  "metrics": {
+    "lookup_target_by_id": {
+      "min_ms": 0.0009473799960687757,
+      "median_ms": 0.0009615199989639222,
+      "max_ms": 0.0010058999992907046
+    },
+    "lookup_target_scan_by_ip": {
+      "min_ms": 0.08483788000885396,
+      "median_ms": 0.08728227999527008,
+      "max_ms": 0.09022377999499441
+    },
+    "template_names": {
+      "min_ms": 0.0032694000052288174,
+      "median_ms": 0.003294780000578612,
+      "max_ms": 0.004945299995597452
+    }
+  }
+}
