@@ -12,16 +12,8 @@ import uripath.schemes  # noqa: F401
 from ._version import __version__
 from .content import Repository, Resource
 from .dhcp import DhcpZone
-from .engine import (
-    Pixie,
-    PixieConfigError,
-    PixieContext,
-    PixieError,
-    PixieEvent,
-    PixieImage,
-    PixieLookupError,
-    PixieTarget,
-)
+from .engine import Pixie, PixieContext, PixieEvent, PixieImage, PixieTarget
+from .exceptions import PixieConfigError, PixieError, PixieLookupError
 from .logging import LOGGER
 
 __all__ = [

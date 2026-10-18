@@ -26,6 +26,7 @@ from yaconfiglib import typed_merge as mergeObjects
 from ._version import __version__
 from .content import Repository, Resource
 from .dhcp import DhcpZone, arm, disarm
+from .exceptions import PixieConfigError, PixieLookupError
 from .logging import LOGGER
 from .utils import T, shell_quote
 from .utils.misc import import_, parse_path
@@ -38,23 +39,6 @@ except ImportError:
     class StrEnum(str, _enum.Enum):
         def __str__(self):
             return self.value
-
-
-class PixieError(Exception):
-    """Base for the errors netboot raises on purpose.
-
-    Separates "the operator gave us something unusable" from "netboot has a
-    bug": the CLI reports the former as a one-line message and keeps the
-    traceback for the latter.
-    """
-
-
-class PixieLookupError(PixieError, LookupError):
-    """A target, image or zone could not be resolved, or the query was ambiguous."""
-
-
-class PixieConfigError(PixieError, ValueError):
-    """The configuration cannot be used as given."""
 
 
 class PixieTarget(Namespace, OpaqueMerge):

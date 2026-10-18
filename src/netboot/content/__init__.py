@@ -6,6 +6,7 @@ from pathapi import Pathname
 from pathapi import PosixPathname as RepoPath
 from uripath import Source, URIPath
 
+from ..exceptions import PixieConfigError
 from ..logging import LOGGER
 from ..utils.config import Namespace as _NS
 
@@ -126,8 +127,6 @@ class Repository(_NS):
         except ValueError as exc:
             # `mirror.example:http` is a config mistake. The duplicate this
             # replaced treated it as a hostname, so it reached DNS as one.
-            from .. import PixieConfigError
-
             raise PixieConfigError(
                 f"repository address {address!r} is not a host or host:port: {exc}"
             ) from exc
