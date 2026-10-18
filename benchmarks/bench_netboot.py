@@ -1,15 +1,15 @@
 """netboot micro-benchmarks: the per-request hot paths.
 
-Measures the two operations netboot runs most often per PXE request:
+Measures what netboot runs for every PXE request:
 
-* ``lookup_target`` — a linear scan over the configured targets matching by
-  hostname prefix / MAC / IP;
-* ``_template_names`` — the candidate template-name list built for every render.
+* ``lookup_target`` — the id index, and a scan over the targets by IP;
+* ``_template_names`` — the candidate template-name list built for every render;
+* ``make_context`` and ``render`` — a context, and one Jinja artifact from it.
 
 Run:
 
     python benchmarks/bench_netboot.py --iterations 20000
-    python benchmarks/bench_netboot.py --save            # -> benchmarks/results/netboot.json
+    python benchmarks/bench_netboot.py --save   # -> benchmarks/results/<version>-py<X.Y>.json
 
 Each metric reports min/median/max ms-per-call over the sample; compare on the
 median (a single average hides run-to-run noise). Local timings are a sanity
@@ -25,6 +25,7 @@ import pathlib
 import platform
 import statistics
 import sys
+import tempfile
 import timeit
 from datetime import datetime, timezone
 
@@ -34,7 +35,7 @@ sys.path.insert(0, (REPO_ROOT / "src").as_posix())
 import netboot  # noqa: E402
 
 
-def _build_netboot(n_targets: int) -> "netboot.Pixie":
+def _build_netboot(n_targets: int, templates: pathlib.Path) -> "netboot.Pixie":
     targets = {}
     for i in range(n_targets):
         targets[f"host{i}"] = {
@@ -43,6 +44,7 @@ def _build_netboot(n_targets: int) -> "netboot.Pixie":
             "image": "debian",
         }
     return netboot.Pixie(
+        templates=[templates],
         images={"debian": {"template_path": []}},
         dhcpzones={"lan": {"network": "10.0.0.0/16"}},
         targets=targets,
@@ -63,21 +65,32 @@ def _sample(fn, iterations: int, repeats: int = 7) -> "dict[str, float]":
 
 
 def run_benchmarks(iterations: int, n_targets: int = 500) -> "dict[str, dict]":
-    p = _build_netboot(n_targets)
-    last = f"host{n_targets - 1}"
-    # The id index answers a hostname-keyed query outright; only a query that
-    # is not an id (here the last target's IP) actually scans the table. The
-    # old `lookup_target_last` metric named a scan but measured the dict hit.
-    last_ip = f"10.0.{(n_targets - 1) // 256}.{(n_targets - 1) % 256}"
-    ctx = p.make_context(p.lookup_target("host0"))
-
-    return {
-        "lookup_target_by_id": _sample(lambda: p.lookup_target(last), iterations),
-        "lookup_target_scan_by_ip": _sample(
-            lambda: p.lookup_target(last_ip), iterations
-        ),
-        "template_names": _sample(lambda: ctx._template_names("boot.j2"), iterations),
-    }
+    with tempfile.TemporaryDirectory() as tmp:
+        templates = pathlib.Path(tmp)
+        (templates / "boot.cfg.j2").write_text(
+            "label install\n  append ip={{ target.ip }} hostname={{ target.hostname }}\n",
+            encoding="utf-8",
+        )
+        p = _build_netboot(n_targets, templates)
+        last = f"host{n_targets - 1}"
+        # The id index answers a hostname-keyed query outright; only a query
+        # that is not an id (here the last target's IP) scans the table.
+        last_ip = f"10.0.{(n_targets - 1) // 256}.{(n_targets - 1) % 256}"
+        target = p.lookup_target("host0")
+        ctx = p.make_context(target)
+        # Rendering reads files, so it gets a tenth of the iterations.
+        slow = max(1, iterations // 10)
+        return {
+            "lookup_target_by_id": _sample(lambda: p.lookup_target(last), iterations),
+            "lookup_target_scan_by_ip": _sample(
+                lambda: p.lookup_target(last_ip), iterations
+            ),
+            "template_names": _sample(
+                lambda: ctx._template_names("boot.j2"), iterations
+            ),
+            "make_context": _sample(lambda: p.make_context(target), slow),
+            "render": _sample(lambda: ctx.render("boot.cfg"), slow),
+        }
 
 
 def _report(iterations: int, results: "dict[str, dict]") -> dict:
@@ -103,13 +116,14 @@ def main() -> None:
     parser.add_argument(
         "--save",
         action="store_true",
-        help="Write the report to benchmarks/results/netboot.json (tracked, so "
-        "a before/after comparison survives in history)",
+        help="Write the report to benchmarks/results/<version>-py<X.Y>.json "
+        "(tracked, so the trend across releases survives in history)",
     )
     args = parser.parse_args()
 
     if args.save and args.json_output is None:
-        args.json_output = REPO_ROOT / "benchmarks" / "results" / "netboot.json"
+        name = f"{netboot.Pixie.VERSION}-py{sys.version_info[0]}.{sys.version_info[1]}"
+        args.json_output = REPO_ROOT / "benchmarks" / "results" / f"{name}.json"
 
     results = run_benchmarks(args.iterations, args.targets)
     report = _report(args.iterations, results)

@@ -9,16 +9,17 @@ variance is large.
 
 ```sh
 python benchmarks/bench_netboot.py --iterations 20000          # print only
-python benchmarks/bench_netboot.py --iterations 20000 --save   # also write results/netboot.json
+python benchmarks/bench_netboot.py --iterations 20000 --save   # also write results/<version>-py<X.Y>.json
 python benchmarks/bench_netboot.py --json-output /tmp/x.json   # write somewhere else
 ```
 
 `--targets N` sizes the target table (default 500); the scan metric is
 proportional to it, so only compare runs that used the same value.
 
-Results live in `benchmarks/results/` and are **committed**. That is the whole
-point: a before/after comparison has to survive in history, which it cannot do
-from an ignored directory.
+Results live in `benchmarks/results/`, one file per netboot version and
+Python minor (`0.4.0-py3.14.json`), and are **committed**: the trend across
+releases has to survive in history, which it cannot do from an ignored
+directory or a file each run overwrites.
 
 ## Metrics
 
@@ -27,12 +28,14 @@ from an ignored directory.
 | `lookup_target_by_id` | `Pixie.lookup_target` for a query that *is* a target id — answered by the id index, no scan. |
 | `lookup_target_scan_by_ip` | `Pixie.lookup_target` for the last target's IP. Not an id, so it scans the whole table: the worst case. |
 | `template_names` | `PixieContext._template_names`, the candidate-name list rebuilt for every render. |
+| `make_context` | `Pixie.make_context` for one target: image, zone, globals and a renderer. |
+| `render` | `PixieContext.render("boot.cfg")` of a two-line Jinja file. These two run a tenth of `--iterations`. |
 
 Each metric reports ms-per-call as `min`/`median`/`max` over 7 repeats of
 `--iterations` calls. **Compare on the median** — a single average hides
 run-to-run noise.
 
-## Schema (`results/netboot.json`)
+## Schema (`results/<version>-py<X.Y>.json`)
 
 ```json
 {
@@ -52,10 +55,8 @@ Compare two reports with
 
 ## Baseline
 
-`results/netboot.json` holds the current baseline, recorded on Windows ARM64
-(CPython 3.14, an emulated x64 build) at `--iterations 5000`. It is the first
-entry taken after the metric set was corrected: the metric previously called
-`lookup_target_last` claimed to measure a full scan but passed a query that is
-a target id, so the id index answered it without scanning. The replacement pair
-shows the difference the old metric hid — about 0.001 ms for the indexed hit
-against 0.088 ms for a 500-target scan on the same machine.
+`results/0.1.3-py3.14.json` is the baseline, recorded on Windows ARM64
+(CPython 3.14, an emulated x64 build) at `--iterations 5000`; `make_context`
+and `render` start at `0.4.0-py3.14.json`. Compare a new run against it with
+`compare_bench.py`, on the same machine and Python, and treat the result as a
+sanity check.
