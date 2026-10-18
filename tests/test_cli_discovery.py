@@ -90,9 +90,9 @@ def test_env_cmdspath_is_not_read_twice(tmp_path, monkeypatch):
 
 
 def test_a_command_whose_body_is_main_gets_the_netboot_contract(tmp_path, monkeypatch):
-    # duho resolves main -> run -> call; netboot used to look only at `run`, so
-    # a command written as `main(netboot, args, conf)` was dispatched through
-    # duho's single-argument path instead.
+    # duho resolves main -> run -> call, so a command written as
+    # `main(netboot, args, conf)` must get the netboot contract too, not duho's
+    # single-argument path.
     cmds = tmp_path / "cmds"
     cmds.mkdir()
     (cmds / "viamain.py").write_text(
@@ -136,4 +136,29 @@ def test_cmdspath_commands_follow_the_builtins_in_discovery_order(tmp_path):
         getattr(c, "_parsername_", None)
         for c in _main._discover(["--cmdspath", str(cmds)])
     ]
-    assert names == ["complete", "dhcp-config", "initiate", "aaa", "zzz"]
+    assert names == ["complete", "dhcp-config", "initiate", "render", "aaa", "zzz"]
+
+
+def test_a_cmdspath_class_command_gets_the_engine(tmp_path, monkeypatch, capsys):
+    cmds = tmp_path / "cmds"
+    cmds.mkdir()
+    (cmds / "hosts.py").write_text(
+        '"""List the targets."""\n'
+        "from netboot.cli import Command\n\n\n"
+        "class Hosts(Command):\n"
+        '    """List the targets."""\n\n'
+        '    _parsername_ = "hosts"\n\n'
+        "    def __call__(self):\n"
+        "        print(sorted(self.netboot.targets))\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "pixie.yaml").write_text(
+        "targets: {web01: {ip: 10.0.0.5}}\nimages: {}\ndhcpzones: {}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    assert _main.main(["--cmdspath", str(cmds), "hosts"]) == 0
+    assert "['web01']" in capsys.readouterr().out

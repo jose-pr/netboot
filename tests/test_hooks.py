@@ -217,3 +217,27 @@ def test_a_start_init_hook_returning_none_is_reported():
 
     with pytest.raises(netboot.PixieConfigError, match="StartPixieInit"):
         netboot.Pixie(hooks=[drops_it], targets={}, images={}, dhcpzones={})
+
+
+def test_initiates_options_reach_the_initialize_hooks(tmp_path):
+    seen = {}
+
+    def hook(event, netboot_, value, kwargs):
+        if event in (
+            netboot.PixieEvent.StartPixieInitialize,
+            netboot.PixieEvent.EndPixieInitialize,
+        ):
+            seen[str(event)] = dict(kwargs)
+        return value
+
+    import duho
+
+    from netboot.cli.initiate import Initiate
+
+    command = duho.parse(Initiate, ["host1", "--iscsi"])
+    command._netboot_ = netboot.Pixie(hooks=[hook], **_config(tmp_path))
+    assert command() == 0
+    assert seen == {
+        "PixieEvent.StartPixieInitialize": {"iscsi": True},
+        "PixieEvent.EndPixieInitialize": {"iscsi": True},
+    }
