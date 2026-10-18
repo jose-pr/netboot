@@ -75,6 +75,8 @@ broke**; new methods, new optional arguments and fixes are all patches, so a
 Bump `version` in the same commit as the `CHANGELOG.md` entry, and keep the
 changelog to what changed and what a reader must do about it. The release body
 is scraped from the matching `## [x.y.z]` section, so that heading must exist.
+A version still being prepared is `## [x.y.z] - Unreleased` under an empty
+`## [Unreleased]`; the tagging commit dates it.
 
 Three workflows, one concern each — a release must never be the first time a
 config is exercised, and the docs site must be redeployable without a release.

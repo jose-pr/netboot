@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - Unreleased
+
 ### Added
 - `pixie render <target> NAME... [--out DIR]` renders a target's artifacts to
   standard output or a directory, arming nothing.
@@ -177,6 +179,78 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `sftppath`, over paramiko. `SFTPPATH_BACKEND` replaces
   `PATHLIB_NEXT_SFTP_BACKEND` to choose paramiko or asyncssh; the old name is
   not read.
+- `duho` floor moves to `>=0.7.5,<0.8` (pre-1.0 minor, documented API break;
+  0.7.4 adds the unsorted multi-source command discovery that `--cmdspath`
+  now uses, 0.7.5 the `exit="parse"` mode of `duho.run`).
+  The `pixie` command line is unchanged: same flags, exit statuses and output,
+  with one exception in `--help`: the commands of one `--cmdspath` directory are
+  listed by file name, then in the order a file defines them, where they were
+  sorted by command name. The two differ only for a file that defines several
+  commands or is named differently from its command.
+- `pixie` runs through `duho.run(..., exit="parse")` and reports operator errors
+  through duho's `_errors_` / `_report_error_`: the same one-line log record and
+  the same status 2 as before. New with it: Ctrl-C ends with status 130 and a
+  broken pipe with status 1, both without a traceback; a plain `run(args)`
+  command's returned value (not `None` or an `int`) is printed to standard
+  output, where it was handed to `sys.exit`; with `DUHO_TRACEBACK` set an
+  operator error also prints its traceback to standard error, and the status
+  stays 2. `--help`, `--version` and a usage error still raise `SystemExit`
+  from `main`, as before.
+- `netimps` moves to `>=0.4.0,<0.5` (pre-1.0 minor, documented API break).
+  The network values netboot hands out are netimps', so its renames reach
+  templates: `target.mac.as_str("-")` is now `target.mac.format("-")`.
+- **Templates are rendered by [`tplx`](https://pypi.org/project/tplx/)**
+  (`tplx[jinja]>=0.1.0,<0.2`), with the same engines, suffixes, search order and
+  `templates_undefined` modes; the `mako`, `liquid`, `handlebars` and
+  `mustache` extras install tplx's. The same templates render the same, with
+  these differences:
+  - An include goes through the per-target names and the image's
+    `template_path`, and a file of another engine is rendered by that engine
+    and inserted: a Jinja `{% include "net" %}` of `net.shtpl` works, where it
+    failed with `AttributeError`. mako, Liquid, Handlebars and Mustache
+    includes and partials search the template roots too.
+  - Every engine sees each context field at the top level (`target`,
+    `image`, ...) beside `ctx`; Jinja and mako saw only `ctx`.
+  - A MAC address in a Liquid, Handlebars or Mustache template renders as
+    `aa:bb:cc:dd:ee:ff`, where it rendered as `DataView(MACAddress(...))`.
+  - An `.epp` template's output no longer gains a trailing newline the
+    template did not write.
+  - The shell engine leaves out `_`-prefixed context names other than `_id`.
+  - Errors are tplx's: `tplx.TemplateNotFound` (was `jinja2.TemplateNotFound`),
+    `tplx.UndefinedError` (was `jinja2.UndefinedError`, or `KeyError` from the
+    shell engine), `tplx.NoEngineError`, `tplx.EngineUnavailableError` and
+    `tplx.RenderError` (was `netboot.templates.TemplateEngineError`, or an
+    `ImportError` naming `netboot[mako]`). `pixie` reports every
+    `tplx.TplxError` as one line and exits 2.
+  - `PIXIE_RUBY` and `PIXIE_PUPPET` are now `TPLX_RUBY` and `TPLX_PUPPET`.
+
+- `shell_quote` is `shlex.quote`: a value with nothing special to the shell
+  is no longer quoted (`{{ shell_quote("web01") }}` renders `web01`, was
+  `'web01'`), and an embedded `'` is written `'"'"'` (was `'\''`). Both read
+  back as the same word in a POSIX shell. The `quote=` argument and its
+  double-quote form are gone.
+
+### Removed
+- `netboot.utils.flatten`, `netboot.utils.arr_get` and the
+  `netboot.utils.dicts` module; `shell_quote` and `T` are in
+  `netboot.utils.misc` and still importable from `netboot.utils`.
+- **`netboot.templates`**: use `tplx` (`Loader`, the engine classes,
+  `register_engine` for `register_template_type`, `unregister_engine`,
+  `registered_engines` for `TEMPLATE_TYPES`, `DataEncoder` for
+  `template_data`/`jsonable`). A plugin engine subclasses `tplx.Template` and
+  implements `render_values(values)`, where `values` holds `ctx` and the context
+  fields. `PixieContext._renderer` is gone; the context's `tplx.Loader` is
+  `_loader`.
+- **`netboot.utils.net`, `netboot.netutils` and the network names
+  `netboot.utils` re-exported** (`Host`, `IPAddress`, `IPInterface`,
+  `IPNetwork`, `MACAddress`, `parse`, `try_parse`, `is_valid`, `is_wildcard`,
+  `resolve`, `ping`, `get_interfaces`, `iter_addresses`, `normalize_host`):
+  import them from `netimps`. netboot's `Host` subclass goes with them, and
+  with it `.try_ip()` (use `host.ip() or str(host)`), `.address` (use
+  `.value`, and build a new `Host` rather than assigning) and `Host()` with no
+  argument (`Host(None)`). `Repository.address` is a `netimps.Host`.
+  A test that faked DNS through `netboot.netutils.resolve` patches
+  `netimps.resolve`.
 
 ### Fixed
 - A configuration mistake is one line and exit 2, not a traceback: a MAC,
@@ -252,82 +326,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fails when any of it fails. It ran only the first line of each multi-line
   block and reported success, so a reservation could be reported armed and not
   exist.
-
-## [0.4.0] - 2026-10-14
-
-### Changed
-- `duho` floor moves to `>=0.7.5,<0.8` (pre-1.0 minor, documented API break;
-  0.7.4 adds the unsorted multi-source command discovery that `--cmdspath`
-  now uses, 0.7.5 the `exit="parse"` mode of `duho.run`).
-  The `pixie` command line is unchanged: same flags, exit statuses and output,
-  with one exception in `--help`: the commands of one `--cmdspath` directory are
-  listed by file name, then in the order a file defines them, where they were
-  sorted by command name. The two differ only for a file that defines several
-  commands or is named differently from its command.
-- `pixie` runs through `duho.run(..., exit="parse")` and reports operator errors
-  through duho's `_errors_` / `_report_error_`: the same one-line log record and
-  the same status 2 as before. New with it: Ctrl-C ends with status 130 and a
-  broken pipe with status 1, both without a traceback; a plain `run(args)`
-  command's returned value (not `None` or an `int`) is printed to standard
-  output, where it was handed to `sys.exit`; with `DUHO_TRACEBACK` set an
-  operator error also prints its traceback to standard error, and the status
-  stays 2. `--help`, `--version` and a usage error still raise `SystemExit`
-  from `main`, as before.
-- `netimps` moves to `>=0.4.0,<0.5` (pre-1.0 minor, documented API break).
-  The network values netboot hands out are netimps', so its renames reach
-  templates: `target.mac.as_str("-")` is now `target.mac.format("-")`.
-- **Templates are rendered by [`tplx`](https://pypi.org/project/tplx/)**
-  (`tplx[jinja]>=0.1.0,<0.2`), with the same engines, suffixes, search order and
-  `templates_undefined` modes; the `mako`, `liquid`, `handlebars` and
-  `mustache` extras install tplx's. The same templates render the same, with
-  these differences:
-  - An include goes through the per-target names and the image's
-    `template_path`, and a file of another engine is rendered by that engine
-    and inserted: a Jinja `{% include "net" %}` of `net.shtpl` works, where it
-    failed with `AttributeError`. mako, Liquid, Handlebars and Mustache
-    includes and partials search the template roots too.
-  - Every engine sees each context field at the top level (`target`,
-    `image`, ...) beside `ctx`; Jinja and mako saw only `ctx`.
-  - A MAC address in a Liquid, Handlebars or Mustache template renders as
-    `aa:bb:cc:dd:ee:ff`, where it rendered as `DataView(MACAddress(...))`.
-  - An `.epp` template's output no longer gains a trailing newline the
-    template did not write.
-  - The shell engine leaves out `_`-prefixed context names other than `_id`.
-  - Errors are tplx's: `tplx.TemplateNotFound` (was `jinja2.TemplateNotFound`),
-    `tplx.UndefinedError` (was `jinja2.UndefinedError`, or `KeyError` from the
-    shell engine), `tplx.NoEngineError`, `tplx.EngineUnavailableError` and
-    `tplx.RenderError` (was `netboot.templates.TemplateEngineError`, or an
-    `ImportError` naming `netboot[mako]`). `pixie` reports every
-    `tplx.TplxError` as one line and exits 2.
-  - `PIXIE_RUBY` and `PIXIE_PUPPET` are now `TPLX_RUBY` and `TPLX_PUPPET`.
-
-- `shell_quote` is `shlex.quote`: a value with nothing special to the shell
-  is no longer quoted (`{{ shell_quote("web01") }}` renders `web01`, was
-  `'web01'`), and an embedded `'` is written `'"'"'` (was `'\''`). Both read
-  back as the same word in a POSIX shell. The `quote=` argument and its
-  double-quote form are gone.
-
-### Removed
-- `netboot.utils.flatten`, `netboot.utils.arr_get` and the
-  `netboot.utils.dicts` module; `shell_quote` and `T` are in
-  `netboot.utils.misc` and still importable from `netboot.utils`.
-- **`netboot.templates`**: use `tplx` (`Loader`, the engine classes,
-  `register_engine` for `register_template_type`, `unregister_engine`,
-  `registered_engines` for `TEMPLATE_TYPES`, `DataEncoder` for
-  `template_data`/`jsonable`). A plugin engine subclasses `tplx.Template` and
-  implements `render_values(values)`, where `values` holds `ctx` and the context
-  fields. `PixieContext._renderer` is gone; the context's `tplx.Loader` is
-  `_loader`.
-- **`netboot.utils.net`, `netboot.netutils` and the network names
-  `netboot.utils` re-exported** (`Host`, `IPAddress`, `IPInterface`,
-  `IPNetwork`, `MACAddress`, `parse`, `try_parse`, `is_valid`, `is_wildcard`,
-  `resolve`, `ping`, `get_interfaces`, `iter_addresses`, `normalize_host`):
-  import them from `netimps`. netboot's `Host` subclass goes with them, and
-  with it `.try_ip()` (use `host.ip() or str(host)`), `.address` (use
-  `.value`, and build a new `Host` rather than assigning) and `Host()` with no
-  argument (`Host(None)`). `Repository.address` is a `netimps.Host`.
-  A test that faked DNS through `netboot.netutils.resolve` patches
-  `netimps.resolve`.
 
 ## [0.3.2] - 2026-10-03
 
