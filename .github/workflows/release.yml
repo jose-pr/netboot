@@ -1,12 +1,13 @@
 name: Release
 
+# Runs when a version tag (e.g. v1.0.0, v1.0.0-rc.1) is pushed. Not wired to
+# push/PR events on branches -- this is a release gate, not general CI.
+#
+# Test gate and dependency-floor gate, build (checking that the tag names the
+# version built), an installed-wheel smoke test, a strict docs build gate, the
+# GitHub Release, then -- for final (non pre-release) tags
+# only -- the PyPI upload and a dispatch of docs.yml at this tag.
 on:
-  workflow_dispatch:
-    inputs:
-      ref:
-        description: Git ref to release, for example v0.1.0
-        required: true
-        type: string
   push:
     tags:
       - "v*"
@@ -22,102 +23,205 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.9", "3.14"]
+        python-version: ["3.9", "3.14"] # oldest + newest supported
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-
       - name: Install package with all extras
-        run: python -m pip install -e ".[dev,docs,config,kea,dhcpd,winrm]"
-
+        run: python -m pip install -e ".[dev]"
       - name: Run tests
-        run: python -m pytest tests -q
+        run: python -m pytest -q -rs
+
+  # The same job test.yml runs: a release must hold at the lowest version of every
+  # dependency the manifest claims to support.
+  floors:
+    name: Test at the declared dependency floors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+      - name: Pin every declared dependency to its floor
+        shell: python
+        run: |
+          import re
+          import subprocess
+          import sys
+
+          subprocess.run([sys.executable, "-m", "pip", "install", "-q", "tomli"], check=True)
+          import tomli
+
+          project = tomli.load(open("pyproject.toml", "rb"))["project"]
+          specs = list(project.get("dependencies", []))
+          for extra, deps in project.get("optional-dependencies", {}).items():
+              if extra not in ("dev", "docs"):
+                  specs += deps
+          pins = []
+          for spec in specs:
+              m = re.match(r"^\s*([A-Za-z0-9._-]+)(\[[^\]]*\])?\s*[^;]*?>=\s*([^,;\s]+)", spec)
+              if m:
+                  pins.append("%s==%s" % (m.group(1), m.group(3)))
+          open("floors.txt", "w").write("\n".join(pins) + "\n")
+          print("\n".join(pins) or "(no floors declared)")
+      - name: Install at the floors
+        run: python -m pip install -c floors.txt -e ".[dev]"
+      - name: Run tests
+        run: python -m pytest -q -rs
 
   build:
     name: Build distribution
-    needs: test
+    needs: [test, floors]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
-
       - name: Install build tooling
-        run: python -m pip install --upgrade build
-
+        run: python -m pip install --upgrade build twine packaging
       - name: Build sdist and wheel
         run: python -m build
+      # A tag on the wrong commit would otherwise publish a release named for
+      # one version that carries another version's artifacts.
+      - name: The tag names the version that was built
+        shell: python
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          import os
+          import pathlib
+          import sys
 
+          from packaging.utils import parse_sdist_filename, parse_wheel_filename
+          from packaging.version import Version
+
+          tag = os.environ["TAG"]
+          want = Version(tag[1:] if tag.startswith("v") else tag)
+          dist = pathlib.Path("dist")
+          built = {str(parse_wheel_filename(p.name)[1]) for p in dist.glob("*.whl")}
+          built |= {str(parse_sdist_filename(p.name)[1]) for p in dist.glob("*.tar.gz")}
+          if built != {str(want)}:
+              sys.exit("tag %s is version %s, but dist/ holds %s" % (tag, want, sorted(built)))
+          print("tag %s matches the built version %s" % (tag, want))
+      - name: Verify sdist and wheel
+        run: python -m twine check dist/*
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
+  # What a user installs is the wheel, not the checkout: install it into a clean
+  # environment and check it imports and carries the files it must ship.
+  wheel-smoke:
+    name: Installed-wheel smoke test (py${{ matrix.python-version }}, ${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.14"] # oldest + newest supported
+    steps:
+      # Only for examples/: the checkout is never put on the path.
+      - uses: actions/checkout@v7
+        with:
+          path: checkout
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Install the wheel with the config extra into a fresh venv
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/smoke"
+          bin="$RUNNER_TEMP/smoke/bin"; [ -d "$bin" ] || bin="$RUNNER_TEMP/smoke/Scripts"
+          echo "SMOKE_BIN=$bin" >> "$GITHUB_ENV"
+          "$bin/python" -m pip install "$(ls dist/*.whl)[config]"
+      - name: Import it, and find the files it must ship
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$SMOKE_BIN/python" - <<'PY'
+          from importlib.resources import files
+
+          import netboot
+
+          root = files("netboot")
+          for name in ("py.typed", "AGENTS.md", "README.md"):
+              assert (root / name).is_file(), "the wheel does not ship %s" % name
+          print("ok:", netboot.__name__, netboot.__version__)
+          PY
+      - name: The installed pixie runs the example
+        shell: bash
+        working-directory: checkout/examples
+        env:
+          PYTHONPATH: plugins
+        run: |
+          "$SMOKE_BIN/pixie" --version
+          "$SMOKE_BIN/pixie" -l recording initiate web01 | tee out.txt
+          grep -q "arm   web01 -> 10.0.0.10" out.txt
+          "$SMOKE_BIN/pixie" -l recording render web01 boot.cfg | grep -q "hostname=web01"
+          "$SMOKE_BIN/pixie" -l recording complete db01
+
+  # Docs are DEPLOYED by docs.yml. This job only GATES the release on a strict
+  # docs BUILD: a release must never ship if the docs site is broken, but the
+  # release path never deploys Pages itself -- the docs-deploy job at the end
+  # dispatches docs.yml for this tag, off the publish chain.
   docs-gate:
-    name: Docs build gate
+    name: Docs build gate (strict, no deploy)
     needs: test
     runs-on: ubuntu-latest
-    # Builds the site strictly but never deploys: a broken docs site must block
-    # the release without the release owning deployment. docs.yml owns every
-    # Pages deploy, so a docs-only problem can never overwrite a live site from
-    # here (an older tag's run did exactly that once).
-    permissions:
-      contents: read
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
-
       - name: Install package with docs tooling
-        run: python -m pip install -e ".[dev,docs,config,kea,dhcpd,winrm]"
-
-      - name: Build docs (strict, not deployed)
+        run: python -m pip install -e ".[dev,docs]"
+      - name: Build docs (gate only)
         run: mkdocs build --strict
 
   github-release:
     name: Create GitHub Release
-    needs: build
+    needs: [build, docs-gate, wheel-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
-
+      - uses: actions/checkout@v7
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
-
       - name: Extract CHANGELOG.md section for this tag
         shell: python
+        # The tag reaches the script as data (an environment variable), never
+        # spliced into its source.
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           import os
           import pathlib
           import re
           import sys
 
-          ref = os.environ["RELEASE_REF"]
-          tag = ref.rsplit("/", 1)[-1]
-          version = tag[1:] if tag.startswith("v") else tag
+          tag = os.environ["TAG"]
+          version = tag[1:] if tag.startswith("v") else tag  # v1.0.0-rc.1 -> 1.0.0-rc.1
 
           changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          # Stop before the next "## [version]" heading, or before the
+          # trailing "[version]: https://..." reference-link block at the
+          # end of the file (only relevant when this tag is the oldest
+          # tracked release, so there's no next heading to stop at).
           match = re.search(
               rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|^\[[^\]]+\]:\s|\Z)",
               changelog,
@@ -126,60 +230,64 @@ jobs:
           if not match:
               sys.exit(f"No CHANGELOG.md section found for version {version!r}")
           pathlib.Path("release_notes.md").write_text(match.group(1).strip() + "\n", encoding="utf-8")
-        env:
-          RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
-
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        # Pinned to a commit: this action runs with contents: write.
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
-          # Pin the release to the tagged commit. Left unset, the action falls
-          # back to the repository's default branch, and a release object
-          # carrying a stale branch name (e.g. "master" after a rename to
-          # "main") makes generate_release_notes fail with
-          # "Invalid target_commitish".
-          target_commitish: ${{ github.sha }}
           files: dist/*
+          # Pin the release object to the tagged commit; left unset it defaults
+          # to the default branch.
+          target_commitish: ${{ github.sha }}
+          # A repo that pushes commits directly (no PR flow) gets a thin/empty
+          # auto-generated "What's Changed" on every release, not just the
+          # first -- the scraped CHANGELOG.md section is the real notes.
+          # generate_release_notes still runs and appends its own
+          # "Full Changelog: <compare link>" line after body_path's content.
           generate_release_notes: true
-          prerelease: ${{ contains(github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name, '-') }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           body_path: release_notes.md
 
+  # After the GitHub release, and only for a final tag: a PyPI upload is
+  # irreversible (a version can never be reused), a GitHub release is not.
   publish-pypi:
     name: Publish to PyPI
-    needs: github-release
+    needs: [build, github-release]
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/project/netboot/
     permissions:
-      id-token: write
+      id-token: write # required for PyPI Trusted Publishing (OIDC)
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
-
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # PyPI never replaces a version: on a re-run of a partly-finished
-          # release, skip what is already uploaded instead of hard-failing.
+          # A partially-completed release re-run must not hard-fail on files
+          # already uploaded (PyPI never lets a version be replaced); skip them
+          # and publish only what's missing. The build job's tag/version check
+          # keeps it from masking a wrong tag.
           skip-existing: true
 
-  docs-dispatch:
-    name: Deploy docs for this tag
-    needs: [publish-pypi, docs-gate]
+  # Events made with the workflow's own GITHUB_TOKEN, such as the release above,
+  # start no workflows, so docs.yml cannot listen for the release itself. A
+  # workflow_dispatch is the exception: it deploys the docs at this tag. A
+  # pre-release leaves the published docs alone. Off the publish chain, so a
+  # docs problem never blocks a package that passed its tests.
+  docs-deploy:
+    name: Deploy the docs for this release
+    needs: github-release
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
-    # docs.yml also listens for `release: published`, but a release created by
-    # this workflow's GITHUB_TOKEN starts no workflow run at all -- measured on
-    # a sibling repo: zero `release`-triggered docs runs across five releases.
-    # workflow_dispatch is exempt from that rule, so ask for the deploy here.
     permissions:
       actions: write
     steps:
-      - name: Trigger the docs workflow for the released ref
+      - name: Dispatch docs.yml at this tag
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
-        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_REF"
+        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
