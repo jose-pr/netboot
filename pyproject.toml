@@ -35,14 +35,14 @@ dependencies = [
     "pydhcpctl>=0.1.0,<0.2",
     "duho>=0.7.6,<0.8",
     # The 0.4 series has `split_host`, `MACAddress.format` and
-    # `MACAddress.is_valid`, all of which netboot calls. `resolve()` answers [] by
-    # default (strict=False) -- PixieTarget relies on that, since every target
-    # is built at startup and a raise would fail every command.
-    "netimps>=0.4.0,<0.5",
+    # `MACAddress.is_valid`, all of which netboot calls, and `resolve()`
+    # answers [] for a name that does not resolve; 0.4.1 is pydhcpctl's floor.
+    "netimps>=0.4.1,<0.5",
     # The path layer and its URI layer (`http`, `file`, `ftp`, ... services,
     # and the `sftp://` class sftppath registers). Both run on the standard
-    # library; the 0.1 series is the first with the `uripath` import name.
-    "pathapi>=0.1.0,<0.2",
+    # library; the 0.1 series is the first with the `uripath` import name, and
+    # 0.1.2 is pydhcpctl's floor.
+    "pathapi>=0.1.2,<0.2",
     "pathapi-uri>=0.1.0,<0.2",
     # Templates are rendered by tplx; `.j2` is the engine netboot's own
     # examples and docs use, so it is always installed. 0.2 is what anycfg's
@@ -76,7 +76,7 @@ ssh = ["pydhcpctl[ssh]>=0.1.0,<0.2"]       # windhcp:// over ssh; dnsmasq:// rem
 # the only thing that installs it: with it, resolution has full record-type and
 # explicit-nameserver support; without it, resolve() still works through
 # netimps' system/nslookup backends (address and reverse records only).
-dns = ["netimps[dns]>=0.4.0,<0.5"]
+dns = ["netimps[dns]>=0.4.1,<0.5"]
 dev = [
     # Every extra with tests, so they run rather than skip, within the ranges
     # a user gets.
