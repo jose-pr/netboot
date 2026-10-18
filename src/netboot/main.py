@@ -15,6 +15,7 @@ signature) rather than duho's :func:`~duho.run_command` (which passes only args)
 from __future__ import annotations
 
 import os as _os
+import traceback as _traceback
 import typing as _ty
 from copy import deepcopy as _deepcopy
 from importlib import import_module as _import_module
@@ -60,10 +61,13 @@ _ERROR_STATUS = {exc_type: 2 for exc_type in _USER_ERRORS}
 def _report_error(message: str, code: int, error: BaseException) -> None:
     """Report an operator error through netboot's logger, not duho's stderr line.
 
-    The traceback goes to DEBUG, so ``-v`` still shows it.
+    The traceback goes to DEBUG, so ``-v`` still shows it, and to standard
+    error with ``DUHO_TRACEBACK`` set: duho leaves that to this hook.
     """
     LOGGER.error("%s", message)
     LOGGER.debug("%s", message, exc_info=error)
+    if _os.environ.get("DUHO_TRACEBACK"):
+        _traceback.print_exception(type(error), error, error.__traceback__)
 
 
 class PixieArgs(LoggingArgs):

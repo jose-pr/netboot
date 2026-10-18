@@ -33,7 +33,7 @@ dependencies = [
     # Imported as `dhcpctl`.
     # Importing it imports no backend dependency; the extras below add them.
     "pydhcpctl>=0.1.0,<0.2",
-    "duho>=0.7.5,<0.8",
+    "duho>=0.7.6,<0.8",
     # The 0.4 series has `split_host`, `MACAddress.format` and
     # `MACAddress.is_valid`, all of which netboot calls. `resolve()` answers [] by
     # default (strict=False) -- PixieTarget relies on that, since every target
