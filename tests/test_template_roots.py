@@ -55,3 +55,18 @@ def test_the_working_directory_is_not_a_root(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     conf = _load(tmp_path / "etc", "templates: [tpl]\n")
     assert str(tmp_path / "templates") not in _roots(conf)
+
+
+def test_the_engine_takes_a_single_root_as_written(tmp_path):
+    import netboot
+
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "templates" / "boot.cfg.j2").write_text("ok {{ target.ip }}")
+    engine = netboot.Pixie(
+        templates=str(tmp_path / "templates"),
+        images={"debian": {}},
+        dhcpzones={"lan": {"network": "10.0.0.0/24"}},
+        targets={"web01": {"ip": "10.0.0.5", "image": "debian"}},
+    )
+    ctx = engine.make_context(engine.lookup_target("web01"))
+    assert ctx.render("boot.cfg") == "ok 10.0.0.5"

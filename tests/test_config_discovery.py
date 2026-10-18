@@ -42,20 +42,15 @@ def config_tree(tmp_path):
 
 
 def test_include_globs_descend_into_subdirectories(config_tree):
-    """Guards `yaconfiglib`'s floor: recursive glob expansion.
-
-    `_load_config` builds `ConfigLoader(recursive=True)`, and that setting was
-    not forwarded to glob expansion before yaconfiglib 0.11.1 -- a silent
-    no-op, so a user with config spread across subdirectories saw some of it
-    load and never learned why the rest did not.
+    """`_load_config` builds `anycfg.Loader(recursive=True)`: a `**` include
+    descends, or config spread across subdirectories silently loads in part.
     """
     args = types.SimpleNamespace(config=None, baseconfig=str(config_tree))
     conf = _load_config(args)
     extra = conf["extra"]
     assert extra.get("shallow") == 1
     assert extra.get("nested") == 2, (
-        "a `**` include did not descend: yaconfiglib is below the declared "
-        "floor, or recursive= is no longer forwarded to glob expansion"
+        "a `**` include did not descend: recursive= did not reach glob " "expansion"
     )
 
 

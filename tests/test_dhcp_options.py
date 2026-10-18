@@ -28,7 +28,7 @@ def test_importing_the_dhcp_package_pulls_in_no_backend_dependency():
 
     probe = (
         "import sys, netboot.dhcp;"
-        "loaded=[m for m in ('requests','paramiko','winrm','pypureomapi')"
+        "loaded=[m for m in ('requests','asyncssh','paramiko','winrm','pypureomapi')"
         " if m in sys.modules];"
         "print(','.join(loaded))"
     )
@@ -185,7 +185,7 @@ def test_the_names_netboot_configs_always_used_still_work():
         }
     )
     lease = build_lease(_context(engine), _Fake("fake://h"))
-    # boot-file-name has always meant the boot file a ROM loads: `file`.
+    # boot-file-name is the boot file a ROM loads: `file`, not option 67.
     assert lease.file == "a.efi" and _opt(lease.options, "bootfile-name") is None
     assert _opt(lease.options, 51) == 600
 

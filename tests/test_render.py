@@ -73,8 +73,8 @@ echo done
 
 
 def test_shell_engine_renders_a_kickstart_with_percent_sections(templates_dir):
-    # Regression: `%packages`/`%pre`/`%post` used to be read as placeholders,
-    # so a normal kickstart file could not be rendered at all.
+    # `%packages`/`%pre`/`%post` are not placeholders, or a normal kickstart
+    # file could not be rendered at all.
     (templates_dir / "install.ks.shtpl").write_text(KICKSTART)
     p = _make_netboot(templates_dir)
     ctx = p.make_context(p.lookup_target("host1"))
@@ -115,8 +115,8 @@ def test_shell_engine_raises_for_an_unknown_braced_name(templates_dir):
 
 
 def test_image_without_template_path_still_renders(templates_dir):
-    # Regression: a missing `template_path` made `ctx.searchpaths` raise
-    # AttributeError, so every render for that image failed.
+    # A missing `template_path` must not make `ctx.searchpaths` raise
+    # AttributeError: every render for that image would fail.
     config = {
         "templates": [templates_dir],
         "images": {"debian": {}},
@@ -166,8 +166,8 @@ def test_jinja_keeps_the_templates_trailing_newline(templates_dir):
 
 
 def test_mac_less_targets_do_not_share_a_null_mac_candidate(templates_dir):
-    # Every MAC-less target used to look for `00-00-00-00-00-00.<name>` first,
-    # so one stray file of that name applied to all of them.
+    # A MAC-less target must not look for `00-00-00-00-00-00.<name>`: one stray
+    # file of that name would apply to all of them.
     (templates_dir / "00-00-00-00-00-00.boot.shtpl").write_text("WRONG")
     (templates_dir / "boot.shtpl").write_text("HOST=%{TARGET_HOSTNAME}")
     p = _make_netboot(templates_dir)
@@ -202,7 +202,7 @@ def test_an_edited_template_is_rendered_again(templates_dir):
 
 
 def test_template_names_accepts_options(tmp_path):
-    # Regression: _template_names(**options) must not TypeError.
+    # _template_names(**options) must not TypeError.
     d = tmp_path / "templates"
     d.mkdir()
     config = {
@@ -297,7 +297,7 @@ def _netboot_with_undefined(templates_dir, mode):
 def test_undefined_is_strict_by_default(templates_dir):
     (templates_dir / "typo.j2").write_text("kernel={{ ctx.image.kernl }}")
     ctx = _netboot_with_undefined(templates_dir, None)
-    # A typo used to ship a boot artifact with a blank where a path belongs.
+    # A typo must fail, not ship a boot artifact with a blank where a path belongs.
     with pytest.raises(tplx.UndefinedError):
         ctx.render("typo.j2")
 

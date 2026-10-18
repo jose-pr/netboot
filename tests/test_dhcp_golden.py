@@ -159,19 +159,36 @@ def recorder(tmp_path, monkeypatch):
         ),
     )
 
-    class Session:
-        def __init__(self, endpoint, auth=None, transport=None):
-            rec.add(
-                "winrm", {"endpoint": endpoint, "auth": auth, "transport": transport}
+    class Host:
+        """A hostctl host: what it would connect to, and what it is asked to run."""
+
+        def __init__(self, config):
+            self.config = config
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def run(self, command, **kwargs):
+            # A config's str() carries no password; whether one is given is
+            # what the record keeps.
+            shown = {
+                "host": str(self.config),
+                "password": bool(getattr(self.config, "password", None)),
+            }
+            if isinstance(command, str):
+                shown["script"] = command
+            else:
+                shown["argv"] = [command.program, *command.args]
+            rec.add("hostctl", shown)
+            return subprocess.CompletedProcess(
+                command, 0, stdout='{"ok": true}', stderr=""
             )
 
-        def run_ps(self, script):
-            rec.add("winrm-script", script)
-            return types.SimpleNamespace(
-                status_code=0, std_out=b'{"ok": true}', std_err=b""
-            )
-
-    monkeypatch.setitem(sys.modules, "winrm", types.SimpleNamespace(Session=Session))
+    for backend in ("_windhcp", "_dnsmasq"):
+        monkeypatch.setattr(f"dhcpctl.backends.{backend}._open_host", Host)
     return rec
 
 
@@ -333,11 +350,11 @@ def _run(name: str, config: dict, rec: Recorder, tmp: pathlib.Path) -> str:
     ) and not name.startswith("dnsmasq"):
         recipes = []
         ctx = pixie.make_context(target)
-        from netboot.cmds import dhcp_config
+        from netboot.dhcp import build_conditions, condition_recipe
 
         for server in ctx.dhcpzone.dhcpservers:
-            for condition in dhcp_config.conditions_for(ctx).values():
-                recipes.append(dhcp_config.recipe(ctx, server, condition))
+            for condition in build_conditions(ctx).values():
+                recipes.append(condition_recipe(ctx, server, condition))
         rec.add("recipes", "\n\n".join(recipes))
     return "\n".join(rec.lines) + "\n"
 

@@ -6,11 +6,11 @@ import dhcpctl
 import pytest
 
 import netboot
-from netboot.dhcp import DhcpZone, connect, server_from
+from netboot.dhcp import DHCPZone, connect, server_from
 
 
 def test_zone_parses_network_and_nameservers():
-    zone = DhcpZone(
+    zone = DHCPZone(
         network="10.20.30.0/24",
         gateway="10.20.30.1",
         nameservers="10.20.30.53",
@@ -25,7 +25,7 @@ def test_zone_parses_network_and_nameservers():
 
 
 def test_zone_derives_network_from_gateway_cidr():
-    zone = DhcpZone(gateway="192.168.5.1/24")
+    zone = DHCPZone(gateway="192.168.5.1/24")
     assert str(zone.network.network_address) == "192.168.5.0"
     assert str(zone.gateway) == "192.168.5.1"
 
@@ -45,7 +45,7 @@ def test_connect_dispatches_to_a_registered_backend(dhcp_backend):
 
 def test_zone_builds_dhcpservers_from_uris(dhcp_backend):
     zoneback = dhcp_backend("zoneback")
-    zone = DhcpZone(network="10.0.0.0/24", dhcpservers=["zoneback://h"])
+    zone = DHCPZone(network="10.0.0.0/24", dhcpservers=["zoneback://h"])
     assert len(zone.dhcpservers) == 1
     assert isinstance(zone.dhcpservers[0], zoneback)
 
@@ -53,7 +53,7 @@ def test_zone_builds_dhcpservers_from_uris(dhcp_backend):
 def test_zone_keeps_a_server_object_as_it_is(dhcp_backend):
     zoneback = dhcp_backend("zoneback")
     server = dhcpctl.connect("zoneback://h")
-    zone = DhcpZone(network="10.0.0.0/24", dhcpservers=[server])
+    zone = DHCPZone(network="10.0.0.0/24", dhcpservers=[server])
     assert zone.dhcpservers == [server]
 
 
@@ -129,18 +129,18 @@ def test_the_config_file_can_take_a_secret_from_the_environment(tmp_path, monkey
     from netboot.main import _load_config
 
     conf = _load_config(types.SimpleNamespace(config=str(tmp_path / "pixie.yaml")))
-    zone = DhcpZone(**conf["dhcpzones"]["lan"])
+    zone = DHCPZone(**conf["dhcpzones"]["lan"])
     assert zone.dhcpservers[0].secret("password") == "s3cret"
 
 
 def test_zone_scope_carries_its_overrides():
     from netboot.dhcp import scope_for
 
-    zone = DhcpZone(_id="lan", network="10.0.0.0/24", subnet_id="7", scope="10.0.0.0")
+    zone = DHCPZone(_id="lan", network="10.0.0.0/24", subnet_id="7", scope="10.0.0.0")
     scope = scope_for(zone)
     assert scope.name == "lan"
     assert str(scope.network) == "10.0.0.0/24"
     assert scope.subnet_id == 7
     assert scope.scope_id == "10.0.0.0"
-    plain = scope_for(DhcpZone(_id="lan", network="10.0.0.0/24"))
+    plain = scope_for(DHCPZone(_id="lan", network="10.0.0.0/24"))
     assert plain.subnet_id is None and plain.scope_id is None

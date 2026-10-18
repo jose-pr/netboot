@@ -55,14 +55,9 @@ def test_lookup_image_ignores_non_matching_images():
     assert p.lookup_image("debian")._id == "a"
 
 
-def test_lookup_image_falls_back_to_an_empty_mapping():
-    # Documented contract: the fallback is falsy `{}`, not None -- make_context
-    # tests it with `if not image`, and `None._id` would be an AttributeError
-    # for a hook inspecting the result.
+def test_lookup_image_is_none_when_nothing_matches():
     p = _netboot_with_scoring_images({"a": {"debian": 1}})
-    result = p.lookup_image("nothing-matches-this")
-    assert result == {}
-    assert result is not None
+    assert p.lookup_image("nothing-matches-this") is None
 
 
 def test_lookup_image_default_match_is_exact_name():
@@ -73,7 +68,7 @@ def test_lookup_image_default_match_is_exact_name():
     }
     p = netboot.Pixie(**config)
     assert p.lookup_image("debian")._id == "debian"
-    assert p.lookup_image("missing") == {}
+    assert p.lookup_image("missing") is None
 
 
 def _netboot_two_zones():
@@ -136,8 +131,8 @@ _TWO_HOSTS = {
 
 
 def test_exact_hostname_beats_an_earlier_prefix_match():
-    # Regression: "node1" used to return node10 -- the first prefix hit won,
-    # so initiate armed PXE on a machine nobody asked for.
+    # "node1" must find node1, not the first prefix hit (node10): initiate
+    # would arm PXE on a machine nobody asked for.
     engine = _netboot_with_targets(_TWO_HOSTS)
     assert engine.lookup_target("node1").hostname == "node1"
     assert engine.lookup_target("node10").hostname == "node10"
@@ -194,7 +189,7 @@ def test_mac_less_targets_are_not_all_matched_by_the_null_mac():
 
 def test_zone_lookup_without_an_ip_returns_none_instead_of_raising(monkeypatch):
     # A MAC-keyed target whose hostname never resolved has ip == "", and
-    # `"" in network` used to raise AttributeError from ipaddress.
+    # `"" in network` raises AttributeError from ipaddress.
     monkeypatch.setattr(netimps, "resolve", lambda name, *a, **kw: [])
     p = netboot.Pixie(
         images={"debian": {}},

@@ -90,8 +90,9 @@ def test_arming_raises_when_every_backend_fails():
     engine = _engine()
     for server in engine.dhcpzones["lan"].dhcpservers:
         server.fail_on = "add"
-    with pytest.raises(RuntimeError, match="rollback://a refused to arm"):
+    with pytest.raises(netboot.PixieError, match="rollback://a refused to arm") as e:
         engine.initialize(engine.lookup_target("host1"))
+    assert isinstance(e.value.__cause__, RuntimeError), "chained to the first"
     assert _Recorder.calls == [("arm", "rollback://a"), ("arm", "rollback://b")]
 
 
@@ -162,7 +163,7 @@ def test_image_match_returning_none_is_not_a_match():
 
     engine = _engine()
     engine.images = {"debian": _NullMatch(_id="debian", template_path=[])}
-    assert engine.lookup_image("debian") == {}
+    assert engine.lookup_image("debian") is None
 
 
 def test_zone_lists_are_copied_not_normalised_in_place():
@@ -213,7 +214,7 @@ def _netboot_two_targets_one_image(templates_dir):
 
 
 def test_image_globals_survive_second_target(tmp_path):
-    # Regression: make_context must not delattr globals off the shared image.
+    # make_context must not delattr globals off the shared image.
     d = tmp_path / "templates"
     d.mkdir()
     p = _netboot_two_targets_one_image(d)
@@ -233,7 +234,7 @@ class _BoomPixie(netboot.Pixie):
 
 
 def test_valctr_typeerror_only_not_bare_except():
-    # Regression: a non-TypeError in a config value ctor must propagate, rather
+    # A non-TypeError in a config value ctor must propagate, rather
     # than being swallowed by a bare except and retried without _id.
     with pytest.raises(ValueError):
         _BoomPixie(things={"x": {}})
@@ -260,7 +261,7 @@ def test_a_subclass_attribute_keeps_its_class_default():
         label: str = "default-label"
 
     engine = _WithDefault(targets={}, images={}, dhcpzones={})
-    # An annotated attribute the config does not mention used to be set to None.
+    # An annotated attribute the config does not mention keeps its default.
     assert engine.label == "default-label"
 
 
@@ -273,3 +274,43 @@ def test_an_optional_annotation_does_not_crash_construction():
     engine = _WithOptional(note="hello", targets={}, images={}, dhcpzones={})
     # `Optional[str]` is not callable; coercion must skip it rather than raise.
     assert engine.note == "hello"
+
+
+def test_a_zone_with_no_servers_warns_that_nothing_was_armed(caplog):
+    engine = netboot.Pixie(
+        images={"debian": {}},
+        dhcpzones={"lan": {"network": "10.0.0.0/24"}},
+        targets={"host1": {"ip": "10.0.0.5", "image": "debian"}},
+    )
+    with caplog.at_level(logging.WARNING, logger="netboot"):
+        engine.initialize(engine.lookup_target("host1"))
+    assert "zone lan has no dhcpservers: nothing was armed for host1" in caplog.text
+
+
+@pytest.mark.parametrize("name", ["version", "render", "searchpaths", "resource"])
+def test_a_global_named_like_a_context_member_is_dropped(caplog, name):
+    engine = netboot.Pixie(
+        globals={name: "12.4", "site": "lab"},
+        images={"debian": {}},
+        dhcpzones={"lan": {"network": "10.0.0.0/24"}},
+        targets={"host1": {"ip": "10.0.0.5", "image": "debian"}},
+    )
+    with caplog.at_level(logging.WARNING, logger="netboot"):
+        ctx = engine.make_context(engine.lookup_target("host1"))
+    assert f"ignoring global(s) {name}" in caplog.text
+    assert getattr(ctx, name) != "12.4" and ctx.site == "lab"
+
+
+def test_hooks_none_is_no_hooks():
+    assert netboot.Pixie(hooks=None).targets == {}
+
+
+def test_a_resource_with_no_path_resolves_to_none():
+    engine = netboot.Pixie(
+        images={"debian": {}},
+        dhcpzones={"lan": {"network": "10.0.0.0/24"}},
+        repos={"mirror": {"services": {"http": "http://m/"}}},
+        targets={"host1": {"ip": "10.0.0.5", "image": "debian"}},
+    )
+    ctx = engine.make_context(engine.lookup_target("host1"))
+    assert ctx.resource(netboot.content.Resource(src="mirror")) is None

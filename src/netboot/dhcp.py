@@ -18,7 +18,7 @@ from argparse import Namespace
 import dhcpctl
 import netimps
 from netimps import IPAddress, IPInterface, IPNetwork
-from yaconfiglib import OpaqueMerge
+from anycfg import OpaqueMerge
 
 from .exceptions import PixieConfigError, PixieLookupError
 from .logging import LOGGER
@@ -27,7 +27,8 @@ if _ty.TYPE_CHECKING:
     from . import PixieContext
 
 __all__ = [
-    "DhcpZone",
+    "DHCPZone",
+    "condition_recipe",
     "OWNER",
     "LEGACY_OPTION_NAMES",
     "NETBOOT_CODES",
@@ -106,7 +107,10 @@ def connect(
         raise PixieConfigError(str(exc)) from exc
 
 
-def server_from(entry, codes=None) -> dhcpctl.DHCPServer:
+def server_from(
+    entry: "str | _abc.Mapping[str, object] | dhcpctl.DHCPServer",
+    codes: "type[dhcpctl.OptionCodes] | None" = None,
+) -> dhcpctl.DHCPServer:
     """A `dhcpservers` entry as a server: a URI, or a mapping of `uri:` and the
     secrets that backend takes (windhcp and kea `user`/`password`, dhcpd
     `keyname`/`omapi_key`), each written in the config or produced by it
@@ -144,7 +148,7 @@ def server_from(entry, codes=None) -> dhcpctl.DHCPServer:
     )
 
 
-class DhcpZone(Namespace, OpaqueMerge):
+class DHCPZone(Namespace, OpaqueMerge):
     """A network netboot can provision into, as configured under `dhcpzones:`.
 
     Derives `network` from a CIDR `gateway`, coerces `nameservers`/`search` to
@@ -158,13 +162,19 @@ class DhcpZone(Namespace, OpaqueMerge):
     nameservers: "list[IPAddress]"
     globals: dict
     dhcpservers: "list[dhcpctl.DHCPServer]"
+    #: Config keys read without an annotation.
+    _CONFIG_KEYS = frozenset(
+        {"netmask", "subnet_id", "scope", "dhcp_when", "dhcp_complete"}
+    )
 
     @property
-    def nameserver(self):
+    def nameserver(self) -> "IPAddress | str":
         """The first nameserver, or `""` when none is configured."""
         return self.nameservers[0] if self.nameservers else ""
 
-    def get_local_server(self, servers: "list[IPAddress]", default: IPAddress):
+    def get_local_server(
+        self, servers: "list[IPAddress]", default: IPAddress
+    ) -> IPAddress:
         """The first server that lives inside this zone's network, else `default`.
 
         Accepts the strings config and globals actually hold, not just parsed
@@ -181,7 +191,7 @@ class DhcpZone(Namespace, OpaqueMerge):
                 return address
         return default
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: object) -> None:
         _gateway = kwargs.get("gateway")
         _network = kwargs.get("network")
         _netmask = kwargs.get("netmask")
@@ -209,7 +219,8 @@ class DhcpZone(Namespace, OpaqueMerge):
         self.dhcpservers = [
             server_from(server, codes) for server in (self.dhcpservers or [])
         ]
-        self.network = netimps.try_parse(self.network, IPNetwork)
+        network = getattr(self, "network", None)
+        self.network = netimps.parse(network, IPNetwork) if network else None
         for prop, ctr in [
             ("nameservers", lambda v: netimps.try_parse(v, IPAddress)),
             ("search", str),
@@ -243,10 +254,10 @@ class DhcpZone(Namespace, OpaqueMerge):
                 setattr(self, prop, None)
 
         if self.gateway:
-            self.gateway = netimps.try_parse(self.gateway, IPAddress)
+            self.gateway = netimps.parse(self.gateway, IPAddress)
 
 
-def scope_for(zone) -> dhcpctl.Scope:
+def scope_for(zone: DHCPZone) -> dhcpctl.Scope:
     """A zone as the scope a reservation lives in: `subnet_id`/`scope` if set."""
     subnet_id = getattr(zone, "subnet_id", None)
     return dhcpctl.Scope(
@@ -260,7 +271,9 @@ def scope_for(zone) -> dhcpctl.Scope:
 # -- options -----------------------------------------------------------------
 
 
-def zone_defaults(zone, codes=None) -> dhcpctl.DHCPOptions:
+def zone_defaults(
+    zone: DHCPZone, codes: "type[dhcpctl.OptionCodes] | None" = None
+) -> dhcpctl.DHCPOptions:
     """What the zone already knows, before anyone configures an option.
 
     The bag reads its options with `codes` (netboot's by default), the codemap
@@ -310,7 +323,7 @@ def _declared(ctx) -> "list[dhcpctl.DHCPLease]":
     return layers
 
 
-def build_options(ctx, server: dhcpctl.DHCPServer) -> dhcpctl.DHCPOptions:
+def build_options(ctx: PixieContext, server: dhcpctl.DHCPServer) -> dhcpctl.DHCPOptions:
     """The options for this target on this server, in merge order.
 
     Later wins: zone defaults, the image's `dhcp_options`, the target's
@@ -334,7 +347,7 @@ def build_options(ctx, server: dhcpctl.DHCPServer) -> dhcpctl.DHCPOptions:
     return options
 
 
-def build_lease(ctx, server: dhcpctl.DHCPServer) -> dhcpctl.DHCPLease:
+def build_lease(ctx: PixieContext, server: dhcpctl.DHCPServer) -> dhcpctl.DHCPLease:
     """What this target is served on this server: its address, `build_options`,
     and the header fields the image or the target sets, the target's first."""
 
@@ -372,7 +385,7 @@ def _returned(who: str, result, codes) -> dhcpctl.DHCPOptions:
 # -- conditions and completion -------------------------------------------------
 
 
-def build_conditions(ctx) -> "dict[str, dhcpctl.Condition]":
+def build_conditions(ctx: PixieContext) -> "dict[str, dhcpctl.Condition]":
     """Every `dhcp_when` condition that applies to this target, layered by name.
 
     Zone, then image, then target -- later wins, **by name**, so a target
@@ -393,7 +406,7 @@ def build_conditions(ctx) -> "dict[str, dhcpctl.Condition]":
     return conditions
 
 
-def build_completion(ctx) -> dhcpctl.Completion:
+def build_completion(ctx: PixieContext) -> dhcpctl.Completion:
     """How this target completes: zone, then image, then target -- later wins."""
     completion = dhcpctl.Completion()
     for source in (ctx.dhcpzone, ctx.image, ctx.target):
@@ -425,6 +438,13 @@ def _config(parse, declared, where, names):
 
 
 # -- the reservation -----------------------------------------------------------
+
+
+def condition_recipe(
+    ctx: "PixieContext", server: dhcpctl.DHCPServer, condition: dhcpctl.Condition
+) -> str:
+    """What `server` needs set up once for `condition`, in its own syntax."""
+    return server.condition_recipe(reservation_for(ctx, server), condition)
 
 
 def reservation_for(

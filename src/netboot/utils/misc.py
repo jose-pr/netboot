@@ -1,3 +1,4 @@
+import re
 import shlex
 from importlib import import_module
 from typing import Any, List, TypeVar, Union
@@ -10,10 +11,14 @@ __all__ = ["T", "import_", "parse_path", "shell_quote"]
 T = TypeVar("T")
 
 
-def import_(name: str):
+def import_(name: str) -> Any:
     """Import `"pkg.mod.attr"` and return `attr` (splits on the last dot)."""
     module, obj = name.rsplit(".", maxsplit=1)
     return getattr(import_module(module), obj)
+
+
+#: RFC 3986 `scheme ":"`, at least two characters so a drive letter is not one.
+_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
 
 
 def parse_path(path: "str | Path") -> Path:
@@ -28,10 +33,7 @@ def parse_path(path: "str | Path") -> Path:
     if isinstance(path, Path):
         return path
     text = str(path)
-    scheme, sep, _ = text.partition(":")
-    if not sep or len(scheme) < 2 or not scheme.isalnum():
-        return LocalPath(text)
-    return URIPath(text)
+    return URIPath(text) if _URI_SCHEME.match(text) else LocalPath(text)
 
 
 def shell_quote(value: Any) -> "Union[str, List[str]]":

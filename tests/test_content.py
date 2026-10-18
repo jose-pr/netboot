@@ -143,16 +143,16 @@ def test_file_services_build_with_no_extra_installed(monkeypatch):
 
 
 def test_repository_joinpath_chains_without_local():
-    # Regression: .local must stay a Pathname so chained joins work.
+    # .local must stay a Pathname so chained joins work.
     repo = Repository(address="host", services={"http": "http://host/base"})
     chained = repo.joinpath("a").joinpath("b")
     assert str(chained.services["http"]).endswith("/a/b")
 
 
 def test_a_host_and_port_address_builds_a_real_authority(monkeypatch):
-    # "mirror.example:8080" used to percent-encode the colon into the hostname,
-    # and the whole string was handed to DNS -- a lookup that can only fail, and
-    # does so at different speeds on different machines. Nothing here resolves.
+    # "mirror.example:8080" is a host and a port: the colon must not be
+    # percent-encoded into the hostname, nor the whole string handed to DNS --
+    # a lookup that can only fail. Nothing here resolves.
     monkeypatch.setattr(netimps.Host, "ip", lambda self, **kw: None)
     repo = Repository(address="mirror.example:8080", services={"http": "/boot"})
     assert str(repo.service("http")).startswith("http://mirror.example:8080/")
@@ -205,7 +205,54 @@ def test_a_repo_without_an_address_warns(caplog):
 
 
 def test_joinpath_treats_an_absolute_subpath_as_relative():
-    # `repo / "/abs"` used to discard the repository root entirely.
+    # `repo / "/abs"` extends the repository root; it must not discard it.
     repo = Repository(address="10.0.0.1", services={}, local="/srv/tftp")
     assert "/srv/tftp/abs" in str((repo / "/abs").service(None))
     assert str((repo / "sub/").service(None)).endswith("/srv/tftp/sub")
+
+
+def test_joining_keeps_a_services_query_last():
+    repo = _repo(services={"http": "http://h/boot?sig=1"}) / "sub"
+    assert str(repo.get("a", service="http")) == "http://h/boot/sub/a?sig=1"
+
+
+def test_joining_a_repository_with_no_local_path_leaves_it_unset():
+    repo = _repo() / "sub"
+    assert repo.local is None and repo.service(None) is None
+
+
+def _counting_lookups(monkeypatch):
+    calls = []
+
+    def ip(self, **kw):
+        calls.append(str(self))
+        return netimps.parse("192.0.2.20")
+
+    monkeypatch.setattr(netimps.Host, "ip", ip)
+    return calls
+
+
+def test_a_full_uri_service_looks_nothing_up(monkeypatch, caplog):
+    calls = _counting_lookups(monkeypatch)
+    repo = Repository(services={"http": "http://mirror.example/boot"})
+    assert str(repo.get("a", service="http")) == "http://mirror.example/boot/a"
+    assert calls == [] and "no address" not in caplog.text
+
+
+def test_the_address_is_looked_up_once(monkeypatch):
+    import socket
+
+    calls = []
+
+    def getaddrinfo(host, *a, **kw):
+        calls.append(host)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.20", 0))]
+
+    netimps.clear_resolution_cache()
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    repo = _repo(address="mirror.example", services={"tftp": "/boot"})
+    for _ in range(3):
+        assert "192.0.2.20" in str(repo.get("a", service="tftp"))
+    assert "192.0.2.20" in str((repo / "sub").get("a", service="tftp"))
+    netimps.clear_resolution_cache()
+    assert calls == ["mirror.example"]

@@ -1,21 +1,34 @@
 --- step
 initialize
 --- kea
-{"auth": null, "payload": {"arguments": {"name": "ipxe"}, "command": "class-get", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+{"auth": null, "payload": {"arguments": {"name": "ipxe-aabbccddeeff"}, "command": "class-get", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
 --- kea
-{"auth": null, "payload": {"arguments": {"client-classes": [{"boot-file-name": "boot.ipxe", "name": "ipxe", "test": "option[77].text == 'iPXE'"}]}, "command": "class-add", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+{"auth": null, "payload": {"arguments": {"client-classes": [{"boot-file-name": "boot.ipxe", "name": "ipxe-aabbccddeeff", "test": "pkt4.mac == 0xaabbccddeeff and option[77].hex == 'iPXE'"}]}, "command": "class-add", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+--- kea
+{"auth": null, "payload": {"arguments": {"name": "netboot-aabbccddeeff"}, "command": "class-get", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+--- kea
+{"auth": null, "payload": {"arguments": {"client-classes": [{"boot-file-name": "undionly.kpxe", "name": "netboot-aabbccddeeff", "test": "pkt4.mac == 0xaabbccddeeff and not member('ipxe-aabbccddeeff')"}]}, "command": "class-add", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
 --- kea
 {"auth": null, "payload": {"command": "config-get", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
 --- kea
-{"auth": null, "payload": {"arguments": {"reservation": {"boot-file-name": "undionly.kpxe", "client-classes": ["ipxe"], "hw-address": "aa:bb:cc:dd:ee:ff", "ip-address": "10.0.0.10", "next-server": "10.0.0.2", "option-data": [{"code": 3, "data": "10.0.0.1"}, {"code": 6, "data": "10.0.0.53,10.0.0.54"}, {"code": 15, "data": "example.com"}, {"code": 119, "data": "example.com"}, {"code": 1, "data": "255.255.255.0"}, {"code": 28, "data": "10.0.0.255"}], "subnet-id": 7}}, "command": "reservation-add", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+{"auth": null, "payload": {"arguments": {"reservation": {"hw-address": "aa:bb:cc:dd:ee:ff", "ip-address": "10.0.0.10", "next-server": "10.0.0.2", "option-data": [{"code": 3, "data": "10.0.0.1"}, {"code": 6, "data": "10.0.0.53,10.0.0.54"}, {"code": 15, "data": "example.com"}, {"code": 119, "data": "example.com"}, {"code": 1, "data": "255.255.255.0"}, {"code": 28, "data": "10.0.0.255"}], "subnet-id": 7}}, "command": "reservation-add", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
 --- step
 complete
 --- kea
 {"auth": null, "payload": {"arguments": {"identifier": "aa:bb:cc:dd:ee:ff", "identifier-type": "hw-address", "subnet-id": 7}, "command": "reservation-del", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+--- kea
+{"auth": null, "payload": {"arguments": {"name": "netboot-aabbccddeeff"}, "command": "class-del", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
+--- kea
+{"auth": null, "payload": {"arguments": {"name": "ipxe-aabbccddeeff"}, "command": "class-del", "service": ["dhcp4"]}, "url": "http://kea01:8000/"}
 --- recipes
 // netboot: add to kea-dhcp4.conf under Dhcp4.client-classes
 {
-  "name": "ipxe",
-  "test": "option[77].text == 'iPXE'",
+  "name": "ipxe-aabbccddeeff",
+  "test": "pkt4.mac == 0xaabbccddeeff and option[77].hex == 'iPXE'",
   "boot-file-name": "boot.ipxe"
+}
+{
+  "name": "netboot-aabbccddeeff",
+  "test": "pkt4.mac == 0xaabbccddeeff and not member('ipxe-aabbccddeeff')",
+  "boot-file-name": "undionly.kpxe"
 }

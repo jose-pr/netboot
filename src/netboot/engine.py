@@ -5,13 +5,9 @@ unchanged; this module exists so the package root is a surface rather than the
 whole implementation.
 """
 
-import datetime
 import enum as _enum
-import logging
 import typing as _ty
-from argparse import Namespace
 from copy import deepcopy
-from pathlib import Path
 from typing import Mapping, Union, get_type_hints
 
 import netimps
@@ -20,16 +16,19 @@ import tplx
 from netimps import IPAddress, MACAddress
 from tplx import UNDEFINED_MODES
 from uripath import URIPath
-from yaconfiglib import OpaqueMerge
-from yaconfiglib import typed_merge as mergeObjects
+from anycfg import typed_merge as mergeObjects
 
 from ._version import __version__
-from .content import Repository, Resource
-from .dhcp import DhcpZone, arm, codes_for, disarm
-from .exceptions import PixieConfigError, PixieLookupError
+from .content import Repository
+from .dhcp import DHCPZone, codes_for
+from .exceptions import PixieConfigError, PixieError, PixieLookupError
 from .logging import LOGGER
 from .utils import T, shell_quote
 from .utils.misc import import_, parse_path
+from ._context import PixieContext
+from ._objects import PixieImage, PixieTarget
+
+__all__ = ["Pixie", "PixieContext", "PixieEvent", "PixieImage", "PixieTarget"]
 
 # Compat: StrEnum introduced in Python 3.11; emulate for older Pythons
 try:
@@ -39,269 +38,6 @@ except ImportError:
     class StrEnum(str, _enum.Enum):
         def __str__(self):
             return self.value
-
-
-class PixieTarget(Namespace, OpaqueMerge):
-    """One machine to provision, as configured under `targets:`.
-
-    Gaps are filled at construction: a MAC-shaped id becomes the MAC, an
-    IP-shaped id the IP, anything else the hostname, and an unknown IP is
-    resolved once (never in a loop, never fatally).
-    """
-
-    _id: str
-    hostname: str
-    #: An `IPAddress` once known, but `""` while it is not: a MAC-keyed target
-    #: whose hostname did not resolve has no address, and callers test it for
-    #: truthiness rather than assuming one.
-    ip: "Union[IPAddress, str]"
-    mac: MACAddress
-    image: str
-    dhcpzone: str
-    globals: dict
-    template_path: list[Union[str, Path]]
-
-    #: MAC value treated as "unset" (a target keyed by hostname/IP has no MAC).
-    _NULL_MAC = "00:00:00:00:00:00"
-
-    def __init__(self, **kwargs) -> None:
-        for prop, key in {
-            "dhcpzone": "",
-            "mac": "",
-            "ip": "",
-            "image": "",
-            "hostname": "",
-            "template_path": [],
-        }.items():
-            kwargs.setdefault(prop, key)
-        super().__init__(**kwargs)
-        # If no MAC was given but the id itself is a MAC, adopt it; otherwise
-        # fall back to the null MAC so downstream `.mac` is always a MACAddress.
-        if not self.mac or str(self.mac) == self._NULL_MAC:
-            if MACAddress.is_valid(str(self._id)):
-                self.mac = self._id
-            else:
-                self.mac = self._NULL_MAC
-        if not isinstance(self.mac, MACAddress):
-            self.mac = MACAddress(self.mac)
-        # Fill in whatever the id itself tells us, then resolve at most once.
-        # This is deliberately not a loop: `resolve()` answers [] for a name
-        # that does not resolve, so retrying asks the same question forever --
-        # and every target is built at startup, so one unresolvable entry used
-        # to hang every command.
-        id_str = str(getattr(self, "_id", "") or "")
-        id_is_mac = MACAddress.is_valid(id_str)
-        id_is_ip = netimps.is_valid(id_str, IPAddress)
-        if not self.ip and id_is_ip:
-            self.ip = id_str
-        if not self.hostname and not id_is_mac and not id_is_ip:
-            self.hostname = id_str
-        if not self.ip and self.hostname:
-            try:
-                _resolved = netimps.resolve(self.hostname)
-            except ValueError as exc:  # malformed name: not worth killing the run
-                _resolved = None
-                LOGGER.warning(
-                    "target %s: %r is not resolvable: %s", id_str, self.hostname, exc
-                )
-            if _resolved:
-                self.ip = _resolved[0]
-            elif _resolved is not None:
-                LOGGER.warning(
-                    "target %s: hostname %r did not resolve; its ip stays unset",
-                    id_str,
-                    self.hostname,
-                )
-        if self.ip:
-            self.ip = netimps.try_parse(self.ip, IPAddress)
-        self.hostname = self.hostname.lower()
-
-
-class PixieImage(Resource):
-    """What a target boots, as configured under `images:`.
-
-    Also a `content.Resource`, so it carries `src`/`path` addressing its
-    artifacts in a repository. Those play no part in template lookup.
-    """
-
-    template_path: list["Path"]
-    globals: dict
-
-    def __init__(self, **kwargs) -> None:
-        # `searchpaths` reads this on every render, so an image that simply
-        # does not declare one must still have the empty list.
-        kwargs.setdefault("template_path", [])
-        super().__init__(**kwargs)
-
-    def match(self, name: str, check: str):
-        """Does image `name` serve `check`? Override point for image selection.
-
-        Return a bool, or a comparable score so `lookup_image` can prefer the best
-        of several matches. Anything falsy means "not this one".
-        """
-        return name == check
-
-
-class PixieContext(Namespace):
-    """Everything a template can see for one target.
-
-    Built by `Pixie.make_context`, never constructed directly: it carries the
-    target, its image and zone, the repositories, and its own renderer.
-    """
-
-    target: PixieTarget
-    image: PixieImage
-    dhcpzone: DhcpZone
-    repos: dict[str, Repository]
-    generated: datetime.datetime
-    resources: dict[str, Resource]
-    version: str
-    _loader: tplx.Loader
-
-    def __init__(self, **kwargs) -> None:
-        self.generated = datetime.datetime.now()
-        super().__init__(**kwargs)
-
-    def resource(self, name: Union[str, Resource], service: str = None):
-        """Resolve a resource to a fetchable URI through its repository.
-
-        Takes a resource id (looked up in `.resources`) or a `Resource` directly.
-        `None` if the repo or the resource is unknown.
-        """
-        if isinstance(name, Resource):
-            repo = self.repos.get(name.src, None)
-            path = name.path
-        else:
-            path = None
-            repo = self.resource_repo(name)
-        if not repo:
-            return
-        if not path:
-            path = self.resources[name].path
-        return repo.get(path, service=service)
-
-    def resource_repo(self, name: str):
-        """The `Repository` backing resource `name`, or `None`."""
-        resource = self.resources.get(name)
-        if not resource:
-            return
-        return self.repos.get(resource.src)
-
-    def pxe_init(self, config: "Pixie"):
-        """Arm every DHCP backend for this target, succeeding if any one does.
-
-        Every backend is tried. A backend that fails is logged as a warning and
-        skipped, so one server being offline does not block the others; the
-        first error is raised only when no backend could be armed.
-        """
-        first_error = None
-        armed = 0
-        for dhcpserver in self.dhcpzone.dhcpservers:
-            try:
-                arm(self, dhcpserver)
-            except Exception as exc:
-                LOGGER.warning(
-                    "could not arm %s on %s: %s",
-                    self.target._id,
-                    dhcpserver,
-                    exc,
-                    exc_info=LOGGER.isEnabledFor(logging.DEBUG),
-                )
-                first_error = first_error or exc
-            else:
-                armed += 1
-        if first_error is not None and not armed:
-            raise first_error
-        return self
-
-    def pxe_complete(self, config: "Pixie"):
-        """Disarm every DHCP backend; a failure is a warning, never an error.
-
-        Every backend is tried, and one that fails is logged and skipped, so
-        the rest are still disarmed.
-        """
-        for dhcpserver in self.dhcpzone.dhcpservers:
-            try:
-                # Removes the entry unless the config says to keep it
-                # (`dhcp_complete:`).
-                disarm(self, dhcpserver)
-            except Exception as exc:
-                LOGGER.warning(
-                    "could not disarm %s on %s: %s",
-                    self.target._id,
-                    dhcpserver,
-                    exc,
-                    exc_info=LOGGER.isEnabledFor(logging.DEBUG),
-                )
-        return self
-
-    def _template_names(self, suffix: Union[list[str], str], **options) -> list[str]:
-        # ``options`` (a ``k=v:name`` template spec) is accepted for forward
-        # compatibility; name selection does not use it today.
-        suffixes = suffix if isinstance(suffix, list) else [suffix]
-        ip = self.target.ip
-        # Skip unset values so they never yield a spurious name. The null MAC
-        # is the same case as the unspecified IP: every MAC-less target would
-        # otherwise share the candidate `00-00-00-00-00-00.<name>`, and one
-        # stray file of that name would apply to all of them.
-        # `is_wildcard` knows every spelling of "every local address", a
-        # `%zone` suffix and `None` included; the literal tuple this replaced
-        # knew two of them.
-        ip_name = "" if netimps.is_wildcard(ip) else str(ip)
-        mac = self.target.mac
-        mac_name = mac.format("-") if str(mac) != PixieTarget._NULL_MAC else ""
-        names = []
-        for version in [
-            mac_name,
-            self.target.hostname,
-            ip_name,
-        ]:
-            if version:
-                for suffix in suffixes:
-                    names.append(f"{version}.{suffix}")
-        for suffix in suffixes:
-            names.append(suffix)
-
-        return names
-
-    @property
-    def searchpaths(self) -> list[Path]:
-        """Template directories for this context: target first, then image.
-
-        These extend the engine-wide template roots rather than replacing them; a
-        relative entry is resolved inside each root.
-        """
-        return [*self.target.template_path, *self.image.template_path]
-
-    def render(self, filename: str, strict=True):
-        """Render `filename` against this context and return the result.
-
-        The name is resolved by the template search (MAC, hostname, IP, then the
-        bare name), through `tplx`, and so are the includes inside it. The
-        template sees `ctx` and each of the context's fields (`target`, `image`,
-        ...). Text, or **`bytes`** for a file the copy engine claims, which is
-        every suffix no other engine owns -- it is a byte-exact copy, so it is
-        never decoded. `strict=False` logs the failure at DEBUG and returns
-        `None` instead of raising.
-        """
-        data = dict(vars(self))
-        data["ctx"] = self
-        paths = [
-            path if isinstance(path, pathapi.Path) else parse_path(str(path))
-            for path in self.searchpaths
-        ]
-        try:
-            return self._loader.render(
-                filename, data, candidates=self._template_names, paths=paths
-            )
-        except Exception as e:
-            if strict:
-                raise e
-            else:
-                LOGGER.debug(
-                    f"While rendering [{filename}] encountered an exeption:\t{repr(e)}"
-                )
-                return None
 
 
 class PixieEvent(StrEnum):
@@ -329,6 +65,29 @@ class PixieEvent(StrEnum):
 
 _PixieHook = _ty.Callable[["PixieEvent", "Pixie", T, dict], T]
 
+#: Top-level config keys the engine reads without an annotation.
+_TOP_LEVEL_KEYS = frozenset({"dhcp", "defaults", "templates"})
+
+
+def _config_keys(cls: type) -> "frozenset[str]":
+    """The config keys `cls` reads: its annotated fields and `_CONFIG_KEYS`."""
+    keys = set(getattr(cls, "_CONFIG_KEYS", ()))
+    for klass in cls.__mro__:
+        keys.update(getattr(klass, "__annotations__", {}))
+    return frozenset(key for key in keys if not key.startswith("_"))
+
+
+def _warn_unknown_keys(where: str, values: Mapping, known: "frozenset[str]") -> None:
+    """Warn naming each key of `values` that nothing reads; `_`-keys are private."""
+    for key in values:
+        if isinstance(key, str) and not key.startswith("_") and key not in known:
+            LOGGER.warning(
+                "config key %s%s is not one netboot reads (misspelled? data for "
+                "templates belongs under globals)",
+                where,
+                key,
+            )
+
 
 class Pixie:
     """The engine: config in, provisioning decisions out.
@@ -340,7 +99,7 @@ class Pixie:
     """
 
     targets: "dict[str,PixieTarget]"
-    dhcpzones: "dict[str,DhcpZone]"
+    dhcpzones: "dict[str,DHCPZone]"
     images: "dict[str, PixieImage]"
     repos: "dict[str,Repository]"
     globals: dict[str, object]
@@ -359,8 +118,8 @@ class Pixie:
         event: PixieEvent,
         __value: T = None,
         /,
-        **kwargs,
-    ):
+        **kwargs: object,
+    ) -> T:
         """Run the hook chain for `event`, threading `value` through it.
 
         Each hook is called as `f(event, netboot, value, kwargs)` and **must
@@ -380,11 +139,11 @@ class Pixie:
     def __new__(
         cls,
         /,
-        hooks: _ty.Sequence[_PixieHook] = [],
-        **config,
-    ):
+        hooks: "_ty.Optional[_ty.Sequence[_PixieHook]]" = (),
+        **config: object,
+    ) -> "Pixie":
 
-        hooks = [(hook if callable(hook) else import_(hook)) for hook in hooks]
+        hooks = [(hook if callable(hook) else import_(hook)) for hook in hooks or ()]
         cls = Pixie.hook(hooks, PixieEvent.NewPixieObject, cls, config=config)
         if not isinstance(cls, type) or not issubclass(cls, Pixie):
             # The event threads the class through the chain, so a hook that
@@ -399,8 +158,8 @@ class Pixie:
     def __init__(
         netboot,
         /,
-        **config,
-    ):
+        **config: object,
+    ) -> None:
         # Use what the hook returned, everywhere. Storing it while reading
         # the original meant a hook that returned a new mapping (the natural
         # non-mutating style) had its targets ignored but its templates
@@ -411,6 +170,9 @@ class Pixie:
                 "a StartPixieInit hook returned None; it must return the config "
                 "mapping to pass on"
             )
+        _warn_unknown_keys(
+            "", config, _config_keys(netboot.__class__) | _TOP_LEVEL_KEYS
+        )
         netboot.globals = deepcopy(config.get("globals") or {})
         # Read before the zones, whose servers' URIs may use the names declared.
         netboot.option_codes = codes_for(config.get("dhcp"))
@@ -431,8 +193,16 @@ class Pixie:
             # `isinstance(origin, type)` first: a union annotation's origin is
             # not a class at all on 3.9, and `issubclass` raises on it.
             elif isinstance(origin, type) and issubclass(origin, dict):
-                value: dict[str] = value or {}
+                value: dict[str] = {} if value is None else value
+                if not isinstance(value, Mapping):
+                    raise PixieConfigError(
+                        f"{prop}: expected a mapping of id to entry, got "
+                        f"{type(value).__name__}"
+                    )
                 _keycls, _valcls = _ty.get_args(hint)
+                _known = None if _valcls is object else _config_keys(_valcls)
+                if _known is not None and isinstance(prop_defaults, Mapping):
+                    _warn_unknown_keys(f"defaults.{prop}.", prop_defaults, _known)
                 _value = {}
                 if _valcls is object:
                     _valctr = lambda _id, val: val
@@ -453,11 +223,13 @@ class Pixie:
                                     f"{type(val).__name__} ({val!r})"
                                 )
                             val = fields
+                        if _known is not None:
+                            _warn_unknown_keys(f"{prop}.{_id}.", val, _known)
                         if prop_defaults:
                             _val = deepcopy(prop_defaults)
                             _val.update(val)
                             val = _val
-                        if isinstance(_valcls, type) and issubclass(_valcls, DhcpZone):
+                        if isinstance(_valcls, type) and issubclass(_valcls, DHCPZone):
                             val = dict(val, codes=netboot.option_codes)
                         try:
                             return _valcls(_id=_id, **val)
@@ -470,8 +242,20 @@ class Pixie:
                             return _valcls(**val)
 
                 for uid, val in value.items():
-                    if not str(uid).startswith("_"):
+                    if not isinstance(uid, str):
+                        raise PixieConfigError(
+                            f"{prop}: the id {uid!r} is not text "
+                            f"({type(uid).__name__}); quote it (YAML reads an unquoted "
+                            "52:54:00:12:34:56 as a number, and yes as a boolean)"
+                        )
+                    if uid.startswith("_"):
+                        continue
+                    try:
                         _value[_keycls(uid)] = _valctr(uid, val)
+                    except PixieError:
+                        raise
+                    except ValueError as exc:  # a MAC, address or network
+                        raise PixieConfigError(f"{prop}.{uid}: {exc}") from exc
             elif value is None:
                 # Leave a class-level default in place instead of overwriting
                 # it with None just because the config does not mention it.
@@ -514,13 +298,22 @@ class Pixie:
         if mac is not None and str(mac) == PixieTarget._NULL_MAC:
             mac = None  # the "unset" MAC must not match every MAC-less target
         ip = netimps.try_parse(query, IPAddress)
-        matches = [
-            candidate
-            for candidate in self.targets.values()
-            if candidate.hostname.lower() == lower
-            or (mac is not None and candidate.mac == mac)
-            or (ip is not None and candidate.ip == ip)
-        ]
+
+        def exact():
+            return [
+                candidate
+                for candidate in self.targets.values()
+                if candidate.hostname.lower() == lower
+                or (mac is not None and candidate.mac == mac)
+                or (ip is not None and candidate.ip == ip)
+            ]
+
+        matches = exact()
+        if not matches and ip is not None:
+            # The address may be a hostname-only target's: look those up now.
+            for candidate in self.targets.values():
+                candidate.resolve_ip()
+            matches = exact()
         if not matches:
             matches = [
                 candidate
@@ -546,14 +339,18 @@ class Pixie:
             _target = self._match_target(target)
             if _target is not None:
                 target = _target
+        if isinstance(target, PixieTarget):
+            target.resolve_ip()
 
         target = self.hook(PixieEvent.FoundTarget, target)
         if not isinstance(target, PixieTarget):
             target = None
         return target
 
-    def lookup_image(self, name: str, target: PixieTarget = None) -> "PixieImage|dict":
-        """The best-matching image, or a falsy `{}` when none matches.
+    def lookup_image(
+        self, name: str, target: "PixieTarget | None" = None
+    ) -> "PixieImage | None":
+        """The best-matching image, or `None` when none matches.
 
         `match` may return a bool or a comparable score; anything falsy --
         `False`, `None`, `0`, an empty `re.Match`-less result -- means "not
@@ -561,7 +358,7 @@ class Pixie:
         returning a non-comparable type raises rather than silently ordering
         by chance.
         """
-        best_score, best_image = None, {}
+        best_score, best_image = None, None
         for img_name, image in self.images.items():
             score = image.match(img_name, name)
             if not score:
@@ -570,7 +367,7 @@ class Pixie:
                 best_score, best_image = score, image
         return self.hook(PixieEvent.FoundTargetImage, best_image, target=target)
 
-    def lookup_dhcpzone(self, name: str, target: PixieTarget = None) -> "DhcpZone|None":
+    def lookup_dhcpzone(self, name: str, target: PixieTarget = None) -> "DHCPZone|None":
         """The zone for `name`, or the most specific one containing the target's IP.
 
         The resolved id is cached back onto `target.dhcpzone`.
@@ -578,7 +375,7 @@ class Pixie:
         if not name and target:
             if target.dhcpzone:
                 name = target.dhcpzone
-            elif target.ip:
+            elif target.resolve_ip().ip:
                 # Containment needs a real address: a MAC-keyed target whose
                 # hostname never resolved has `ip == ""`, and `"" in network`
                 # raises AttributeError rather than returning False.
@@ -596,11 +393,6 @@ class Pixie:
         zone = self.dhcpzones.get(name, None)
         return self.hook(PixieEvent.FoundTargetDhcpzone, zone, target=target)
 
-    #: Context fields a global must never replace: they are the context.
-    _RESERVED_CONTEXT_KEYS = frozenset(
-        {"image", "dhcpzone", "target", "repos", "resources"}
-    )
-
     def make_context(
         self,
         target: "PixieTarget",
@@ -614,6 +406,7 @@ class Pixie:
         `require_image=False` tolerates an image that is no longer configured, so
         cleanup can still run.
         """
+        target.resolve_ip()
         image = self.lookup_image(target.image, target)
         if not image and not require_image:
             # `complete` only needs the zone, to disarm DHCP. Refusing to clean
@@ -674,9 +467,12 @@ class Pixie:
                 f"templates_undefined must be one of {', '.join(UNDEFINED_MODES)}, "
                 f"not {undefined!r}"
             )
+        declared = self._config.get("templates") or []
+        if not isinstance(declared, (list, tuple)):
+            declared = [declared]  # `templates: dir` is one root, not one per letter
         roots = [
             root if isinstance(root, pathapi.Path) else parse_path(str(root))
-            for root in self._config.get("templates", [])
+            for root in declared
         ]
         ctx._loader = tplx.Loader(
             roots,
@@ -698,13 +494,15 @@ class Pixie:
     def _without_reserved_keys(self, values: dict) -> dict:
         """Drop globals that would overwrite the context's own fields.
 
-        A global named `target` or `image` would replace the engine object the
-        templates are rendered against -- silently, and only for the targets
-        whose globals happen to carry that name.
+        A global named `target` or `version` would replace the context's own
+        value, and one named `render` or `searchpaths` its method: silently,
+        and only for the targets whose globals happen to carry that name.
         """
         if not isinstance(values, Mapping):
             return values
-        clashes = self._RESERVED_CONTEXT_KEYS.intersection(values)
+        cls = self._ctxcls
+        reserved = _config_keys(cls) | {n for n in dir(cls) if not n.startswith("_")}
+        clashes = reserved.intersection(values)
         if not clashes:
             return values
         LOGGER.warning(
@@ -713,22 +511,25 @@ class Pixie:
         )
         return {k: v for k, v in values.items() if k not in clashes}
 
-    def initialize(self, target: "PixieTarget"):
+    def initialize(self, target: "PixieTarget", **options: object) -> PixieContext:
         """Arm DHCP for `target` and return its context.
 
         A backend that fails is a warning; it raises only if none could be armed.
+        `options` (`initiate`'s `iscsi=`) reach the Start/EndPixieInitialize
+        hooks as their keyword arguments.
         """
-        target = self.hook(PixieEvent.StartPixieInitialize, target)
+        target = self.hook(PixieEvent.StartPixieInitialize, target, **options)
         ctx = self.make_context(target)
         ctx = ctx.pxe_init(self)
-        return self.hook(PixieEvent.EndPixieInitialize, ctx)
+        return self.hook(PixieEvent.EndPixieInitialize, ctx, **options)
 
-    def complete(self, target: "PixieTarget"):
+    def complete(self, target: "PixieTarget", **options: object) -> PixieContext:
         """Disarm DHCP for `target` and return its context.
 
         Every backend is tried; one that fails is logged as a warning.
+        `options` reach the Start/EndPixieComplete hooks as keyword arguments.
         """
-        target = self.hook(PixieEvent.StartPixieComplete, target)
+        target = self.hook(PixieEvent.StartPixieComplete, target, **options)
         ctx = self.make_context(target, require_image=False)
         ctx = ctx.pxe_complete(self)
-        return self.hook(PixieEvent.EndPixieComplete, ctx)
+        return self.hook(PixieEvent.EndPixieComplete, ctx, **options)

@@ -10,6 +10,8 @@ from ..exceptions import PixieConfigError
 from ..logging import LOGGER
 from ..utils.config import Namespace as _NS
 
+__all__ = ["Repository", "Resource"]
+
 
 class Resource(_NS):
     """A file in a repository: `path` within it, `src` naming the repo."""
@@ -39,7 +41,7 @@ class Repository(_NS):
     services: dict[str, URIPath]
     local: "_ty.Optional[URIPath]"
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: object) -> None:
         self.services = {}
         kwargs.setdefault("address", None)
         kwargs.setdefault("local", None)
@@ -63,7 +65,7 @@ class Repository(_NS):
     def __truediv__(self, key) -> "Repository":
         return self.joinpath(key)
 
-    def joinpath(self, subpath: str = None):
+    def joinpath(self, subpath: "str | None" = None) -> "Repository":
         """A copy of this repository with `subpath` appended to every service.
 
         `subpath` is always relative: `repo / "/abs"` extends the base like
@@ -72,17 +74,11 @@ class Repository(_NS):
         """
         sub = str(subpath).strip("/") if subpath else None
         repo = Repository(address=self.address, services={}, local=self.local)
-        for srvc in self.services:
-            repo.services[srvc] = (
-                f"{str(self.services[srvc]).rstrip('/')}/{sub}"
-                if sub
-                else self.services[srvc]
-            )
-        if self.local:
-            repo.local = self.local / sub if sub else self.local
-        else:
-            # Keep .local a Pathname (not a raw str) so chained joinpath works.
-            repo.local = RepoPath(sub) if sub else None
+        for srvc, base in self.services.items():
+            # Through URIPath, so a query string stays last.
+            repo.services[srvc] = URIPath(str(base)) / sub if sub else base
+        if self.local and sub:
+            repo.local = self.local / sub
         return repo
 
     def get(self, *path: Union[RepoPath, str], service: str = None) -> URIPath:
@@ -133,29 +129,29 @@ class Repository(_NS):
         if scheme == "https":
             return host, port
         # An unresolvable name still has to build a URL, so it is used as written.
-        ip = Host(host).ip()
+        # netimps' shared cache answers the next URL for this name, miss included.
+        ip = Host(host).ip(cache=True)
         return (str(ip) if ip else host), port
 
-    def service(self, name: str):
+    def service(self, name: "str | None") -> "URIPath | None":
         """The base URI for a service name, `None` for `.local` when unset.
 
         A relative service path gets its authority from `.address`: resolved to an
         IP for every scheme except `https`, which keeps the configured name.
         """
-        if name is None:
+        local = name is None
+        if local:
             baseuri = self.local
             name = "file"
-            host, port = "", None
         else:
             baseuri = self.services.get(name, None)
-            if baseuri is None:
-                return None
-            host, port = self._service_host(name)
         if baseuri is None:
             return None
         if not isinstance(baseuri, URIPath):
             baseuri = URIPath(baseuri)
         if not baseuri.source:
+            # Only a relative service needs the address; a full URI has its own.
+            host, port = ("", None) if local else self._service_host(name)
             # host=None writes `file:/srv/tftp`; "" would write an empty
             # authority (`file:///srv/tftp`) and change every URL built here.
             baseuri = baseuri.with_source(

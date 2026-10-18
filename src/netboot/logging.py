@@ -2,6 +2,8 @@
 
 import logging
 
+__all__ = ["LOGGER", "quiet_noisy_dependencies"]
+
 #: The package logger. Named for the import package so it sits in the ordinary
 #: hierarchy: `logging.getLogger("netboot")` reaches it, a `netboot.<child>`
 #: logger inherits from it, and the CLI's -v/-q (which set the level of the
@@ -20,7 +22,7 @@ def quiet_noisy_dependencies(insecure_warnings: bool = False) -> None:
     With ``insecure_warnings=True`` this also silences urllib3's
     ``InsecureRequestWarning`` process-wide, which is why it is off by default.
     """
-    for name in ("urllib3.connectionpool", "paramiko.transport"):
+    for name in ("urllib3.connectionpool", "asyncssh", "paramiko.transport"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
     if insecure_warnings:

@@ -7,6 +7,8 @@ initialize
 --- omapi
 ["add_group", ["ipxe", "if exists user-class and option user-class = /"iPXE/" { filename /"boot.ipxe/"; }"], {}]
 --- omapi
+["del_host", ["aa:bb:cc:dd:ee:ff"], {}]
+--- omapi
 ["query", "host", [["create", "00000001"], ["exclusive", "00000001"]], [["name", "web01"], ["hardware-address", "aa:bb:cc:dd:ee:ff"], ["hardware-type", "00000001"], ["ip-address", "10.0.0.10"], ["group", "ipxe"], ["statements", "option routers 10.0.0.1; option domain-name-servers 10.0.0.53, 10.0.0.54; option domain-name /"example.com/"; option domain-search /"example.com/"; option subnet-mask 255.255.255.0; option broadcast-address 10.0.0.255; next-server 10.0.0.2; if (exists user-class and option user-class = /"iPXE/") { } else { filename /"undionly.kpxe/"; }"]]]
 --- omapi
 ["close", [], {}]
@@ -29,7 +31,7 @@ complete
 --- omapi
 ["close", [], {}]
 --- recipes
-# netboot: add to dhcpd.conf so 'ipxe' survives a restart
+# netboot: add to dhcpd.conf so 'ipxe' need not be created over OMAPI
 group "ipxe" {
   if exists user-class and option user-class = "iPXE" { filename "boot.ipxe"; }
 }

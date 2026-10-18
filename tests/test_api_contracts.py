@@ -8,7 +8,7 @@ import pytest
 
 import netboot
 from netboot.content import Repository, Resource
-from netboot.dhcp import DhcpZone
+from netboot.dhcp import DHCPZone
 
 
 def test_resource_division_joins_the_path_and_keeps_the_repo():
@@ -21,7 +21,7 @@ def test_resource_division_joins_the_path_and_keeps_the_repo():
 
 def test_an_unknown_scheme_is_a_config_error():
     with pytest.raises(netboot.PixieConfigError, match="nosuchscheme"):
-        DhcpZone(network="10.0.0.0/24", dhcpservers=["nosuchscheme://host"])
+        DHCPZone(network="10.0.0.0/24", dhcpservers=["nosuchscheme://host"])
 
 
 def test_new_pixie_object_hook_can_swap_the_class():
@@ -52,13 +52,13 @@ def test_event_values_carry_the_documented_prefix():
 
 
 def test_zone_nameserver_is_the_first_or_empty():
-    zone = DhcpZone(network="10.0.0.0/24", nameservers=["10.0.0.53", "10.0.0.54"])
+    zone = DHCPZone(network="10.0.0.0/24", nameservers=["10.0.0.53", "10.0.0.54"])
     assert str(zone.nameserver) == "10.0.0.53"
-    assert DhcpZone(network="10.0.0.0/24").nameserver == ""
+    assert DHCPZone(network="10.0.0.0/24").nameserver == ""
 
 
 def test_zone_derives_its_network_from_a_cidr_gateway():
-    zone = DhcpZone(gateway="10.0.5.1/24")
+    zone = DHCPZone(gateway="10.0.5.1/24")
     assert str(zone.network) == "10.0.5.0/24"
     assert str(zone.gateway) == "10.0.5.1"
 
