@@ -206,6 +206,17 @@ def test_duho_traceback_prints_the_traceback_and_keeps_the_status(
     assert "nosuch.yaml" in caplog.text
 
 
+@pytest.mark.parametrize("value", ["0", "false", "no"])
+def test_duho_traceback_off_values_print_no_traceback(
+    in_tmp_cwd, monkeypatch, capsys, caplog, value
+):
+    monkeypatch.setenv("DUHO_TRACEBACK", value)
+    with caplog.at_level(logging.ERROR, logger="netboot"):
+        assert main(argv=["-c", "nosuch.yaml", "initiate", "web01"]) == 2
+    assert "Traceback" not in capsys.readouterr().err
+    assert "nosuch.yaml" in caplog.text
+
+
 def test_help_raises_system_exit_zero(capsys):
     with pytest.raises(SystemExit) as info:
         main(argv=["--help"])

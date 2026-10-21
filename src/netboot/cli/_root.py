@@ -17,6 +17,7 @@ from importlib import import_module as _import_module
 from dhcpctl import DHCPCtlError as _DHCPCtlError
 from duho import Arg, Cli, Extend, LoggingArgs, parse_globals
 from duho.discovery import ModuleCommand, discover_commands
+from duho.logging import traceback_enabled
 from tplx import TplxError as _TplxError
 
 from .. import Pixie, PixieConfigError, PixieError, __version__
@@ -50,11 +51,12 @@ def _report_error(message: str, code: int, error: BaseException) -> None:
     """Report an operator error through netboot's logger, not duho's stderr line.
 
     The traceback goes to DEBUG, so ``-v`` still shows it, and to standard
-    error with ``DUHO_TRACEBACK`` set: duho leaves that to this hook.
+    error when ``DUHO_TRACEBACK`` is on (duho's truthy values): duho leaves
+    that to this hook.
     """
     LOGGER.error("%s", message)
     LOGGER.debug("%s", message, exc_info=error)
-    if _os.environ.get("DUHO_TRACEBACK"):
+    if traceback_enabled():
         _traceback.print_exception(type(error), error, error.__traceback__)
 
 

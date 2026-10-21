@@ -498,7 +498,7 @@ whose `__call__` is the command. `netboot.main` re-exports `main`,
   ambiguous), 2 a configuration or lookup error, a `--load-module` that does not
   import, or no DHCP server armed (reported as one line through
   the `netboot` logger; `-v` adds the traceback at DEBUG; with `DUHO_TRACEBACK`
-  set the traceback is also printed to standard error and the status stays 2). A netboot-contract command returning
+  on the traceback is also printed to standard error and the status stays 2). A netboot-contract command returning
   a non-int, non-None value is warned about and treated as success rather than
   crashing after its work; a plain `run(args)` command's returned value is
   printed to standard output.
@@ -508,7 +508,7 @@ whose `__call__` is the command. `netboot.main` re-exports `main`,
 | Variable | Read by | Effect |
 | --- | --- | --- |
 | `PIXIE_CMDS_PATH` | the CLI (duho) | more command directories or packages, `os.pathsep`-separated, after `--cmdspath` |
-| `DUHO_TRACEBACK` | the CLI | when set, a reported error also prints its traceback to standard error; the status is unchanged |
+| `DUHO_TRACEBACK` | the CLI | when on (`1`, `true`, `yes`, `on`, `y`, `t`; `0`, `false`, `no`, `off`, `n`, `f` and empty are off), a reported error also prints its traceback to standard error; the status is unchanged |
 | `ANYCFG_CONFINE_TO` | config loading (anycfg) | confines `!include` to those directories (`os.pathsep`-separated) |
 | `TPLX_RUBY`, `TPLX_PUPPET` | tplx | the `ruby` / `puppet` program for `.erb` / `.epp`, when it is not on `PATH` |
 | any `NAME` | config loading | `{{ env.NAME }}` in a config value reads it when the file is loaded |

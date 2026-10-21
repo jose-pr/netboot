@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `DUHO_TRACEBACK` is read with duho's own truthy values: `0`, `false`, `no`,
+  `off` and an empty value no longer print a traceback on a reported error,
+  where any non-empty value did. The status stays 2.
+
 ## [0.4.0] - 2026-10-19
 
 ### Added
