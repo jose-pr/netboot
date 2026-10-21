@@ -13,7 +13,6 @@ from .cli._root import (  # noqa: F401 - the names tests and plugins import
     _discover,
     _dispatch,
     _report_error,
-    _wants_netboot,
 )
 from .utils.misc import parse_path
 

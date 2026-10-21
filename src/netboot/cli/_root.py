@@ -18,6 +18,7 @@ from dhcpctl import DHCPCtlError as _DHCPCtlError
 from duho import Arg, Cli, Extend, LoggingArgs, parse_globals
 from duho.discovery import ModuleCommand, discover_commands
 from duho.logging import traceback_enabled
+from duho.runtime import accepts_positional
 from tplx import TplxError as _TplxError
 
 from .. import Pixie, PixieConfigError, PixieError, __version__
@@ -131,33 +132,6 @@ def _discover(argv: "_ty.Sequence[str] | None") -> "list":
     return list(commands.values())
 
 
-def _wants_netboot(run: "_ty.Callable | None") -> bool:
-    """Does this command's ``run`` follow netboot's ``run(netboot, args, conf)`` shape?
-
-    True when ``run`` accepts at least three positional parameters (or has
-    ``*args``); a plain duho ``run(args)`` returns False and is dispatched
-    through duho's own ``run_command`` instead.
-    """
-    if run is None:
-        return False
-    import inspect as _inspect
-
-    try:
-        params = _inspect.signature(run).parameters.values()
-    except (TypeError, ValueError):  # builtins / C funcs without a signature
-        return True
-    positional = 0
-    for p in params:
-        if p.kind is _inspect.Parameter.VAR_POSITIONAL:
-            return True
-        if p.kind in (
-            _inspect.Parameter.POSITIONAL_ONLY,
-            _inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        ):
-            positional += 1
-    return positional >= 3
-
-
 def _dispatch(command: object, instance: "Pixie_") -> int:
     """duho ``app`` dispatch seam: run a command, building ``Pixie`` for a plugin.
 
@@ -175,7 +149,7 @@ def _dispatch(command: object, instance: "Pixie_") -> int:
     # 1-arg run(args) contract rather than netboot's run(netboot, args, conf); only the
     # netboot-first contract needs a built Pixie, so introspect before building one.
     run = command.entrypoint
-    if not _wants_netboot(run):
+    if run is None or not accepts_positional(run, 3):
         return run_command(command, instance)
 
     netboot, orig = build_engine(instance)

@@ -441,7 +441,8 @@ whose `__call__` is the command. `netboot.main` re-exports `main`,
   merged config dict, deep-copied before `Pixie` construction). A plugin
   shadows a built-in of its name, and `PIXIE_CMDS_PATH` wins over
   `--cmdspath`. A module whose `run` does **not**
-  accept at least 3 positional params (no netboot-first signature) is instead
+  accept at least 3 positional params (no netboot-first signature, or one
+  whose signature cannot be read) is instead
   dispatched through plain `duho.run_command(command, instance)`.
 - Loading the config (`-c/--config`, else `<baseconfig>/pixie.yaml`) requires
   the `config` extra (`pyyaml`); raises `PixieConfigError` with an install

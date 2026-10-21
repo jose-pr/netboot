@@ -11,6 +11,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `DUHO_TRACEBACK` is read with duho's own truthy values: `0`, `false`, `no`,
   `off` and an empty value no longer print a traceback on a reported error,
   where any non-empty value did. The status stays 2.
+- A command module's `run` gets the engine (`run(netboot, args, conf)`) when
+  duho's `accepts_positional` says it takes three positional parameters. That
+  differs from before only for a `run` whose signature cannot be read (a
+  builtin or other C callable), which is now dispatched as a plain `run(args)`,
+  and for a `functools.wraps` wrapper, whose own signature is read rather than
+  the wrapped function's.
 
 ## [0.4.0] - 2026-10-19
 

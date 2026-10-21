@@ -172,17 +172,32 @@ def test_ordinary_interpolation_still_works(in_tmp_cwd):
     assert main(argv=["-c", str(path), "initiate", "web01"]) == 0
 
 
-def test_wants_netboot_signature_detection():
-    # Only a 3-arg run(netboot, args, conf) gets the netboot-first call.
-    from netboot.main import _wants_netboot
+@pytest.mark.parametrize(
+    "signature, body, status",
+    [
+        ("netboot, args, conf", "len(locals())", 3),
+        ("netboot, args, conf=None", "len(locals())", 3),
+        ("*args", "len(args)", 3),
+        ("args", "len(locals())", 1),
+    ],
+)
+def test_only_a_run_taking_three_positionals_gets_the_engine(
+    in_tmp_cwd, monkeypatch, signature, body, status
+):
+    # run(netboot, args, conf) is called with the engine, the parsed arguments
+    # and the raw config (three arguments); any other shape goes through duho's
+    # own dispatch, which passes the arguments alone. The status counts them.
+    from netboot.cli import _root
 
-    def netboot_run(netboot, args, conf): ...
-
-    def duho_run(args): ...
-
-    assert _wants_netboot(netboot_run) is True
-    assert _wants_netboot(duho_run) is False
-    assert _wants_netboot(None) is False
+    monkeypatch.setattr(_root, "build_engine", lambda instance: ("ENGINE", {"k": 1}))
+    cmds = in_tmp_cwd / "cmds"
+    cmds.mkdir()
+    (cmds / "shapecmd.py").write_text(
+        f"def register(parser, args):\n    pass\n\n"
+        f"def run({signature}):\n    return {body}\n",
+        encoding="utf-8",
+    )
+    assert main(argv=["--cmdspath", str(cmds), "shapecmd"]) == status
 
 
 def test_a_plain_command_returning_a_value_has_it_printed(in_tmp_cwd, capsys):
