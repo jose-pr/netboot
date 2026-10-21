@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-22
+
 ### Changed
 
 - `DUHO_TRACEBACK` is read with duho's own truthy values: `0`, `false`, `no`,
@@ -1091,7 +1093,8 @@ First packaged release: the `netboot` library with the `pixie` command line.
   config value construction no longer swallows non-`TypeError` errors; repo
   `joinpath` keeps `.local` a path so chained joins work.
 
-[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/jose-pr/netboot/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/jose-pr/netboot/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jose-pr/netboot/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/jose-pr/netboot/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/jose-pr/netboot/compare/v0.3.0...v0.3.1
